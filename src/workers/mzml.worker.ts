@@ -36,6 +36,7 @@ function b64ToFloat(
   b64: string,
   precision: 32 | 64,
   compressed: boolean,
+  littleEndian = true,
 ): Float32Array {
   const bin = atob(b64);
   const buf = new Uint8Array(bin.length);
@@ -45,9 +46,9 @@ function b64ToFloat(
   const n = precision === 64 ? bytes.byteLength >>> 3 : bytes.byteLength >>> 2;
   const out = new Float32Array(n);
   if (precision === 64) {
-    for (let i = 0; i < n; i++) out[i] = dv.getFloat64(i * 8, true);
+    for (let i = 0; i < n; i++) out[i] = dv.getFloat64(i * 8, littleEndian);
   } else {
-    for (let i = 0; i < n; i++) out[i] = dv.getFloat32(i * 4, true);
+    for (let i = 0; i < n; i++) out[i] = dv.getFloat32(i * 4, littleEndian);
   }
   return out;
 }
@@ -286,8 +287,11 @@ async function parseMzML(text: string): Promise<{ summary: WorkerRunSummary; sca
         typeof peaksNode === "string" ? peaksNode : (peaksNode?.["#text"] ?? "");
       const precision: 32 | 64 = (parseInt(peaksNode?.["@_precision"] ?? "32", 10) === 64 ? 64 : 32) as 32 | 64;
       const compressed = (peaksNode?.["@_compressionType"] ?? "none") !== "none";
+      // mzXML defaults to network byte order (BIG-endian). Only "little" means LE.
+      const byteOrder = String(peaksNode?.["@_byteOrder"] ?? "network").toLowerCase();
+      const littleEndian = byteOrder === "little";
       if (raw) {
-        const flat = b64ToFloat(raw, precision, compressed);
+        const flat = b64ToFloat(raw, precision, compressed, littleEndian);
         const half = flat.length >>> 1;
         mzArr = new Float32Array(half);
         intArr = new Float32Array(half);
