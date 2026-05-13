@@ -1,8 +1,9 @@
-import { Search, Upload, Bell } from "lucide-react";
+import { Search, Upload, Bell, Sun, Moon } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useTheme } from "@/components/theme-provider";
 
 export function Topbar({ title, subtitle }: { title?: string; subtitle?: string }) {
   return (
