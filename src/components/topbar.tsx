@@ -1,10 +1,12 @@
-import { Search, Upload, Bell } from "lucide-react";
+import { Search, Upload, Bell, Sun, Moon } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useTheme } from "@/components/theme-provider";
 
 export function Topbar({ title, subtitle }: { title?: string; subtitle?: string }) {
+  const { theme, toggle } = useTheme();
   return (
     <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background/80 px-4 backdrop-blur">
       <SidebarTrigger className="-ml-1" />
@@ -30,6 +32,16 @@ export function Topbar({ title, subtitle }: { title?: string; subtitle?: string 
               <Upload className="h-3.5 w-3.5" />
               Upload
             </Link>
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={toggle}
+            aria-label="Toggle theme"
+            title={theme === "dark" ? "Switch to light" : "Switch to dark"}
+          >
+            {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </Button>
           <Button variant="ghost" size="icon" className="h-8 w-8">
             <Bell className="h-4 w-4" />
