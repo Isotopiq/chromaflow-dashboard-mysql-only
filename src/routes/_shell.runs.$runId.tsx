@@ -221,6 +221,149 @@ function RunDetail() {
       </Card>
 
       <Card className="border-border bg-card p-4">
+        <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+              Auto-XIC from analyte library
+            </div>
+            <div className="mt-0.5 text-xs text-muted-foreground">
+              Pick compounds — m/z is computed from formula + adduct, then EICs are extracted in one pass.
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Adduct</span>
+              <Select value={adduct} onValueChange={(v) => setAdduct(v as Adduct)}>
+                <SelectTrigger className="h-8 w-32 font-mono text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {adductOptions.map((a) => (
+                    <SelectItem key={a} value={a} className="font-mono text-xs">
+                      {a}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex w-44 items-center gap-2">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">RT tol</span>
+              <Slider
+                value={[rtTol]}
+                onValueChange={(v) => setRtTol(v[0])}
+                min={0.1}
+                max={3}
+                step={0.1}
+              />
+              <span className="w-8 text-right font-mono text-[10px]">{rtTol.toFixed(1)}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="mb-3 flex flex-wrap gap-1.5">
+          {libraryTargets.length === 0 ? (
+            <div className="text-xs text-muted-foreground">
+              No analytes in library. Run the seed SQL to add common compounds.
+            </div>
+          ) : (
+            libraryTargets.map((t) => {
+              const checked = enabledIds.has(t.id);
+              return (
+                <label
+                  key={t.id}
+                  className={`flex cursor-pointer items-center gap-1.5 rounded-md border px-2 py-1 text-xs ${
+                    checked ? "border-primary bg-primary/10" : "border-border"
+                  }`}
+                >
+                  <Checkbox
+                    checked={checked}
+                    onCheckedChange={(v) => {
+                      const next = new Set(enabledIds);
+                      if (v) next.add(t.id);
+                      else next.delete(t.id);
+                      setEnabledIds(next);
+                    }}
+                  />
+                  <span>{t.name}</span>
+                  <span className="font-mono text-[10px] text-muted-foreground">
+                    {t.mz.toFixed(4)}
+                  </span>
+                </label>
+              );
+            })
+          )}
+        </div>
+
+        {!run.scansBlobPath ? (
+          <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+            <Activity className="h-3.5 w-3.5" /> Auto-XIC unavailable: this run has no persisted scans blob.
+          </div>
+        ) : activeTargets.length === 0 ? (
+          <div className="rounded-md border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
+            Select one or more analytes to overlay their EICs.
+          </div>
+        ) : batchQuery.isLoading ? (
+          <div className="p-6 text-center text-xs text-muted-foreground">Extracting {activeTargets.length} EICs…</div>
+        ) : overlayRuns.length > 0 ? (
+          <>
+            <ChromatogramPlot runs={overlayRuns} height={260} channel="tic" />
+            <div className="mt-3 overflow-x-auto rounded-md border border-border">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/30 hover:bg-muted/30">
+                    <TableHead className="text-[10px] uppercase tracking-wider">Analyte</TableHead>
+                    <TableHead className="text-[10px] uppercase tracking-wider">Formula</TableHead>
+                    <TableHead className="text-[10px] uppercase tracking-wider">m/z</TableHead>
+                    <TableHead className="text-[10px] uppercase tracking-wider">RT obs</TableHead>
+                    <TableHead className="text-[10px] uppercase tracking-wider">RT exp</TableHead>
+                    <TableHead className="text-[10px] uppercase tracking-wider">ΔRT</TableHead>
+                    <TableHead className="text-[10px] uppercase tracking-wider">Intensity</TableHead>
+                    <TableHead className="text-[10px] uppercase tracking-wider">Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {matchRows.map(({ tr, t, dRt, matched }) => (
+                    <TableRow key={tr.id} className="text-xs">
+                      <TableCell className="font-medium">{t?.name ?? "—"}</TableCell>
+                      <TableCell className="font-mono text-muted-foreground">{t?.formula ?? "—"}</TableCell>
+                      <TableCell className="font-mono">{tr.mz.toFixed(4)}</TableCell>
+                      <TableCell className="font-mono">
+                        {tr.peakRt != null ? tr.peakRt.toFixed(2) : "—"}
+                      </TableCell>
+                      <TableCell className="font-mono text-muted-foreground">
+                        {t?.rtExpected.toFixed(2) ?? "—"}
+                      </TableCell>
+                      <TableCell className="font-mono">
+                        {dRt != null ? dRt.toFixed(2) : "—"}
+                      </TableCell>
+                      <TableCell className="font-mono">
+                        {tr.peakIntensity > 0
+                          ? tr.peakIntensity >= 1000
+                            ? `${(tr.peakIntensity / 1000).toFixed(1)}k`
+                            : tr.peakIntensity.toFixed(0)
+                          : "—"}
+                      </TableCell>
+                      <TableCell>
+                        {tr.peakIntensity <= 0 ? (
+                          <Badge variant="outline" className="text-[10px]">no peak</Badge>
+                        ) : matched ? (
+                          <Badge className="bg-[color:var(--peak-annotated)]/20 text-[10px] text-[color:var(--peak-annotated)]">
+                            match
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-[10px]">drift</Badge>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </>
+        ) : null}
+      </Card>
+
+      <Card className="border-border bg-card p-4">
         <div className="mb-2 flex items-center justify-between gap-3">
           <div>
             <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
