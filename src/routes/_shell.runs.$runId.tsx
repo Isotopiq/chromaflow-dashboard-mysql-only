@@ -36,12 +36,19 @@ function RunDetail() {
   const [customMz, setCustomMz] = useState("");
 
   const selected = run.peaks.find((p) => p.id === selectedId);
-  const eicMz = selected?.mz ?? (customMz ? parseFloat(customMz) : null);
+  // Custom m/z (when typed and valid) ALWAYS overrides the selected peak.
+  // parseFloat("") and parseFloat("abc") return NaN — we filter those out.
+  const customMzNum = customMz.trim() ? parseFloat(customMz) : NaN;
+  const eicMz: number | null = Number.isFinite(customMzNum)
+    ? customMzNum
+    : selected?.mz != null && Number.isFinite(selected.mz)
+      ? (selected.mz as number)
+      : null;
 
   const fetchEIC = useServerFn(getRunEIC);
   const eicQuery = useQuery({
     queryKey: ["eic", run.id, eicMz, ppm],
-    enabled: eicMz != null && !!run.scansBlobPath,
+    enabled: eicMz != null && Number.isFinite(eicMz) && !!run.scansBlobPath,
     queryFn: () => fetchEIC({ data: { runId: run.id, mz: eicMz!, ppm } }),
     staleTime: 60_000,
   });

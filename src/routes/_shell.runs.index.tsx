@@ -48,6 +48,7 @@ function fmtBytes(n: number) {
 
 function RunsList() {
   const { runs, methods, columns } = useLab();
+  const upsertRunLocal = useLab((s) => s.upsertRunLocal);
   const [dragOver, setDragOver] = useState(false);
   const [methodId, setMethodId] = useState<string>("");
   const [columnId, setColumnId] = useState<string>("");
@@ -145,6 +146,11 @@ function RunsList() {
         },
       });
 
+      // Push the freshly-saved run into the local store BEFORE navigating
+      // so the run-detail route can find it. Without this the route loads,
+      // can't find the run in the store, and renders "Run not found" until
+      // the user reloads (which triggers loadAll re-hydration).
+      upsertRunLocal(saved as any);
       updateJob(id, { status: "done" });
       toast.success(`${file.name} parsed: ${parsed.summary.peaks.length} peaks${parsed.summary.truncated ? " (scans truncated)" : ""}`);
       qc.invalidateQueries({ queryKey: ["lab"] });

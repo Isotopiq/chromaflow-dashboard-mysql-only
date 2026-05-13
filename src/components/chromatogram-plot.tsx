@@ -37,28 +37,49 @@ export function ChromatogramPlot({
   channel = "tic",
   compact = false,
 }: Props) {
-  // Build merged dataset for recharts: x as 'time', and series as r0, r1...
   if (runs.length === 0) return null;
-  const baseX = runs[0].trace.x;
-  const data = baseX.map((t, i) => {
-    const row: Record<string, number> = { time: t };
-    runs.forEach((r, idx) => {
-      const v = r.trace[channel][i];
-      if (v !== undefined) row[`r${idx}`] = v;
-    });
-    return row;
+
+  // Each run carries its own x/y dataset — Line accepts its own `data` prop,
+  // so overlay no longer assumes all runs share the first run's x-axis.
+  const series = runs.map((r) => {
+    const xs = r.trace?.x ?? [];
+    const ys = r.trace?.[channel] ?? [];
+    const data = xs.map((t, i) => ({ time: t, value: ys[i] ?? 0 }));
+    return { run: r, data };
   });
+
+  const hasAnyPoint = series.some((s) => s.data.length > 0);
+  if (!hasAnyPoint) {
+    return (
+      <div
+        style={{ height }}
+        className="flex items-center justify-center rounded-md border border-dashed border-border text-xs text-muted-foreground"
+      >
+        No chromatogram data
+      </div>
+    );
+  }
+
+  const baseX = series[0].data.map((d) => d.time);
+  const peakRefs = showPeaks
+    ? (runs[0].peaks ?? []).map((p) => {
+        const closestIdx = baseX.findIndex((t) => t >= p.rt);
+        const yVal = series[0].data[closestIdx >= 0 ? closestIdx : 0]?.value ?? 0;
+        return { p, yVal };
+      })
+    : [];
 
   return (
     <div style={{ width: "100%", height }}>
       <ResponsiveContainer>
-        <LineChart data={data} margin={{ top: 8, right: 12, left: compact ? -16 : 0, bottom: 0 }}>
+        <LineChart margin={{ top: 8, right: 12, left: compact ? -16 : 0, bottom: 0 }}>
           <CartesianGrid stroke="var(--border)" strokeDasharray="2 4" vertical={false} />
           <XAxis
             dataKey="time"
             type="number"
             domain={["dataMin", "dataMax"]}
-            tickFormatter={(v) => `${v.toFixed(1)}`}
+            allowDuplicatedCategory={false}
+            tickFormatter={(v: number) => `${v.toFixed(1)}`}
             stroke="var(--muted-foreground)"
             tick={{ fontSize: 10, fontFamily: "var(--font-mono)" }}
             label={
@@ -70,8 +91,13 @@ export function ChromatogramPlot({
           <YAxis
             stroke="var(--muted-foreground)"
             tick={{ fontSize: 10, fontFamily: "var(--font-mono)" }}
-            tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
-            width={compact ? 28 : 48}
+            tickFormatter={(v: number) => {
+              if (!Number.isFinite(v)) return "";
+              if (Math.abs(v) >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
+              if (Math.abs(v) >= 1_000) return `${(v / 1_000).toFixed(0)}k`;
+              return `${v.toFixed(0)}`;
+            }}
+            width={compact ? 32 : 52}
           />
           {!compact && (
             <Tooltip
@@ -82,48 +108,41 @@ export function ChromatogramPlot({
                 fontSize: 11,
                 fontFamily: "var(--font-mono)",
               }}
-              labelFormatter={(v: number) => `RT ${v.toFixed(2)} min`}
-              formatter={(v: number, _n, item) => {
-                const idx = parseInt(String(item.dataKey).replace("r", ""), 10);
-                return [v.toLocaleString(undefined, { maximumFractionDigits: 0 }), runs[idx]?.name];
-              }}
+              labelFormatter={(v: number) => `RT ${Number(v).toFixed(2)} min`}
+              formatter={(v: number, name: string) => [
+                Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 }),
+                name,
+              ]}
             />
           )}
           {runs.length > 1 && !compact && (
-            <Legend
-              wrapperStyle={{ fontSize: 10, fontFamily: "var(--font-mono)" }}
-              formatter={(_v, _e, idx) => runs[idx as number]?.name ?? ""}
-            />
+            <Legend wrapperStyle={{ fontSize: 10, fontFamily: "var(--font-mono)" }} />
           )}
-          {runs.map((r, idx) => (
+          {series.map(({ run, data }, idx) => (
             <Line
-              key={r.id}
+              key={run.id}
+              data={data}
               type="monotone"
-              dataKey={`r${idx}`}
+              dataKey="value"
               stroke={TRACE_COLORS[idx % TRACE_COLORS.length]}
               strokeWidth={1.4}
               dot={false}
               isAnimationActive={false}
-              name={r.name}
+              name={run.name}
             />
           ))}
-          {showPeaks &&
-            runs[0].peaks?.map((p) => {
-              const closestIdx = baseX.findIndex((t) => t >= p.rt);
-              const yVal = data[closestIdx]?.r0 ?? 0;
-              return (
-                <ReferenceDot
-                  key={p.id}
-                  x={p.rt}
-                  y={yVal}
-                  r={3}
-                  fill={p.analyteName ? "var(--peak-annotated)" : "var(--peak)"}
-                  stroke="var(--background)"
-                  strokeWidth={1}
-                  isFront
-                />
-              );
-            })}
+          {peakRefs.map(({ p, yVal }) => (
+            <ReferenceDot
+              key={p.id}
+              x={p.rt}
+              y={yVal}
+              r={3}
+              fill={p.analyteName ? "var(--peak-annotated)" : "var(--peak)"}
+              stroke="var(--background)"
+              strokeWidth={1}
+              isFront
+            />
+          ))}
         </LineChart>
       </ResponsiveContainer>
     </div>
