@@ -33,6 +33,8 @@ type State = {
   upsertRunLocal: (r: Run) => void;
   addAnalyteLocal: (a: Analyte) => void;
   annotatePeakLocal: (runId: string, peakId: string, label: string, analyteId?: string) => void;
+  removeRunLocal: (id: string) => void;
+  removeBatchLocal: (id: string) => void;
 };
 
 export const useLab = create<State>((set) => ({
