@@ -427,7 +427,7 @@ function RunDetail() {
         ) : null}
       </Card>
 
-      <Card className="border-border bg-card p-4">
+      <Card ref={eicCardRef} className="border-border bg-card p-4">
         <div className="mb-2 flex items-center justify-between gap-3">
           <div>
             <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
@@ -436,10 +436,15 @@ function RunDetail() {
             <div className="mt-0.5 font-mono text-xs">
               {eicMz != null ? (
                 <>m/z {eicMz.toFixed(4)} · ±{ppm} ppm
+                  {selected && <span className="text-muted-foreground"> · peak RT {selected.rt.toFixed(2)} min</span>}
                   {eicQuery.data && (
                     <span className="text-muted-foreground"> · window [{eicQuery.data.mzLow.toFixed(4)} – {eicQuery.data.mzHigh.toFixed(4)}]</span>
                   )}
                 </>
+              ) : selected ? (
+                <span className="text-muted-foreground">
+                  Selected peak at RT {selected.rt.toFixed(2)} min has no associated m/z. Type a custom m/z to extract its EIC.
+                </span>
               ) : (
                 <span className="text-muted-foreground">Click a peak to view its EIC, or enter a custom m/z below.</span>
               )}
