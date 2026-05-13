@@ -1,8 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
+import { useQueryClient } from "@tanstack/react-query";
 import { useLab } from "@/lib/store";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { useState, useMemo } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useEffect, useState, useMemo } from "react";
 import {
   Table,
   TableBody,
@@ -12,6 +17,32 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Pencil, Plus, Trash2 } from "lucide-react";
+import { toast } from "sonner";
+import { addAnalyte, updateAnalyte, deleteAnalyte } from "@/lib/lab.functions";
+import { monoisotopicMass, mzFromFormula } from "@/lib/chem";
+import type { Analyte } from "@/lib/mock-data";
 import {
   ScatterChart,
   Scatter,
@@ -28,10 +59,374 @@ export const Route = createFileRoute("/_shell/analytes")({
 });
 
 function Analytes() {
+  const { analytes } = useLab();
+  const userOwned = analytes.filter((a) => a.librarySource === "user").length;
+
+  return (
+    <div className="flex flex-col gap-4 p-6">
+      <div>
+        <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+          Compound library
+        </div>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Analytes</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Manage the compounds used for Auto-XIC and peak annotation —{" "}
+          {analytes.length} total ({userOwned} of yours).
+        </p>
+      </div>
+
+      <Tabs defaultValue="library">
+        <TabsList>
+          <TabsTrigger value="library">Library</TabsTrigger>
+          <TabsTrigger value="matrix">RT matrix</TabsTrigger>
+        </TabsList>
+        <TabsContent value="library" className="mt-4">
+          <LibraryTab />
+        </TabsContent>
+        <TabsContent value="matrix" className="mt-4">
+          <MatrixTab />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Library tab
+// ---------------------------------------------------------------------------
+
+function LibraryTab() {
+  const { analytes } = useLab();
+  const addLocal = useLab((s) => s.addAnalyteLocal);
+  const updateLocal = useLab((s) => s.updateAnalyteLocal);
+  const removeLocal = useLab((s) => s.removeAnalyteLocal);
+  const addFn = useServerFn(addAnalyte);
+  const updateFn = useServerFn(updateAnalyte);
+  const deleteFn = useServerFn(deleteAnalyte);
+  const qc = useQueryClient();
+
+  const [editing, setEditing] = useState<Analyte | null>(null);
+  const [creating, setCreating] = useState(false);
+
+  const sorted = useMemo(
+    () =>
+      [...analytes].sort((a, b) => {
+        // user-owned first, then alphabetical
+        const ao = a.librarySource === "user" ? 0 : 1;
+        const bo = b.librarySource === "user" ? 0 : 1;
+        if (ao !== bo) return ao - bo;
+        return a.name.localeCompare(b.name);
+      }),
+    [analytes],
+  );
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between">
+        <div className="text-xs text-muted-foreground">
+          System-seeded compounds are read-only. Add your own to make them editable.
+        </div>
+        <Dialog open={creating} onOpenChange={setCreating}>
+          <DialogTrigger asChild>
+            <Button size="sm">
+              <Plus className="mr-1 h-3.5 w-3.5" /> Add compound
+            </Button>
+          </DialogTrigger>
+          <CompoundFormDialog
+            title="Add compound"
+            initial={null}
+            onSubmit={async (vals) => {
+              const saved = await addFn({ data: vals });
+              addLocal(saved);
+              qc.invalidateQueries({ queryKey: ["lab"] });
+              toast.success(`Added ${saved.name}`);
+              setCreating(false);
+            }}
+          />
+        </Dialog>
+      </div>
+
+      <Card className="border-border bg-card p-0">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/30 hover:bg-muted/30">
+                <TableHead className="text-[10px] uppercase tracking-wider">Name</TableHead>
+                <TableHead className="text-[10px] uppercase tracking-wider">Formula</TableHead>
+                <TableHead className="text-[10px] uppercase tracking-wider">Neutral mass</TableHead>
+                <TableHead className="text-[10px] uppercase tracking-wider">[M+H]⁺</TableHead>
+                <TableHead className="text-[10px] uppercase tracking-wider">[M−H]⁻</TableHead>
+                <TableHead className="text-[10px] uppercase tracking-wider">RT exp</TableHead>
+                <TableHead className="text-[10px] uppercase tracking-wider">Source</TableHead>
+                <TableHead className="w-20"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {sorted.map((a) => {
+                const mass = a.formula ? monoisotopicMass(a.formula) : null;
+                const mzPos = a.formula ? mzFromFormula(a.formula, "[M+H]+") : null;
+                const mzNeg = a.formula ? mzFromFormula(a.formula, "[M-H]-") : null;
+                const isUser = a.librarySource === "user";
+                return (
+                  <TableRow key={a.id} className="text-xs">
+                    <TableCell className="font-medium">{a.name}</TableCell>
+                    <TableCell className="font-mono text-muted-foreground">
+                      {a.formula || "—"}
+                    </TableCell>
+                    <TableCell className="font-mono">
+                      {mass != null ? mass.toFixed(4) : "—"}
+                    </TableCell>
+                    <TableCell className="font-mono">
+                      {mzPos != null ? mzPos.toFixed(4) : a.mz.toFixed(4)}
+                    </TableCell>
+                    <TableCell className="font-mono">
+                      {mzNeg != null ? mzNeg.toFixed(4) : "—"}
+                    </TableCell>
+                    <TableCell className="font-mono text-muted-foreground">
+                      {a.rtExpected.toFixed(2)}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={isUser ? "default" : "outline"} className="text-[10px]">
+                        {isUser ? "yours" : "system"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-1">
+                        <Dialog
+                          open={editing?.id === a.id}
+                          onOpenChange={(o) => setEditing(o ? a : null)}
+                        >
+                          <DialogTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              disabled={!isUser}
+                              aria-label={`Edit ${a.name}`}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                          </DialogTrigger>
+                          {editing?.id === a.id && (
+                            <CompoundFormDialog
+                              title={`Edit ${a.name}`}
+                              initial={a}
+                              onSubmit={async (vals) => {
+                                const saved = await updateFn({ data: { ...vals, id: a.id } });
+                                updateLocal(saved);
+                                qc.invalidateQueries({ queryKey: ["lab"] });
+                                toast.success(`Updated ${saved.name}`);
+                                setEditing(null);
+                              }}
+                            />
+                          )}
+                        </Dialog>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                              disabled={!isUser}
+                              aria-label={`Delete ${a.name}`}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete {a.name}?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Removes this compound from your library. Existing peak
+                                annotations are kept.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={async () => {
+                                  try {
+                                    await deleteFn({ data: { id: a.id } });
+                                    removeLocal(a.id);
+                                    qc.invalidateQueries({ queryKey: ["lab"] });
+                                    toast.success(`Deleted ${a.name}`);
+                                  } catch (e: any) {
+                                    toast.error(e?.message ?? "Failed to delete");
+                                  }
+                                }}
+                              >
+                                Delete
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+type FormVals = {
+  name: string;
+  formula: string;
+  rtExpected: number;
+  mz?: number | null;
+};
+
+function CompoundFormDialog({
+  title,
+  initial,
+  onSubmit,
+}: {
+  title: string;
+  initial: Analyte | null;
+  onSubmit: (vals: FormVals) => Promise<void>;
+}) {
+  const [name, setName] = useState(initial?.name ?? "");
+  const [formula, setFormula] = useState(initial?.formula ?? "");
+  const [rtExpected, setRtExpected] = useState<string>(
+    initial?.rtExpected != null ? String(initial.rtExpected) : "",
+  );
+  const [mzOverride, setMzOverride] = useState<string>("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setName(initial?.name ?? "");
+    setFormula(initial?.formula ?? "");
+    setRtExpected(initial?.rtExpected != null ? String(initial.rtExpected) : "");
+    setMzOverride("");
+  }, [initial]);
+
+  const mass = formula ? monoisotopicMass(formula) : null;
+  const mzPos = formula ? mzFromFormula(formula, "[M+H]+") : null;
+  const mzNeg = formula ? mzFromFormula(formula, "[M-H]-") : null;
+  const formulaInvalid = formula.length > 0 && mass == null;
+  const mzNum = mzOverride.trim() ? parseFloat(mzOverride) : NaN;
+  const hasMz = Number.isFinite(mzNum) && mzNum > 0;
+  const rtNum = parseFloat(rtExpected);
+  const canSave =
+    !!name.trim() &&
+    Number.isFinite(rtNum) &&
+    rtNum >= 0 &&
+    rtNum <= 120 &&
+    (mzPos != null || hasMz) &&
+    !busy;
+
+  async function submit() {
+    if (!canSave) return;
+    setBusy(true);
+    try {
+      await onSubmit({
+        name: name.trim(),
+        formula: formula.trim(),
+        rtExpected: rtNum,
+        mz: hasMz ? mzNum : null,
+      });
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed to save");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <DialogContent className="max-w-md">
+      <DialogHeader>
+        <DialogTitle>{title}</DialogTitle>
+        <DialogDescription>
+          m/z is computed from the molecular formula. Provide a manual override only if
+          you know the measured value.
+        </DialogDescription>
+      </DialogHeader>
+      <div className="space-y-3">
+        <div className="space-y-1">
+          <Label htmlFor="cf-name" className="text-xs">Name</Label>
+          <Input
+            id="cf-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Caffeine"
+            className="h-8 text-xs"
+          />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="cf-formula" className="text-xs">Molecular formula</Label>
+          <Input
+            id="cf-formula"
+            value={formula}
+            onChange={(e) => setFormula(e.target.value)}
+            placeholder="e.g. C8H10N4O2"
+            className={`h-8 font-mono text-xs ${formulaInvalid ? "border-destructive" : ""}`}
+          />
+          {formulaInvalid && (
+            <div className="text-[10px] text-destructive">
+              Couldn't parse formula. Use Hill notation (C, H, N, O, …).
+            </div>
+          )}
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <Label htmlFor="cf-rt" className="text-xs">Expected RT (min)</Label>
+            <Input
+              id="cf-rt"
+              value={rtExpected}
+              onChange={(e) => setRtExpected(e.target.value)}
+              placeholder="0.00"
+              className="h-8 font-mono text-xs"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="cf-mz" className="text-xs">Manual m/z (optional)</Label>
+            <Input
+              id="cf-mz"
+              value={mzOverride}
+              onChange={(e) => setMzOverride(e.target.value)}
+              placeholder={mzPos != null ? mzPos.toFixed(4) : "—"}
+              className="h-8 font-mono text-xs"
+            />
+          </div>
+        </div>
+        <div className="rounded-md border border-border bg-muted/30 p-2 text-[11px]">
+          <div className="grid grid-cols-3 gap-2 font-mono">
+            <div>
+              <div className="text-[9px] uppercase tracking-widest text-muted-foreground">Mass</div>
+              <div>{mass != null ? mass.toFixed(4) : "—"}</div>
+            </div>
+            <div>
+              <div className="text-[9px] uppercase tracking-widest text-muted-foreground">[M+H]⁺</div>
+              <div>{mzPos != null ? mzPos.toFixed(4) : "—"}</div>
+            </div>
+            <div>
+              <div className="text-[9px] uppercase tracking-widest text-muted-foreground">[M−H]⁻</div>
+              <div>{mzNeg != null ? mzNeg.toFixed(4) : "—"}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <DialogFooter>
+        <Button onClick={submit} disabled={!canSave}>
+          {busy ? "Saving…" : "Save"}
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Matrix tab (kept from previous version)
+// ---------------------------------------------------------------------------
+
+function MatrixTab() {
   const { analytes, runs, methods } = useLab();
   const [selected, setSelected] = useState<string[]>(analytes.slice(0, 5).map((a) => a.id));
 
-  // Build matrix: rows = analytes, cols = methods, value = mean RT (from peaks matched by name)
   const matrix = useMemo(() => {
     return selected.map((aid) => {
       const a = analytes.find((x) => x.id === aid)!;
@@ -50,11 +445,9 @@ function Analytes() {
     });
   }, [selected, analytes, runs, methods]);
 
-  // Heatmap intensity scale
   const allAreas = matrix.flatMap((r) => r.cells.map((c) => c.meanArea ?? 0));
   const maxArea = Math.max(...allAreas, 1);
 
-  // Scatter: x = expected RT, y = observed RT, size = area
   const scatterData = matrix.flatMap((r) =>
     r.cells
       .filter((c) => c.meanRt !== null)
@@ -68,17 +461,7 @@ function Analytes() {
   );
 
   return (
-    <div className="flex flex-col gap-4 p-6">
-      <div>
-        <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
-          Analyte comparison
-        </div>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Analyte matrix</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          See how each analyte behaves across methods — retention drift, recovery, missing detections.
-        </p>
-      </div>
-
+    <div className="flex flex-col gap-4">
       <Card className="border-border bg-card p-3">
         <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
           Pick analytes
