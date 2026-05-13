@@ -626,12 +626,12 @@ export const deleteBatch = createServerFn({ method: "POST" })
     const { supabase, userId } = context as any;
     const { data: batch, error: bErr } = await supabase
       .from("batches")
-      .select("id, owner")
+      .select("id, owner_id")
       .eq("id", data.batchId)
       .maybeSingle();
     if (bErr) throw bErr;
     if (!batch) return { ok: true, missing: true };
-    if (batch.owner && batch.owner !== userId) {
+    if (batch.owner_id && batch.owner_id !== userId) {
       throw new Error("You don't have permission to delete this batch.");
     }
 
