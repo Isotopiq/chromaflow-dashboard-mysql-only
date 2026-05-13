@@ -24,6 +24,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { useLab } from "@/lib/store";
 
 const groups: Array<{
   label: string;
@@ -69,9 +70,13 @@ export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const pathname = useRouterState({ select: (r) => r.location.pathname });
+  const currentUser = useLab((s) => s.currentUser);
+  const isAdmin = currentUser?.role === "admin";
 
   const isActive = (url: string) =>
     url === "/" ? pathname === "/" : pathname === url || pathname.startsWith(url + "/");
+
+  const visibleGroups = groups.filter((g) => g.label !== "Admin" || isAdmin);
 
   return (
     <Sidebar collapsible="icon">
@@ -91,7 +96,7 @@ export function AppSidebar() {
         </Link>
       </SidebarHeader>
       <SidebarContent>
-        {groups.map((g) => (
+        {visibleGroups.map((g) => (
           <SidebarGroup key={g.label}>
             <SidebarGroupLabel className="text-[10px] uppercase tracking-widest">
               {g.label}
@@ -114,14 +119,16 @@ export function AppSidebar() {
         ))}
       </SidebarContent>
       <SidebarFooter className="border-t border-sidebar-border p-3">
-        {!collapsed && (
+        {!collapsed && currentUser && (
           <div className="flex items-center gap-2 text-xs">
             <div className="flex h-7 w-7 items-center justify-center rounded-full bg-accent text-[10px] font-semibold">
-              YO
+              {currentUser.avatar}
             </div>
             <div className="flex flex-col leading-tight">
-              <span className="font-medium">You</span>
-              <span className="text-[10px] text-muted-foreground">admin · method dev</span>
+              <span className="font-medium">{currentUser.name}</span>
+              <span className="text-[10px] capitalize text-muted-foreground">
+                {currentUser.role}
+              </span>
             </div>
           </div>
         )}
