@@ -186,7 +186,7 @@ function NewMethod() {
               onClick={() =>
                 setGradient([
                   ...gradient,
-                  { time: gradient[gradient.length - 1]?.time + 1 ?? 0, pctB: 50, flow },
+                  { time: (gradient[gradient.length - 1]?.time ?? 0) + 1, pctB: 50, flow },
                 ])
               }
             >

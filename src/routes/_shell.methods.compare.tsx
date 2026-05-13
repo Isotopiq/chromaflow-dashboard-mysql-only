@@ -117,7 +117,7 @@ function MethodPicker({
   label: string;
   value: string;
   onChange: (v: string) => void;
-  methods: ReturnType<typeof useLab>["methods"];
+  methods: import("@/lib/mock-data").Method[];
 }) {
   return (
     <Card className="border-border bg-card p-3">
