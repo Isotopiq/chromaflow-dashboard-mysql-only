@@ -339,6 +339,46 @@ function RunsList() {
                   <TableCell className="font-mono text-[11px] text-muted-foreground">
                     {ago(r.acquiredAt)}
                   </TableCell>
+                  <TableCell className="text-right">
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                          aria-label={`Delete ${r.name}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete run?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This permanently removes <span className="font-mono">{r.name}</span>,
+                            its peaks, and any uploaded raw / scan files. This can't be undone.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={async () => {
+                              try {
+                                await deleteRunFn({ data: { runId: r.id } });
+                                removeRunLocal(r.id);
+                                qc.invalidateQueries({ queryKey: ["lab"] });
+                                toast.success(`Deleted ${r.name}`);
+                              } catch (e: any) {
+                                toast.error(e?.message ?? "Failed to delete run");
+                              }
+                            }}
+                          >
+                            Delete
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </TableCell>
                 </TableRow>
               );
             })}
