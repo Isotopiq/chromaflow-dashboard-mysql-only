@@ -60,6 +60,8 @@ function fmtBytes(n: number) {
 function RunsList() {
   const { runs, methods, columns } = useLab();
   const upsertRunLocal = useLab((s) => s.upsertRunLocal);
+  const removeRunLocal = useLab((s) => s.removeRunLocal);
+  const deleteRunFn = useServerFn(deleteRun);
   const [dragOver, setDragOver] = useState(false);
   const [methodId, setMethodId] = useState<string>("");
   const [columnId, setColumnId] = useState<string>("");
