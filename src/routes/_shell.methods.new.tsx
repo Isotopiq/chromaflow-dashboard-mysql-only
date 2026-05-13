@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { useLab } from "@/lib/store";
+import { useLab, useUpsertMethod } from "@/lib/store";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,7 +22,8 @@ export const Route = createFileRoute("/_shell/methods/new")({
 });
 
 function NewMethod() {
-  const { columns, addMethod, currentUser } = useLab();
+  const { columns, currentUser } = useLab();
+  const upsertMethod = useUpsertMethod();
   const navigate = useNavigate();
   const [name, setName] = useState("");
   const [modality, setModality] = useState<Method["modality"]>("RP-LC-MS");
@@ -41,33 +42,36 @@ function NewMethod() {
     { time: 14, pctB: 95, flow: 0.4 },
   ]);
 
-  const submit = () => {
+  const submit = async () => {
     if (!name.trim()) return toast.error("Name required");
-    const id = `m${Date.now()}`;
-    addMethod({
-      id,
-      name,
-      modality,
-      columnId,
-      status: "draft",
-      mobilePhaseA: mpA,
-      mobilePhaseB: mpB,
-      gradient,
-      flowRate: flow,
-      columnTemp: temp,
-      injectionVolume: inj,
-      detector: "Q-TOF, full scan",
-      msIonization: ion,
-      msScanRange: [100, 1500],
-      notes,
-      createdBy: currentUser.id,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      tags: ["draft"],
-      runIds: [],
-    });
-    toast.success("Method created");
-    navigate({ to: "/methods/$methodId", params: { methodId: id } });
+    try {
+      const saved = await upsertMethod({
+        id: undefined as any,
+        name,
+        modality,
+        columnId,
+        status: "draft",
+        mobilePhaseA: mpA,
+        mobilePhaseB: mpB,
+        gradient,
+        flowRate: flow,
+        columnTemp: temp,
+        injectionVolume: inj,
+        detector: "Q-TOF, full scan",
+        msIonization: ion,
+        msScanRange: [100, 1500],
+        notes,
+        createdBy: currentUser.id,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        tags: ["draft"],
+        runIds: [],
+      });
+      toast.success("Method created");
+      navigate({ to: "/methods/$methodId", params: { methodId: saved.id } });
+    } catch (err: any) {
+      toast.error(err?.message ?? "Save failed");
+    }
   };
 
   return (

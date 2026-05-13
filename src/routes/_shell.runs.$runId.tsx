@@ -1,6 +1,6 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { useState } from "react";
-import { useLab } from "@/lib/store";
+import { useLab, useAnnotatePeak } from "@/lib/store";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,8 @@ export const Route = createFileRoute("/_shell/runs/$runId")({
 
 function RunDetail() {
   const { runId } = Route.useParams();
-  const { runs, methods, columns, analytes, annotatePeak } = useLab();
+  const { runs, methods, columns, analytes } = useLab();
+  const annotatePeak = useAnnotatePeak();
   const run = runs.find((r) => r.id === runId);
   if (!run) throw notFound();
   const method = methods.find((m) => m.id === run.methodId);
@@ -124,9 +125,13 @@ function RunDetail() {
                 {suggested.map(({ a, dist }) => (
                   <button
                     key={a.id}
-                    onClick={() => {
-                      annotatePeak(run.id, selected.id, a.name);
-                      toast.success(`Annotated as ${a.name}`);
+                    onClick={async () => {
+                      try {
+                        await annotatePeak(run.id, selected.id, a.name, a.id);
+                        toast.success(`Annotated as ${a.name}`);
+                      } catch (err: any) {
+                        toast.error(err?.message ?? "Failed");
+                      }
                     }}
                     className="flex w-full items-center justify-between rounded-md border border-border bg-surface-elevated px-2 py-1.5 text-left text-xs hover:border-primary/60"
                   >
@@ -155,11 +160,15 @@ function RunDetail() {
                 />
                 <Button
                   size="sm"
-                  onClick={() => {
+                  onClick={async () => {
                     if (!annotation.trim()) return;
-                    annotatePeak(run.id, selected.id, annotation);
-                    toast.success("Annotated");
-                    setAnnotation("");
+                    try {
+                      await annotatePeak(run.id, selected.id, annotation);
+                      toast.success("Annotated");
+                      setAnnotation("");
+                    } catch (err: any) {
+                      toast.error(err?.message ?? "Failed");
+                    }
                   }}
                 >
                   <Sparkles className="mr-1 h-3.5 w-3.5" /> Save
