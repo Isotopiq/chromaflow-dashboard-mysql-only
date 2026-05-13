@@ -581,3 +581,80 @@ export const autoAnnotateBatch = createServerFn({ method: "POST" })
     return { annotated, scanned: peaks?.length ?? 0 };
   });
 
+// ---- Delete a run (and its storage objects + child rows) ----
+async function deleteRunInternal(supabase: any, userId: string, runId: string) {
+  const { data: run, error: fetchErr } = await supabase
+    .from("runs")
+    .select("id, uploaded_by, file_path, scans_blob_path")
+    .eq("id", runId)
+    .maybeSingle();
+  if (fetchErr) throw fetchErr;
+  if (!run) return { ok: true, missing: true };
+  if (run.uploaded_by && run.uploaded_by !== userId) {
+    throw new Error("You don't have permission to delete this run.");
+  }
+
+  const paths = [run.file_path, run.scans_blob_path].filter(
+    (p): p is string => typeof p === "string" && p.length > 0,
+  );
+  if (paths.length > 0) {
+    // Best-effort: ignore missing-file errors so deletion still proceeds.
+    await supabase.storage.from("raw-runs").remove(paths).catch(() => undefined);
+  }
+
+  // Remove children explicitly in case FKs aren't cascading.
+  await supabase.from("peaks").delete().eq("run_id", runId);
+  const { error: delErr } = await supabase.from("runs").delete().eq("id", runId);
+  if (delErr) throw delErr;
+  return { ok: true };
+}
+
+export const deleteRun = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ runId: z.string() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context as any;
+    return deleteRunInternal(supabase, userId, data.runId);
+  });
+
+export const deleteBatch = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) =>
+    z.object({ batchId: z.string(), deleteRuns: z.boolean().default(false) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context as any;
+    const { data: batch, error: bErr } = await supabase
+      .from("batches")
+      .select("id, owner_id")
+      .eq("id", data.batchId)
+      .maybeSingle();
+    if (bErr) throw bErr;
+    if (!batch) return { ok: true, missing: true };
+    if (batch.owner_id && batch.owner_id !== userId) {
+      throw new Error("You don't have permission to delete this batch.");
+    }
+
+    if (data.deleteRuns) {
+      const { data: runs } = await supabase
+        .from("runs")
+        .select("id")
+        .eq("batch_id", data.batchId);
+      for (const r of runs ?? []) {
+        await deleteRunInternal(supabase, userId, r.id);
+      }
+    } else {
+      await supabase
+        .from("runs")
+        .update({ batch_id: null })
+        .eq("batch_id", data.batchId);
+    }
+
+    const { error: delErr } = await supabase
+      .from("batches")
+      .delete()
+      .eq("id", data.batchId);
+    if (delErr) throw delErr;
+    return { ok: true };
+  });
+

@@ -1,4 +1,4 @@
-import { createFileRoute, Link, notFound } from "@tanstack/react-router";
+import { createFileRoute, Link, notFound, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
@@ -8,12 +8,23 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
-import { ArrowLeft, Sparkles, Download, Activity } from "lucide-react";
+import { ArrowLeft, Sparkles, Download, Activity, Trash2 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { ChromatogramPlot } from "@/components/chromatogram-plot";
 import { PeakTable } from "@/components/peak-table";
 import { ago } from "@/lib/mock-data";
 import { toast } from "sonner";
-import { getRunEIC, getRunEICBatch } from "@/lib/lab.functions";
+import { getRunEIC, getRunEICBatch, deleteRun } from "@/lib/lab.functions";
 import { mzFromFormula, defaultAdduct, ADDUCTS_POS, ADDUCTS_NEG, type Adduct } from "@/lib/chem";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -43,6 +54,9 @@ function RunDetail() {
   const { runId } = Route.useParams();
   const { runs, methods, columns, analytes } = useLab();
   const annotatePeak = useAnnotatePeak();
+  const removeRunLocal = useLab((s) => s.removeRunLocal);
+  const deleteRunFn = useServerFn(deleteRun);
+  const nav = useNavigate();
   const run = runs.find((r) => r.id === runId);
   if (!run) throw notFound();
   const method = methods.find((m) => m.id === run.methodId);
@@ -204,6 +218,39 @@ function RunDetail() {
           <Button variant="outline" size="sm" onClick={downloadCsv}>
             <Download className="mr-1 h-3.5 w-3.5" /> Peaks CSV
           </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="outline" size="sm" className="text-destructive hover:text-destructive">
+                <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete run
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete this run?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Permanently removes <span className="font-mono">{run.name}</span>, its
+                  peaks, and uploaded raw / scan files. This can't be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={async () => {
+                    try {
+                      await deleteRunFn({ data: { runId: run.id } });
+                      removeRunLocal(run.id);
+                      toast.success(`Deleted ${run.name}`);
+                      nav({ to: "/runs" });
+                    } catch (e: any) {
+                      toast.error(e?.message ?? "Failed to delete run");
+                    }
+                  }}
+                >
+                  Delete
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </div>
 

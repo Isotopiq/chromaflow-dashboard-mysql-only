@@ -33,6 +33,8 @@ type State = {
   upsertRunLocal: (r: Run) => void;
   addAnalyteLocal: (a: Analyte) => void;
   annotatePeakLocal: (runId: string, peakId: string, label: string, analyteId?: string) => void;
+  removeRunLocal: (id: string) => void;
+  removeBatchLocal: (id: string) => void;
 };
 
 export const useLab = create<State>((set) => ({
@@ -94,6 +96,13 @@ export const useLab = create<State>((set) => ({
             }
           : r,
       ),
+    })),
+  removeRunLocal: (id) =>
+    set((s) => ({ runs: s.runs.filter((r) => r.id !== id) })),
+  removeBatchLocal: (id) =>
+    set((s) => ({
+      batches: s.batches.filter((b) => b.id !== id),
+      runs: s.runs.map((r) => (r.batchId === id ? { ...r, batchId: undefined } : r)),
     })),
 }));
 

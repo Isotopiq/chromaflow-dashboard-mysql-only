@@ -1,10 +1,27 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
+import { useQueryClient } from "@tanstack/react-query";
 import { useLab } from "@/lib/store";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StatusDot } from "@/components/status-dot";
 import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Plus, Trash2 } from "lucide-react";
+import { toast } from "sonner";
+import { deleteBatch } from "@/lib/lab.functions";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 export const Route = createFileRoute("/_shell/batches")({
   component: Batches,
@@ -12,6 +29,10 @@ export const Route = createFileRoute("/_shell/batches")({
 
 function Batches() {
   const { batches, runs, users } = useLab();
+  const removeBatchLocal = useLab((s) => s.removeBatchLocal);
+  const removeRunLocal = useLab((s) => s.removeRunLocal);
+  const deleteBatchFn = useServerFn(deleteBatch);
+  const qc = useQueryClient();
 
   return (
     <div className="flex flex-col gap-4 p-6">
@@ -35,44 +56,134 @@ function Batches() {
           const owner = users.find((u) => u.id === b.owner);
           const batchRuns = runs.filter((r) => r.batchId === b.id);
           return (
-            <Card key={b.id} className="border-border bg-card p-4">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <div className="text-sm font-semibold">{b.name}</div>
-                  <div className="text-[11px] text-muted-foreground">{b.project}</div>
-                </div>
-                <Badge variant="outline" className="text-[10px]">
-                  <StatusDot status={b.status} className="mr-1" />
-                  {b.status.replace("_", " ")}
-                </Badge>
-              </div>
-
-              <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-                <Stat label="Samples" value={String(b.sampleCount)} />
-                <Stat label="Runs" value={String(batchRuns.length)} />
-                <Stat label="Owner" value={owner?.avatar ?? "—"} />
-              </div>
-
-              <div className="mt-4 text-[10px] uppercase tracking-widest text-muted-foreground">
-                Runs
-              </div>
-              <div className="mt-2 space-y-1">
-                {batchRuns.slice(0, 4).map((r) => (
-                  <Link
-                    key={r.id}
-                    to="/runs/$runId"
-                    params={{ runId: r.id }}
-                    className="block truncate rounded-md px-2 py-1 font-mono text-[11px] hover:bg-accent/40"
-                  >
-                    {r.name}
-                  </Link>
-                ))}
-              </div>
-            </Card>
+            <BatchCard
+              key={b.id}
+              batch={b}
+              ownerAvatar={owner?.avatar ?? "—"}
+              batchRuns={batchRuns}
+              onDelete={async (deleteRuns) => {
+                try {
+                  await deleteBatchFn({
+                    data: { batchId: b.id, deleteRuns },
+                  });
+                  if (deleteRuns) {
+                    for (const r of batchRuns) removeRunLocal(r.id);
+                  }
+                  removeBatchLocal(b.id);
+                  qc.invalidateQueries({ queryKey: ["lab"] });
+                  toast.success(`Deleted batch ${b.name}`);
+                } catch (e: any) {
+                  toast.error(e?.message ?? "Failed to delete batch");
+                }
+              }}
+            />
           );
         })}
       </div>
     </div>
+  );
+}
+
+function BatchCard({
+  batch,
+  ownerAvatar,
+  batchRuns,
+  onDelete,
+}: {
+  batch: any;
+  ownerAvatar: string;
+  batchRuns: any[];
+  onDelete: (deleteRuns: boolean) => Promise<void>;
+}) {
+  const [cascade, setCascade] = useState(false);
+
+  return (
+    <Card className="border-border bg-card p-4">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <div className="text-sm font-semibold">{batch.name}</div>
+          <div className="text-[11px] text-muted-foreground">{batch.project}</div>
+        </div>
+        <div className="flex items-center gap-1">
+          <Badge variant="outline" className="text-[10px]">
+            <StatusDot status={batch.status} className="mr-1" />
+            {batch.status.replace("_", " ")}
+          </Badge>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                aria-label={`Delete ${batch.name}`}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete batch?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This permanently deletes <span className="font-mono">{batch.name}</span>.
+                  {batchRuns.length > 0 ? (
+                    <>
+                      {" "}It currently contains {batchRuns.length} run
+                      {batchRuns.length === 1 ? "" : "s"}.
+                    </>
+                  ) : null}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              {batchRuns.length > 0 && (
+                <label className="flex items-start gap-2 rounded-md border border-border bg-muted/30 p-3 text-xs">
+                  <Checkbox
+                    checked={cascade}
+                    onCheckedChange={(v) => setCascade(v === true)}
+                    className="mt-0.5"
+                  />
+                  <div>
+                    <div className="font-medium">
+                      Also delete the {batchRuns.length} run
+                      {batchRuns.length === 1 ? "" : "s"} in this batch
+                    </div>
+                    <div className="text-muted-foreground">
+                      Otherwise the runs are kept and unlinked from the batch.
+                    </div>
+                  </div>
+                </label>
+              )}
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={() => onDelete(cascade)}>
+                  Delete
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+        <Stat label="Samples" value={String(batch.sampleCount)} />
+        <Stat label="Runs" value={String(batchRuns.length)} />
+        <Stat label="Owner" value={ownerAvatar} />
+      </div>
+
+      <div className="mt-4 text-[10px] uppercase tracking-widest text-muted-foreground">
+        Runs
+      </div>
+      <div className="mt-2 space-y-1">
+        {batchRuns.slice(0, 4).map((r) => (
+          <Link
+            key={r.id}
+            to="/runs/$runId"
+            params={{ runId: r.id }}
+            className="block truncate rounded-md px-2 py-1 font-mono text-[11px] hover:bg-accent/40"
+          >
+            {r.name}
+          </Link>
+        ))}
+      </div>
+    </Card>
   );
 }
 

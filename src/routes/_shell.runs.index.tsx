@@ -6,7 +6,18 @@ import { useLab } from "@/lib/store";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Upload, FileWarning, Loader2 } from "lucide-react";
+import { Upload, FileWarning, Loader2, Trash2 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { ChromatogramPlot } from "@/components/chromatogram-plot";
 import { ago } from "@/lib/mock-data";
 import {
@@ -25,7 +36,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
-import { createRun, createUploadUrl } from "@/lib/lab.functions";
+import { createRun, createUploadUrl, deleteRun } from "@/lib/lab.functions";
 import { getSupabase } from "@/integrations/supabase/client";
 import type { WorkerRunSummary } from "@/workers/mzml.worker";
 
@@ -49,6 +60,8 @@ function fmtBytes(n: number) {
 function RunsList() {
   const { runs, methods, columns } = useLab();
   const upsertRunLocal = useLab((s) => s.upsertRunLocal);
+  const removeRunLocal = useLab((s) => s.removeRunLocal);
+  const deleteRunFn = useServerFn(deleteRun);
   const [dragOver, setDragOver] = useState(false);
   const [methodId, setMethodId] = useState<string>("");
   const [columnId, setColumnId] = useState<string>("");
@@ -298,6 +311,7 @@ function RunsList() {
               <TableHead className="text-[10px] uppercase tracking-wider">Peaks</TableHead>
               <TableHead className="text-[10px] uppercase tracking-wider">Size</TableHead>
               <TableHead className="text-[10px] uppercase tracking-wider">Acquired</TableHead>
+              <TableHead className="w-10"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -324,6 +338,46 @@ function RunsList() {
                   <TableCell className="font-mono text-muted-foreground">{r.fileSize}</TableCell>
                   <TableCell className="font-mono text-[11px] text-muted-foreground">
                     {ago(r.acquiredAt)}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                          aria-label={`Delete ${r.name}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete run?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This permanently removes <span className="font-mono">{r.name}</span>,
+                            its peaks, and any uploaded raw / scan files. This can't be undone.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={async () => {
+                              try {
+                                await deleteRunFn({ data: { runId: r.id } });
+                                removeRunLocal(r.id);
+                                qc.invalidateQueries({ queryKey: ["lab"] });
+                                toast.success(`Deleted ${r.name}`);
+                              } catch (e: any) {
+                                toast.error(e?.message ?? "Failed to delete run");
+                              }
+                            }}
+                          >
+                            Delete
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </TableCell>
                 </TableRow>
               );
