@@ -1,33 +1,49 @@
 ## Goal
-Allow users to delete runs and batches they own.
+Fix the broken peak→EIC interaction and let the user manage their own compound library (add / edit / delete) with both positive- and negative-mode adducts.
 
-## Server functions (`src/lib/lab.functions.ts`)
-- `deleteRun({ runId })` — auth-protected. Verifies the run belongs to `userId` (or user is admin), removes the storage objects (`file_path`, `scans_blob_path` from `raw-runs` bucket, ignoring missing-file errors), then deletes the row in `runs`. Cascading FK deletes child `peaks` / `annotations`.
-- `deleteBatch({ batchId, deleteRuns })` — auth-protected. If `deleteRuns` is true, fetches all runs in the batch and deletes them via the same path; otherwise nullifies `runs.batch_id` and removes the batch row.
+## A. Peak click → EIC
 
-## Store (`src/lib/store.ts`)
-- Add `removeRunLocal(id)` and `removeBatchLocal(id)` actions.
+The peak table sets `selectedId` correctly, but `eicMz` falls back to `selected.mz`. When the parser didn't attach an m/z to a peak (common for some mzXML files), the UI still shows "Select a peak from the table below" — looks like the click was ignored.
 
-## UI
+Changes in `src/routes/_shell.runs.$runId.tsx`:
+- Show the selected peak's RT in the EIC card header as soon as a row is clicked, regardless of m/z availability.
+- Replace the "Select a peak…" placeholder with a context-aware message:
+  - no peak selected and no custom m/z → current message
+  - peak selected but `selected.mz == null` → "Selected peak at RT {x} has no associated m/z. Type a custom m/z above (or pick a compound from the library) to extract its EIC."
+- Auto-fill the `customMz` input with the strongest m/z from the selected peak window when available; otherwise leave blank.
+- Scroll the EIC card into view when a peak is clicked (smooth `scrollIntoView`) so users see the click registered.
 
-### Runs list (`/runs`)
-- Add a trash icon per row → opens an `AlertDialog` (shadcn) confirming the run name.
-- On confirm: call `deleteRun`, `removeRunLocal`, `toast.success`.
+## B. Compound library CRUD
 
-### Run detail (`/runs/$runId`)
-- Add a "Delete run" `Button` (destructive, outline) in the top-right action bar next to "Peaks CSV". Same confirm dialog. On success → navigate back to `/runs`.
+### Server (`src/lib/lab.functions.ts`)
+- New `updateAnalyte({ id, name, formula, mz, rtExpected })` — ownership-checked: only rows where `created_by = userId` can be modified (system-seeded compounds remain read-only).
+- New `deleteAnalyte({ id })` — same ownership rule.
+- Loosen `addAnalyte` so `mz` is optional; if omitted, server computes m/z from `formula` using `mzFromFormula(formula, "[M+H]+")` and rejects if formula is unparseable.
 
-### Batches list (`/batches`)
-- Add a trash icon per batch row → confirm dialog with a checkbox: "Also delete the N runs in this batch". Calls `deleteBatch` with `deleteRuns` flag.
+### Store (`src/lib/store.ts`)
+- Add `updateAnalyteLocal(a)` and `removeAnalyteLocal(id)`.
 
-## Files touched
-- edit `src/lib/lab.functions.ts` (add 2 server fns)
-- edit `src/lib/store.ts` (add 2 local removers)
-- edit `src/routes/_shell.runs.index.tsx` (row delete)
-- edit `src/routes/_shell.runs.$runId.tsx` (header delete button)
-- edit `src/routes/_shell.batches.tsx` (row delete with cascade option)
+### Library page (`src/routes/_shell.analytes.tsx`)
+The current page is a heatmap-only view. Wrap it in tabs and add a **Library** tab containing:
+- Table: name, formula, neutral mass, [M+H]+ m/z, [M-H]- m/z, expected RT, source badge (system/user), edit + delete actions (delete/edit only enabled for user-owned rows).
+- "Add compound" form (also reused for Edit dialog):
+  - inputs: name, molecular formula, expected RT, optional manual m/z override
+  - live preview of monoisotopic mass and computed m/z for both `[M+H]+` and `[M-H]-`
+  - Save button disabled until formula parses (or manual m/z provided)
+
+Keep the existing matrix view as the second tab so the page stays useful.
+
+## C. Negative-mode adducts in Auto-XIC
+- Already partially supported via `ADDUCTS_NEG`. Add a **Mode** override toggle (Positive / Negative) in the Auto-XIC header so a user can audit a run in either polarity. Default still follows `run.ionMode`. The adduct dropdown switches its options based on the toggle.
+- Add `[M+FA-H]-` (formate) is already there; nothing else to add chem-side.
 
 ## Out of scope
-- Soft-delete / undo
-- Bulk multi-select delete (can add later if needed)
-- Permission UI changes (admins implicitly can delete anything via the same fn)
+- Per-analyte adduct override (one global adduct continues to apply to all selected analytes).
+- Bulk CSV import / export of analytes.
+- Re-extracting `peak.mz` from raw scans for older runs whose parser left it null (parser-side change).
+
+## Files
+- edit `src/lib/lab.functions.ts` (add update/delete analyte, loosen add)
+- edit `src/lib/store.ts` (two new local actions)
+- edit `src/routes/_shell.analytes.tsx` (add Library tab + CRUD UI, keep matrix)
+- edit `src/routes/_shell.runs.$runId.tsx` (better peak-click feedback, mode override toggle)
