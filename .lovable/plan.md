@@ -1,105 +1,103 @@
+# Plan — Phase 2 finish + Phase 3, with EIC support
 
-# Phase 2 — Real backend on your Supabase
-
-Goal: replace the in-memory Zustand mocks with a real Supabase backend (your instance), add email/password + Google auth, three roles (admin / developer / reviewer) with RLS, and a Web Worker mzML parser that persists `RunSummary` + raw file to Storage.
-
----
-
-## What I need from you
-
-### 1. Credentials (I'll request via the secrets tool when you approve)
-Runtime secrets to add to this project:
-- `SUPABASE_URL` — your project URL (e.g. `https://xxxx.supabase.co`)
-- `SUPABASE_PUBLISHABLE_KEY` — anon/publishable key
-- `SUPABASE_SERVICE_ROLE_KEY` — service role key (server-only, never exposed to browser)
-
-Also build-time/client mirrors (same values, different names):
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_PUBLISHABLE_KEY`
-- `VITE_SUPABASE_PROJECT_ID`
-
-### 2. SQL to run in your Supabase SQL editor
-A single migration script I'll hand you containing:
-- `app_role` enum (`admin`, `developer`, `reviewer`)
-- `user_roles` table + `has_role(uuid, app_role)` SECURITY DEFINER function
-- `profiles` table + auto-create trigger on `auth.users` insert
-- Domain tables: `columns`, `column_events`, `methods`, `method_revisions`, `batches`, `runs`, `peaks`, `analytes`, `annotations`, `reports`
-- RLS enabled on every table with policies:
-  - developer: full CRUD on own rows
-  - reviewer: read-all + insert annotations only
-  - admin: full access via `has_role(auth.uid(), 'admin')`
-- Storage bucket `raw-runs` (private) with RLS by uploader
-- Seed inserts for the analyte library
-
-### 3. Supabase dashboard config (you do this)
-- Authentication → Providers → enable Email, enable Google (paste OAuth client/secret)
-- Authentication → URL Configuration → add this project's preview + published URLs to redirect allowlist
-- Storage → confirm `raw-runs` bucket created by the SQL
+User-driven addition: when a user clicks a peak on a run, they must see the **Extracted Ion Chromatogram (EIC)** for that peak's m/z, not just TIC/BPC. mzML/mzXML files can contain dozens of overlapping peaks — EIC is essential to disambiguate co-eluting metabolites.
 
 ---
 
-## What I'll build
+## Phase 2 — remaining work
 
-### A. Supabase client wiring
-- `src/integrations/supabase/client.ts` — browser client (publishable key, session persistence)
-- `src/integrations/supabase/client.server.ts` — admin client (service role, server-only)
-- `src/integrations/supabase/auth-middleware.ts` — `requireSupabaseAuth` for server fns
-- Generated `database.types.ts` from the schema
+### 1. mzML worker → richer RunSummary (EIC-ready)
+Extend `src/workers/mzml.worker.ts` so the posted summary carries per-scan m/z arrays, not just trace + peak list:
 
-### B. Auth UI + guards
-- `/login`, `/signup`, `/reset-password`, `/auth/callback` (Google OAuth)
-- Move all current `_shell.*` routes under `_authenticated/_shell.*` — TanStack pathless layout with `beforeLoad` redirect to `/login`
-- Admin-only sub-layout `_authenticated/_admin/` for `/admin`
-- Topbar user menu: real session, sign-out, role badge
+```
+RunSummary {
+  trace:  { x:number[], tic:number[], bpc:number[] }
+  scans:  { rt:number, mz:Float32Array, intensity:Float32Array }[]   // centroided
+  peaks:  { rt, area, height, fwhm, sn, mz, mzWindow:[lo,hi] }[]
+  ionMode, format, msLevel
+}
+```
 
-### C. Server functions (`src/lib/*.functions.ts`)
-- `methods`: list / get / upsert / compare / revisions
-- `columns`: list / get / upsert / logEvent
-- `runs`: list / get / createFromUpload(summary, fileRef) / annotatePeak
-- `batches`: list / linkRun
-- `analytes`: list / suggestMatches(peaks)
-- `admin`: listUsers / setRole (admin-gated via `has_role`)
-- All protected with `requireSupabaseAuth`; admin ones additionally check role
+- Add a centroid pass per MS1 scan; drop noise below `5 × baselineMAD`.
+- Compute each detected peak's apex m/z and a ±10 ppm window stored on the peak row.
+- Memory cap: if total scan points > 5M, downsample by RT binning and warn in the summary (`truncated:true`).
 
-### D. Replace Zustand reads with TanStack Query
-- Each page swaps `useLab()` for `useQuery({ queryFn: useServerFn(getX) })`
-- Mutations use `useMutation` + cache invalidation
-- Keep the mock generator only for the demo/seed script
+### 2. EIC extractor (client + server)
+- **Client helper** `src/lib/eic.ts`: `extractEIC(scans, mz, ppm=10) → { x:number[], y:number[] }`. Used immediately after parse so the user sees an EIC without a round-trip.
+- **Server fn** `getRunEIC({ runId, mz, ppm })` in `src/lib/runs.functions.ts`: rebuilds the EIC from persisted scan data when the user re-opens a saved run. Backed by a new `run_scans` table (see schema delta below) or a `scans.parquet` blob in the `raw-runs` bucket — pick parquet to avoid bloating Postgres.
 
-### E. mzML parser (Web Worker)
-- `src/workers/mzml.worker.ts` — `pako` + `fast-xml-parser`, extracts TIC + per-scan m/z, simple centroid peak picker, FWHM/SN
-- Run page: drag-and-drop → worker → `RunSummary` posted back → upload raw file to `raw-runs` bucket via signed upload URL → `createRunFromUpload` server fn writes `runs` + `peaks` rows
-- `.raw`/`.wiff`/`.d` accepted for storage but show "convert to mzML for chromatogram extraction" notice
+### 3. Schema delta (one extra migration to run)
+```sql
+alter table peaks add column mz_low double precision;
+alter table peaks add column mz_high double precision;
+alter table runs add column scans_blob_path text;   -- key in raw-runs bucket
+alter table runs add column ms_level smallint default 1;
+```
+No new tables; scans live as a compressed binary blob alongside the raw file.
 
-### F. Roles enforcement
-- `has_role(auth.uid(), 'admin')` used in RLS and in admin server fns
-- Reviewer UI: edit buttons hidden, annotate buttons enabled
-- Developer UI: full CRUD on owned rows
+### 4. Upload pipeline (`/runs` page)
+1. Drag-and-drop file → worker parses → returns `RunSummary` + `scansBlob (Uint8Array, gzipped Float32 pairs)`.
+2. Client requests two signed upload URLs from `getRunUploadUrls` server fn (raw + scans).
+3. Client PUTs both blobs directly to Storage.
+4. Client calls `createRunFromUpload({ summary, rawPath, scansPath, methodId, columnId, batchId? })` which writes `runs` + `peaks` rows.
+5. Toast + redirect to `/runs/$runId`.
+
+### 5. Run detail page — EIC UI
+Rebuild `src/routes/_shell.runs.$runId.tsx` (now `_authenticated/_shell.runs.$runId.tsx`):
+- Top chart: TIC + BPC overlay (toggleable).
+- **Bottom chart: EIC for the selected peak** — shown automatically when a peak row is clicked, m/z + ppm window displayed in the header, ppm slider (5/10/20/50).
+- "Add custom EIC" input: user types m/z, gets an EIC trace overlay (color-coded). Stored in component state, not persisted unless they hit "Save annotation".
+- Peak table column: `m/z (± ppm)` is now clickable → triggers EIC.
+- Suggested analytes panel: filter by `|rtExpected − peak.rt| < 0.3 min` AND `|monoisotopic − peak.mz| < 10 ppm`.
+
+### 6. Phase-2 cleanup still owed from prior turn
+- Replace remaining `useLab()` reads on `/runs`, `/reports`, `/admin` with `useServerFn` + `useQuery`.
+- Move all `_shell.*` route files under `_authenticated/` so loaders are guard-safe.
+- Delete `src/lib/mock-data.ts` imports from production code (keep file for the seed script only).
 
 ---
 
-## Out of scope for Phase 2 (saved for Phase 3)
-- PDF report generation
-- CSV exports beyond peak tables
-- Automated batch annotation matching
-- Sharing links
+## Phase 3
+
+### A. PDF reports (`/reports`)
+- New server fn `generateReport({ runIds, templateId })` builds JSON payload, returns `reportId`.
+- Client renders to PDF with `@react-pdf/renderer` (Worker-safe, pure JS) — runs in browser, uploads PDF to `reports` bucket, writes `reports` row.
+- Templates: "Single run summary", "Batch comparison", "Method validation".
+- Each report page: method header, column header, TIC, peak table, per-peak EIC thumbnail, annotations.
+
+### B. CSV / Excel exports
+- Add `Download ▾` menu on `/runs/$runId`, `/analytes`, `/batches/$id`:
+  - Peaks CSV, Peaks XLSX (`xlsx` lib), EIC CSV for selected peak, full scan table (gz).
+- Server fn `exportBatchPeaks(batchId)` streams a single CSV across all runs.
+
+### C. Automated batch annotation matching
+- Server fn `autoAnnotateBatch(batchId)`: for each run, for each peak, find best analyte by combined score `w1·rtΔ + w2·mzPpmΔ`, write `annotations` row when score < threshold. Returns counts.
+- UI button on batch detail; shows progress + diff before commit.
+
+### D. Sharing links
+- `shared_links` table: `id, run_id|report_id, token, expires_at, created_by`.
+- Server fns: `createShareLink`, `revokeShareLink`.
+- Public route `/share/$token` (under `api/public/` for the loader fetch) renders a read-only run/report view; no auth.
+
+### E. Admin niceties
+- Audit log table `audit_events` + trigger on `runs`, `methods`, `annotations`.
+- `/admin/audit` page with filter by user/date/table.
 
 ---
+
+## Order of execution
+1. Worker EIC upgrade + schema delta migration (I'll hand you the SQL).
+2. Upload pipeline + run detail EIC UI.
+3. Finish migrating remaining pages off Zustand into `_authenticated/`.
+4. Phase 3 A → B → C → D → E in that order.
+
+I'll pause once after step 1 for you to run the schema-delta SQL, then run straight through.
 
 ## Tech notes
-- TanStack Start `createServerFn` for everything; no Supabase Edge Functions
-- Loaders stay isomorphic — protected fetches done in components via `useServerFn` + `useQuery`, OR inside `_authenticated/` loaders only
-- Service role key only ever read inside `*.server.ts` modules
-- File uploads: signed upload URL flow so raw file bytes never pass through the Worker
+- All chromatogram math (EIC extraction, centroiding) stays in the browser worker — keeps the Cloudflare Worker SSR runtime free of binary deps.
+- `@react-pdf/renderer` is Worker-incompatible for SSR but fine in the browser; PDFs are generated client-side, uploaded as blobs.
+- Scans blob format: gzipped concatenation of `[rt:f32][n:u32][mz:f32×n][int:f32×n]` per scan — small, fast to slice for EIC rebuilds.
 
----
-
-## Order of execution (once you approve and add secrets)
-1. Add Supabase clients + types, hand you the SQL migration to run
-2. Wait for you to confirm SQL ran cleanly
-3. Build auth pages + route guards
-4. Migrate routes under `_authenticated/`, swap stores to server fns page-by-page (dashboard → methods → columns → batches → analytes → admin)
-5. Wire mzML worker + upload flow on `/runs`
-6. Smoke-test as each role
-
-Approve and I'll request the secrets and send you the SQL in the next turn.
+## What I need from you
+- Run the schema-delta SQL I'll send after you approve.
+- Nothing else; secrets and base schema are already in place.
