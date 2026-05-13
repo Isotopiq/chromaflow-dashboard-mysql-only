@@ -90,6 +90,8 @@ export type Analyte = {
   mz: number;
   rtExpected: number;
   class: string;
+  createdBy?: string | null;
+  librarySource?: string | null;
 };
 
 export type Batch = {
