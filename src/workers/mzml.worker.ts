@@ -282,16 +282,27 @@ async function parseMzML(text: string): Promise<{ summary: WorkerRunSummary; sca
         ionDetected = true;
       }
       const peaks = s?.peaks;
-      const peaksNode = Array.isArray(peaks) ? peaks[0] : peaks;
-      const raw =
-        typeof peaksNode === "string" ? peaksNode : (peaksNode?.["#text"] ?? "");
-      const precision: 32 | 64 = (parseInt(peaksNode?.["@_precision"] ?? "32", 10) === 64 ? 64 : 32) as 32 | 64;
-      const compressed = (peaksNode?.["@_compressionType"] ?? "none") !== "none";
-      // mzXML defaults to network byte order (BIG-endian). Only "little" means LE.
-      const byteOrder = String(peaksNode?.["@_byteOrder"] ?? "network").toLowerCase();
-      const littleEndian = byteOrder === "little";
-      if (raw) {
-        const flat = b64ToFloat(raw, precision, compressed, littleEndian);
+      const peaksList = Array.isArray(peaks) ? peaks : peaks ? [peaks] : [];
+      const readNode = (node: any) => {
+        const raw = typeof node === "string" ? node : (node?.["#text"] ?? "");
+        const precision: 32 | 64 = (parseInt(node?.["@_precision"] ?? "32", 10) === 64 ? 64 : 32) as 32 | 64;
+        const compressed = (node?.["@_compressionType"] ?? "none") !== "none";
+        // mzXML defaults to network byte order (BIG-endian). Only "little" means LE.
+        const byteOrder = String(node?.["@_byteOrder"] ?? "network").toLowerCase();
+        const littleEndian = byteOrder === "little";
+        return raw ? b64ToFloat(raw, precision, compressed, littleEndian) : new Float32Array(0);
+      };
+
+      // Two layouts exist:
+      //   A) one <peaks> with interleaved m/z-int pairs (default)
+      //   B) two <peaks> with contentType="m/z" and contentType="intensity"
+      const splitMz = peaksList.find((n: any) => /m\/?z/i.test(n?.["@_contentType"] ?? ""));
+      const splitInt = peaksList.find((n: any) => /intensity/i.test(n?.["@_contentType"] ?? ""));
+      if (splitMz && splitInt) {
+        mzArr = readNode(splitMz);
+        intArr = readNode(splitInt);
+      } else if (peaksList.length > 0) {
+        const flat = readNode(peaksList[0]);
         const half = flat.length >>> 1;
         mzArr = new Float32Array(half);
         intArr = new Float32Array(half);
