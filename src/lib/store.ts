@@ -97,6 +97,13 @@ export const useLab = create<State>((set) => ({
           : r,
       ),
     })),
+  removeRunLocal: (id) =>
+    set((s) => ({ runs: s.runs.filter((r) => r.id !== id) })),
+  removeBatchLocal: (id) =>
+    set((s) => ({
+      batches: s.batches.filter((b) => b.id !== id),
+      runs: s.runs.map((r) => (r.batchId === id ? { ...r, batchId: undefined } : r)),
+    })),
 }));
 
 // Backwards-compat helpers used by older pages — they map to *Local + server fn.
