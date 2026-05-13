@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { mzFromFormula } from "./chem";
 import {
   fetchAllForUser,
   getCurrentUserProfile,
@@ -161,7 +162,7 @@ export const upsertBatch = createServerFn({ method: "POST" })
 const AnalyteInput = z.object({
   name: z.string().min(1).max(200),
   formula: z.string().max(100).default(""),
-  mz: z.number().min(0).max(10000),
+  mz: z.number().min(0).max(10000).optional().nullable(),
   rtExpected: z.number().min(0).max(120),
 });
 export const addAnalyte = createServerFn({ method: "POST" })
@@ -169,12 +170,20 @@ export const addAnalyte = createServerFn({ method: "POST" })
   .inputValidator((d) => AnalyteInput.parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context as any;
+    let mz = data.mz ?? null;
+    if (mz == null || mz <= 0) {
+      const computed = data.formula ? mzFromFormula(data.formula, "[M+H]+") : null;
+      if (computed == null) {
+        throw new Error("Provide a valid molecular formula or a manual m/z.");
+      }
+      mz = computed;
+    }
     const { data: saved, error } = await supabase
       .from("analytes")
       .insert({
         name: data.name,
         formula: data.formula,
-        mz: data.mz,
+        mz,
         rt_expected: data.rtExpected,
         library_source: "user",
         created_by: userId,
@@ -183,6 +192,65 @@ export const addAnalyte = createServerFn({ method: "POST" })
       .single();
     if (error) throw error;
     return mapAnalyte(saved);
+  });
+
+const UpdateAnalyteInput = AnalyteInput.extend({ id: z.string() });
+export const updateAnalyte = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => UpdateAnalyteInput.parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context as any;
+    const { data: existing, error: fErr } = await supabase
+      .from("analytes")
+      .select("id, created_by, library_source")
+      .eq("id", data.id)
+      .maybeSingle();
+    if (fErr) throw fErr;
+    if (!existing) throw new Error("Compound not found.");
+    if (existing.library_source === "system" || existing.created_by !== userId) {
+      throw new Error("You can only edit compounds you created.");
+    }
+    let mz = data.mz ?? null;
+    if (mz == null || mz <= 0) {
+      const computed = data.formula ? mzFromFormula(data.formula, "[M+H]+") : null;
+      if (computed == null) {
+        throw new Error("Provide a valid molecular formula or a manual m/z.");
+      }
+      mz = computed;
+    }
+    const { data: saved, error } = await supabase
+      .from("analytes")
+      .update({
+        name: data.name,
+        formula: data.formula,
+        mz,
+        rt_expected: data.rtExpected,
+      })
+      .eq("id", data.id)
+      .select()
+      .single();
+    if (error) throw error;
+    return mapAnalyte(saved);
+  });
+
+export const deleteAnalyte = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ id: z.string() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context as any;
+    const { data: existing, error: fErr } = await supabase
+      .from("analytes")
+      .select("id, created_by, library_source")
+      .eq("id", data.id)
+      .maybeSingle();
+    if (fErr) throw fErr;
+    if (!existing) return { ok: true, missing: true };
+    if (existing.library_source === "system" || existing.created_by !== userId) {
+      throw new Error("You can only delete compounds you created.");
+    }
+    const { error } = await supabase.from("analytes").delete().eq("id", data.id);
+    if (error) throw error;
+    return { ok: true };
   });
 
 // ---- Runs (file already uploaded to storage; persist summary + peaks) ----

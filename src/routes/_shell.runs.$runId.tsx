@@ -1,5 +1,5 @@
 import { createFileRoute, Link, notFound, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { useLab, useAnnotatePeak } from "@/lib/store";
@@ -94,9 +94,26 @@ function RunDetail() {
   }, [eicQuery.data, eicMz, ppm]);
 
   // ---- Auto-XIC from analyte library ----
-  const adductOptions: Adduct[] = run.ionMode === "negative" ? ADDUCTS_NEG : ADDUCTS_POS;
-  const [adduct, setAdduct] = useState<Adduct>(defaultAdduct(run.ionMode ?? "positive"));
+  const [polarity, setPolarity] = useState<"positive" | "negative">(
+    run.ionMode === "negative" ? "negative" : "positive",
+  );
+  const adductOptions: Adduct[] = polarity === "negative" ? ADDUCTS_NEG : ADDUCTS_POS;
+  const [adduct, setAdduct] = useState<Adduct>(defaultAdduct(polarity));
+  // Keep adduct valid when polarity flips.
+  useEffect(() => {
+    if (!adductOptions.includes(adduct)) setAdduct(defaultAdduct(polarity));
+  }, [polarity, adductOptions, adduct]);
   const [rtTol, setRtTol] = useState(1.0);
+
+  const eicCardRef = useRef<HTMLDivElement | null>(null);
+  const onSelectPeak = (id: string) => {
+    setSelected(id);
+    // Clear any prior custom m/z so the selected peak's m/z (if any) takes over.
+    setCustomMz("");
+    requestAnimationFrame(() => {
+      eicCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  };
 
   const libraryTargets = useMemo(() => {
     return analytes
@@ -279,6 +296,18 @@ function RunDetail() {
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Mode</span>
+              <Select value={polarity} onValueChange={(v) => setPolarity(v as "positive" | "negative")}>
+                <SelectTrigger className="h-8 w-28 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="positive" className="text-xs">ESI +</SelectItem>
+                  <SelectItem value="negative" className="text-xs">ESI −</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
               <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Adduct</span>
               <Select value={adduct} onValueChange={(v) => setAdduct(v as Adduct)}>
                 <SelectTrigger className="h-8 w-32 font-mono text-xs">
@@ -410,7 +439,7 @@ function RunDetail() {
         ) : null}
       </Card>
 
-      <Card className="border-border bg-card p-4">
+      <Card ref={eicCardRef} className="border-border bg-card p-4">
         <div className="mb-2 flex items-center justify-between gap-3">
           <div>
             <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
@@ -419,10 +448,15 @@ function RunDetail() {
             <div className="mt-0.5 font-mono text-xs">
               {eicMz != null ? (
                 <>m/z {eicMz.toFixed(4)} · ±{ppm} ppm
+                  {selected && <span className="text-muted-foreground"> · peak RT {selected.rt.toFixed(2)} min</span>}
                   {eicQuery.data && (
                     <span className="text-muted-foreground"> · window [{eicQuery.data.mzLow.toFixed(4)} – {eicQuery.data.mzHigh.toFixed(4)}]</span>
                   )}
                 </>
+              ) : selected ? (
+                <span className="text-muted-foreground">
+                  Selected peak at RT {selected.rt.toFixed(2)} min has no associated m/z. Type a custom m/z to extract its EIC.
+                </span>
               ) : (
                 <span className="text-muted-foreground">Click a peak to view its EIC, or enter a custom m/z below.</span>
               )}
@@ -457,7 +491,9 @@ function RunDetail() {
           </div>
         ) : eicMz == null ? (
           <div className="rounded-md border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
-            Select a peak from the table below to extract its ion chromatogram.
+            {selected
+              ? `Selected peak at RT ${selected.rt.toFixed(2)} min has no associated m/z. Enter a custom m/z above to extract its ion chromatogram, or pick a compound from the library section above.`
+              : "Select a peak from the table below to extract its ion chromatogram."}
           </div>
         ) : eicQuery.isLoading ? (
           <div className="p-6 text-center text-xs text-muted-foreground">Extracting EIC…</div>
@@ -473,7 +509,7 @@ function RunDetail() {
             <h2 className="text-sm font-semibold">Detected peaks — click any row to extract its EIC</h2>
           </div>
           <div className="p-3">
-            <PeakTable peaks={run.peaks} selectedId={selectedId} onSelect={(p) => setSelected(p.id)} />
+            <PeakTable peaks={run.peaks} selectedId={selectedId} onSelect={(p) => onSelectPeak(p.id)} />
           </div>
         </Card>
 

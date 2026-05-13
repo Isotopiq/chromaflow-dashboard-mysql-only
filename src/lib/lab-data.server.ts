@@ -117,6 +117,8 @@ export function mapAnalyte(r: any): Analyte {
     mz: Number(r.mz ?? 0),
     rtExpected: Number(r.rt_expected ?? 0),
     class: r.library_source ?? "library",
+    createdBy: r.created_by ?? null,
+    librarySource: r.library_source ?? null,
   };
 }
 
