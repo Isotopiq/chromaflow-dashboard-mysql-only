@@ -11,10 +11,19 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ShellRouteImport } from './routes/_shell'
 import { Route as ShellIndexRouteImport } from './routes/_shell.index'
+import { Route as ShellReportsRouteImport } from './routes/_shell.reports'
+import { Route as ShellOverlayRouteImport } from './routes/_shell.overlay'
+import { Route as ShellBatchesRouteImport } from './routes/_shell.batches'
+import { Route as ShellAnalytesRouteImport } from './routes/_shell.analytes'
+import { Route as ShellAdminRouteImport } from './routes/_shell.admin'
+import { Route as ShellRunsIndexRouteImport } from './routes/_shell.runs.index'
 import { Route as ShellMethodsIndexRouteImport } from './routes/_shell.methods.index'
+import { Route as ShellColumnsIndexRouteImport } from './routes/_shell.columns.index'
+import { Route as ShellRunsRunIdRouteImport } from './routes/_shell.runs.$runId'
 import { Route as ShellMethodsNewRouteImport } from './routes/_shell.methods.new'
 import { Route as ShellMethodsCompareRouteImport } from './routes/_shell.methods.compare'
 import { Route as ShellMethodsMethodIdRouteImport } from './routes/_shell.methods.$methodId'
+import { Route as ShellColumnsColumnIdRouteImport } from './routes/_shell.columns.$columnId'
 
 const ShellRoute = ShellRouteImport.update({
   id: '/_shell',
@@ -25,9 +34,49 @@ const ShellIndexRoute = ShellIndexRouteImport.update({
   path: '/',
   getParentRoute: () => ShellRoute,
 } as any)
+const ShellReportsRoute = ShellReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ShellOverlayRoute = ShellOverlayRouteImport.update({
+  id: '/overlay',
+  path: '/overlay',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ShellBatchesRoute = ShellBatchesRouteImport.update({
+  id: '/batches',
+  path: '/batches',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ShellAnalytesRoute = ShellAnalytesRouteImport.update({
+  id: '/analytes',
+  path: '/analytes',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ShellAdminRoute = ShellAdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ShellRunsIndexRoute = ShellRunsIndexRouteImport.update({
+  id: '/runs/',
+  path: '/runs/',
+  getParentRoute: () => ShellRoute,
+} as any)
 const ShellMethodsIndexRoute = ShellMethodsIndexRouteImport.update({
   id: '/methods/',
   path: '/methods/',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ShellColumnsIndexRoute = ShellColumnsIndexRouteImport.update({
+  id: '/columns/',
+  path: '/columns/',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ShellRunsRunIdRoute = ShellRunsRunIdRouteImport.update({
+  id: '/runs/$runId',
+  path: '/runs/$runId',
   getParentRoute: () => ShellRoute,
 } as any)
 const ShellMethodsNewRoute = ShellMethodsNewRouteImport.update({
@@ -45,53 +94,112 @@ const ShellMethodsMethodIdRoute = ShellMethodsMethodIdRouteImport.update({
   path: '/methods/$methodId',
   getParentRoute: () => ShellRoute,
 } as any)
+const ShellColumnsColumnIdRoute = ShellColumnsColumnIdRouteImport.update({
+  id: '/columns/$columnId',
+  path: '/columns/$columnId',
+  getParentRoute: () => ShellRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof ShellIndexRoute
+  '/admin': typeof ShellAdminRoute
+  '/analytes': typeof ShellAnalytesRoute
+  '/batches': typeof ShellBatchesRoute
+  '/overlay': typeof ShellOverlayRoute
+  '/reports': typeof ShellReportsRoute
+  '/columns/$columnId': typeof ShellColumnsColumnIdRoute
   '/methods/$methodId': typeof ShellMethodsMethodIdRoute
   '/methods/compare': typeof ShellMethodsCompareRoute
   '/methods/new': typeof ShellMethodsNewRoute
+  '/runs/$runId': typeof ShellRunsRunIdRoute
+  '/columns/': typeof ShellColumnsIndexRoute
   '/methods/': typeof ShellMethodsIndexRoute
+  '/runs/': typeof ShellRunsIndexRoute
 }
 export interface FileRoutesByTo {
+  '/admin': typeof ShellAdminRoute
+  '/analytes': typeof ShellAnalytesRoute
+  '/batches': typeof ShellBatchesRoute
+  '/overlay': typeof ShellOverlayRoute
+  '/reports': typeof ShellReportsRoute
   '/': typeof ShellIndexRoute
+  '/columns/$columnId': typeof ShellColumnsColumnIdRoute
   '/methods/$methodId': typeof ShellMethodsMethodIdRoute
   '/methods/compare': typeof ShellMethodsCompareRoute
   '/methods/new': typeof ShellMethodsNewRoute
+  '/runs/$runId': typeof ShellRunsRunIdRoute
+  '/columns': typeof ShellColumnsIndexRoute
   '/methods': typeof ShellMethodsIndexRoute
+  '/runs': typeof ShellRunsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_shell': typeof ShellRouteWithChildren
+  '/_shell/admin': typeof ShellAdminRoute
+  '/_shell/analytes': typeof ShellAnalytesRoute
+  '/_shell/batches': typeof ShellBatchesRoute
+  '/_shell/overlay': typeof ShellOverlayRoute
+  '/_shell/reports': typeof ShellReportsRoute
   '/_shell/': typeof ShellIndexRoute
+  '/_shell/columns/$columnId': typeof ShellColumnsColumnIdRoute
   '/_shell/methods/$methodId': typeof ShellMethodsMethodIdRoute
   '/_shell/methods/compare': typeof ShellMethodsCompareRoute
   '/_shell/methods/new': typeof ShellMethodsNewRoute
+  '/_shell/runs/$runId': typeof ShellRunsRunIdRoute
+  '/_shell/columns/': typeof ShellColumnsIndexRoute
   '/_shell/methods/': typeof ShellMethodsIndexRoute
+  '/_shell/runs/': typeof ShellRunsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/admin'
+    | '/analytes'
+    | '/batches'
+    | '/overlay'
+    | '/reports'
+    | '/columns/$columnId'
     | '/methods/$methodId'
     | '/methods/compare'
     | '/methods/new'
+    | '/runs/$runId'
+    | '/columns/'
     | '/methods/'
+    | '/runs/'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/admin'
+    | '/analytes'
+    | '/batches'
+    | '/overlay'
+    | '/reports'
     | '/'
+    | '/columns/$columnId'
     | '/methods/$methodId'
     | '/methods/compare'
     | '/methods/new'
+    | '/runs/$runId'
+    | '/columns'
     | '/methods'
+    | '/runs'
   id:
     | '__root__'
     | '/_shell'
+    | '/_shell/admin'
+    | '/_shell/analytes'
+    | '/_shell/batches'
+    | '/_shell/overlay'
+    | '/_shell/reports'
     | '/_shell/'
+    | '/_shell/columns/$columnId'
     | '/_shell/methods/$methodId'
     | '/_shell/methods/compare'
     | '/_shell/methods/new'
+    | '/_shell/runs/$runId'
+    | '/_shell/columns/'
     | '/_shell/methods/'
+    | '/_shell/runs/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -114,11 +222,67 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellIndexRouteImport
       parentRoute: typeof ShellRoute
     }
+    '/_shell/reports': {
+      id: '/_shell/reports'
+      path: '/reports'
+      fullPath: '/reports'
+      preLoaderRoute: typeof ShellReportsRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/overlay': {
+      id: '/_shell/overlay'
+      path: '/overlay'
+      fullPath: '/overlay'
+      preLoaderRoute: typeof ShellOverlayRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/batches': {
+      id: '/_shell/batches'
+      path: '/batches'
+      fullPath: '/batches'
+      preLoaderRoute: typeof ShellBatchesRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/analytes': {
+      id: '/_shell/analytes'
+      path: '/analytes'
+      fullPath: '/analytes'
+      preLoaderRoute: typeof ShellAnalytesRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/admin': {
+      id: '/_shell/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof ShellAdminRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/runs/': {
+      id: '/_shell/runs/'
+      path: '/runs'
+      fullPath: '/runs/'
+      preLoaderRoute: typeof ShellRunsIndexRouteImport
+      parentRoute: typeof ShellRoute
+    }
     '/_shell/methods/': {
       id: '/_shell/methods/'
       path: '/methods'
       fullPath: '/methods/'
       preLoaderRoute: typeof ShellMethodsIndexRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/columns/': {
+      id: '/_shell/columns/'
+      path: '/columns'
+      fullPath: '/columns/'
+      preLoaderRoute: typeof ShellColumnsIndexRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/runs/$runId': {
+      id: '/_shell/runs/$runId'
+      path: '/runs/$runId'
+      fullPath: '/runs/$runId'
+      preLoaderRoute: typeof ShellRunsRunIdRouteImport
       parentRoute: typeof ShellRoute
     }
     '/_shell/methods/new': {
@@ -142,23 +306,48 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellMethodsMethodIdRouteImport
       parentRoute: typeof ShellRoute
     }
+    '/_shell/columns/$columnId': {
+      id: '/_shell/columns/$columnId'
+      path: '/columns/$columnId'
+      fullPath: '/columns/$columnId'
+      preLoaderRoute: typeof ShellColumnsColumnIdRouteImport
+      parentRoute: typeof ShellRoute
+    }
   }
 }
 
 interface ShellRouteChildren {
+  ShellAdminRoute: typeof ShellAdminRoute
+  ShellAnalytesRoute: typeof ShellAnalytesRoute
+  ShellBatchesRoute: typeof ShellBatchesRoute
+  ShellOverlayRoute: typeof ShellOverlayRoute
+  ShellReportsRoute: typeof ShellReportsRoute
   ShellIndexRoute: typeof ShellIndexRoute
+  ShellColumnsColumnIdRoute: typeof ShellColumnsColumnIdRoute
   ShellMethodsMethodIdRoute: typeof ShellMethodsMethodIdRoute
   ShellMethodsCompareRoute: typeof ShellMethodsCompareRoute
   ShellMethodsNewRoute: typeof ShellMethodsNewRoute
+  ShellRunsRunIdRoute: typeof ShellRunsRunIdRoute
+  ShellColumnsIndexRoute: typeof ShellColumnsIndexRoute
   ShellMethodsIndexRoute: typeof ShellMethodsIndexRoute
+  ShellRunsIndexRoute: typeof ShellRunsIndexRoute
 }
 
 const ShellRouteChildren: ShellRouteChildren = {
+  ShellAdminRoute: ShellAdminRoute,
+  ShellAnalytesRoute: ShellAnalytesRoute,
+  ShellBatchesRoute: ShellBatchesRoute,
+  ShellOverlayRoute: ShellOverlayRoute,
+  ShellReportsRoute: ShellReportsRoute,
   ShellIndexRoute: ShellIndexRoute,
+  ShellColumnsColumnIdRoute: ShellColumnsColumnIdRoute,
   ShellMethodsMethodIdRoute: ShellMethodsMethodIdRoute,
   ShellMethodsCompareRoute: ShellMethodsCompareRoute,
   ShellMethodsNewRoute: ShellMethodsNewRoute,
+  ShellRunsRunIdRoute: ShellRunsRunIdRoute,
+  ShellColumnsIndexRoute: ShellColumnsIndexRoute,
   ShellMethodsIndexRoute: ShellMethodsIndexRoute,
+  ShellRunsIndexRoute: ShellRunsIndexRoute,
 }
 
 const ShellRouteWithChildren = ShellRoute._addFileChildren(ShellRouteChildren)
