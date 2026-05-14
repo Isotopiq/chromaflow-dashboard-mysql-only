@@ -35,7 +35,7 @@ type State = {
   updateAnalyteLocal: (a: Analyte) => void;
   removeAnalyteLocal: (id: string) => void;
   annotatePeakLocal: (runId: string, peakId: string, label: string, analyteId?: string) => void;
-  addPeakLocal: (runId: string, peak: Analyte extends never ? never : import("./mock-data").Peak) => void;
+  addPeakLocal: (runId: string, peak: import("./mock-data").Peak) => void;
   removeRunLocal: (id: string) => void;
   removeBatchLocal: (id: string) => void;
 };
