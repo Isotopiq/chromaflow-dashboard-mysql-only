@@ -96,7 +96,7 @@ function Analytes() {
 // ---------------------------------------------------------------------------
 
 function LibraryTab() {
-  const { analytes } = useLab();
+  const { analytes, currentUser } = useLab();
   const addLocal = useLab((s) => s.addAnalyteLocal);
   const updateLocal = useLab((s) => s.updateAnalyteLocal);
   const removeLocal = useLab((s) => s.removeAnalyteLocal);
@@ -124,7 +124,7 @@ function LibraryTab() {
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <div className="text-xs text-muted-foreground">
-          System-seeded compounds are read-only. Add your own to make them editable.
+          Add compounds, edit library entries, or open a compound to compare it across columns.
         </div>
         <Dialog open={creating} onOpenChange={setCreating}>
           <DialogTrigger asChild>
@@ -172,6 +172,7 @@ function LibraryTab() {
                 const mzPos = a.formula ? mzFromFormula(a.formula, "[M+H]+") : null;
                 const mzNeg = a.formula ? mzFromFormula(a.formula, "[M-H]-") : null;
                 const isUser = a.librarySource === "user";
+                const canManage = !a.createdBy || a.createdBy === currentUser.id || isUser;
                 return (
                   <TableRow key={a.id} className="text-xs">
                     <TableCell className="font-medium">
@@ -214,7 +215,7 @@ function LibraryTab() {
                               variant="ghost"
                               size="icon"
                               className="h-7 w-7"
-                              disabled={!isUser}
+                              disabled={!canManage}
                               aria-label={`Edit ${a.name}`}
                             >
                               <Pencil className="h-3.5 w-3.5" />
@@ -245,7 +246,7 @@ function LibraryTab() {
                               variant="ghost"
                               size="icon"
                               className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                              disabled={!isUser}
+                              disabled={!canManage}
                               aria-label={`Delete ${a.name}`}
                             >
                               <Trash2 className="h-3.5 w-3.5" />
