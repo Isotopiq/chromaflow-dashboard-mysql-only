@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLab } from "@/lib/store";
@@ -136,11 +136,16 @@ function LibraryTab() {
             title="Add compound"
             initial={null}
             onSubmit={async (vals) => {
-              const saved = await addFn({ data: vals });
-              addLocal(saved);
-              qc.invalidateQueries({ queryKey: ["lab"] });
-              toast.success(`Added ${saved.name}`);
-              setCreating(false);
+              try {
+                const saved = await addFn({ data: vals });
+                addLocal(saved);
+                qc.invalidateQueries({ queryKey: ["lab"] });
+                toast.success(`Added ${saved.name}`);
+                setCreating(false);
+              } catch (e: any) {
+                toast.error(e?.message ?? "Failed to add compound");
+                throw e;
+              }
             }}
           />
         </Dialog>
@@ -169,7 +174,15 @@ function LibraryTab() {
                 const isUser = a.librarySource === "user";
                 return (
                   <TableRow key={a.id} className="text-xs">
-                    <TableCell className="font-medium">{a.name}</TableCell>
+                    <TableCell className="font-medium">
+                      <Link
+                        to="/analytes/$analyteId"
+                        params={{ analyteId: a.id }}
+                        className="hover:underline hover:text-primary"
+                      >
+                        {a.name}
+                      </Link>
+                    </TableCell>
                     <TableCell className="font-mono text-muted-foreground">
                       {a.formula || "—"}
                     </TableCell>
@@ -212,11 +225,16 @@ function LibraryTab() {
                               title={`Edit ${a.name}`}
                               initial={a}
                               onSubmit={async (vals) => {
-                                const saved = await updateFn({ data: { ...vals, id: a.id } });
-                                updateLocal(saved);
-                                qc.invalidateQueries({ queryKey: ["lab"] });
-                                toast.success(`Updated ${saved.name}`);
-                                setEditing(null);
+                                try {
+                                  const saved = await updateFn({ data: { ...vals, id: a.id } });
+                                  updateLocal(saved);
+                                  qc.invalidateQueries({ queryKey: ["lab"] });
+                                  toast.success(`Updated ${saved.name}`);
+                                  setEditing(null);
+                                } catch (e: any) {
+                                  toast.error(e?.message ?? "Failed to update compound");
+                                  throw e;
+                                }
                               }}
                             />
                           )}
@@ -410,7 +428,18 @@ function CompoundFormDialog({
           </div>
         </div>
       </div>
-      <DialogFooter>
+      <DialogFooter className="flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-end">
+        {!canSave && !busy && (
+          <div className="text-[10px] text-muted-foreground sm:mr-auto">
+            {!name.trim()
+              ? "Name required."
+              : !Number.isFinite(rtNum) || rtNum < 0 || rtNum > 120
+                ? "Expected RT must be 0–120 min."
+                : mzPos == null && !hasMz
+                  ? "Provide a valid molecular formula or a manual m/z."
+                  : ""}
+          </div>
+        )}
         <Button onClick={submit} disabled={!canSave}>
           {busy ? "Saving…" : "Save"}
         </Button>

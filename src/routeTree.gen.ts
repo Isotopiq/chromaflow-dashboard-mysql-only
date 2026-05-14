@@ -29,6 +29,7 @@ import { Route as ShellMethodsNewRouteImport } from './routes/_shell.methods.new
 import { Route as ShellMethodsCompareRouteImport } from './routes/_shell.methods.compare'
 import { Route as ShellMethodsMethodIdRouteImport } from './routes/_shell.methods.$methodId'
 import { Route as ShellColumnsColumnIdRouteImport } from './routes/_shell.columns.$columnId'
+import { Route as ShellAnalytesAnalyteIdRouteImport } from './routes/_shell.analytes.$analyteId'
 
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
@@ -129,6 +130,11 @@ const ShellColumnsColumnIdRoute = ShellColumnsColumnIdRouteImport.update({
   path: '/columns/$columnId',
   getParentRoute: () => ShellRoute,
 } as any)
+const ShellAnalytesAnalyteIdRoute = ShellAnalytesAnalyteIdRouteImport.update({
+  id: '/$analyteId',
+  path: '/$analyteId',
+  getParentRoute: () => ShellAnalytesRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof ShellIndexRoute
@@ -136,11 +142,12 @@ export interface FileRoutesByFullPath {
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/admin': typeof ShellAdminRoute
-  '/analytes': typeof ShellAnalytesRoute
+  '/analytes': typeof ShellAnalytesRouteWithChildren
   '/batches': typeof ShellBatchesRoute
   '/overlay': typeof ShellOverlayRoute
   '/reports': typeof ShellReportsRoute
   '/shared/$token': typeof SharedTokenRoute
+  '/analytes/$analyteId': typeof ShellAnalytesAnalyteIdRoute
   '/columns/$columnId': typeof ShellColumnsColumnIdRoute
   '/methods/$methodId': typeof ShellMethodsMethodIdRoute
   '/methods/compare': typeof ShellMethodsCompareRoute
@@ -156,12 +163,13 @@ export interface FileRoutesByTo {
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/admin': typeof ShellAdminRoute
-  '/analytes': typeof ShellAnalytesRoute
+  '/analytes': typeof ShellAnalytesRouteWithChildren
   '/batches': typeof ShellBatchesRoute
   '/overlay': typeof ShellOverlayRoute
   '/reports': typeof ShellReportsRoute
   '/shared/$token': typeof SharedTokenRoute
   '/': typeof ShellIndexRoute
+  '/analytes/$analyteId': typeof ShellAnalytesAnalyteIdRoute
   '/columns/$columnId': typeof ShellColumnsColumnIdRoute
   '/methods/$methodId': typeof ShellMethodsMethodIdRoute
   '/methods/compare': typeof ShellMethodsCompareRoute
@@ -179,12 +187,13 @@ export interface FileRoutesById {
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/_shell/admin': typeof ShellAdminRoute
-  '/_shell/analytes': typeof ShellAnalytesRoute
+  '/_shell/analytes': typeof ShellAnalytesRouteWithChildren
   '/_shell/batches': typeof ShellBatchesRoute
   '/_shell/overlay': typeof ShellOverlayRoute
   '/_shell/reports': typeof ShellReportsRoute
   '/shared/$token': typeof SharedTokenRoute
   '/_shell/': typeof ShellIndexRoute
+  '/_shell/analytes/$analyteId': typeof ShellAnalytesAnalyteIdRoute
   '/_shell/columns/$columnId': typeof ShellColumnsColumnIdRoute
   '/_shell/methods/$methodId': typeof ShellMethodsMethodIdRoute
   '/_shell/methods/compare': typeof ShellMethodsCompareRoute
@@ -208,6 +217,7 @@ export interface FileRouteTypes {
     | '/overlay'
     | '/reports'
     | '/shared/$token'
+    | '/analytes/$analyteId'
     | '/columns/$columnId'
     | '/methods/$methodId'
     | '/methods/compare'
@@ -229,6 +239,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/shared/$token'
     | '/'
+    | '/analytes/$analyteId'
     | '/columns/$columnId'
     | '/methods/$methodId'
     | '/methods/compare'
@@ -251,6 +262,7 @@ export interface FileRouteTypes {
     | '/_shell/reports'
     | '/shared/$token'
     | '/_shell/'
+    | '/_shell/analytes/$analyteId'
     | '/_shell/columns/$columnId'
     | '/_shell/methods/$methodId'
     | '/_shell/methods/compare'
@@ -413,12 +425,31 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellColumnsColumnIdRouteImport
       parentRoute: typeof ShellRoute
     }
+    '/_shell/analytes/$analyteId': {
+      id: '/_shell/analytes/$analyteId'
+      path: '/$analyteId'
+      fullPath: '/analytes/$analyteId'
+      preLoaderRoute: typeof ShellAnalytesAnalyteIdRouteImport
+      parentRoute: typeof ShellAnalytesRoute
+    }
   }
 }
 
+interface ShellAnalytesRouteChildren {
+  ShellAnalytesAnalyteIdRoute: typeof ShellAnalytesAnalyteIdRoute
+}
+
+const ShellAnalytesRouteChildren: ShellAnalytesRouteChildren = {
+  ShellAnalytesAnalyteIdRoute: ShellAnalytesAnalyteIdRoute,
+}
+
+const ShellAnalytesRouteWithChildren = ShellAnalytesRoute._addFileChildren(
+  ShellAnalytesRouteChildren,
+)
+
 interface ShellRouteChildren {
   ShellAdminRoute: typeof ShellAdminRoute
-  ShellAnalytesRoute: typeof ShellAnalytesRoute
+  ShellAnalytesRoute: typeof ShellAnalytesRouteWithChildren
   ShellBatchesRoute: typeof ShellBatchesRoute
   ShellOverlayRoute: typeof ShellOverlayRoute
   ShellReportsRoute: typeof ShellReportsRoute
@@ -435,7 +466,7 @@ interface ShellRouteChildren {
 
 const ShellRouteChildren: ShellRouteChildren = {
   ShellAdminRoute: ShellAdminRoute,
-  ShellAnalytesRoute: ShellAnalytesRoute,
+  ShellAnalytesRoute: ShellAnalytesRouteWithChildren,
   ShellBatchesRoute: ShellBatchesRoute,
   ShellOverlayRoute: ShellOverlayRoute,
   ShellReportsRoute: ShellReportsRoute,
@@ -463,13 +494,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}

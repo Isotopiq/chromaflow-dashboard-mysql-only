@@ -4,6 +4,12 @@ import jsPDF from "jspdf";
 import html2canvas from "html2canvas-pro";
 
 export async function renderReportPdf(node: HTMLElement): Promise<Blob> {
+  const rect = node.getBoundingClientRect();
+  if (rect.width < 10 || rect.height < 10) {
+    throw new Error(
+      "Report preview is empty — pick a method that has at least one run before generating.",
+    );
+  }
   // Capture at 2x for crisp text.
   const canvas = await html2canvas(node, {
     scale: 2,
@@ -11,6 +17,9 @@ export async function renderReportPdf(node: HTMLElement): Promise<Blob> {
     useCORS: true,
     logging: false,
   });
+  if (!canvas.width || !canvas.height) {
+    throw new Error("Failed to render report preview to canvas.");
+  }
 
   const pdf = new jsPDF({ unit: "pt", format: "a4", orientation: "portrait" });
   const pageW = pdf.internal.pageSize.getWidth();

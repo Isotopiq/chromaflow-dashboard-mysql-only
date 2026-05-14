@@ -1,116 +1,77 @@
-## Goal
+## Goals
 
-Today `/methods/compare` only diffs parameters of two methods and overlays their TIC. Users can't yet answer the question: *"How does Caffeine look on the BEH C18 vs HSS T3 column, or with Method A vs Method B?"* This plan adds that capability.
+Three small fixes + one new view, then close out Phase 3.
 
-## What gets built
+1. Make Add / Edit / Delete buttons on `/analytes` reliably work.
+2. Make the Generate-PDF button on `/reports` actually produce + save a PDF.
+3. Make analyte rows on `/analytes` clickable → new `/analytes/$analyteId` page that shows that compound across every column it's been recorded on.
 
-A new tab on the Compare page (and a sibling route) that lets the user:
+## 1. Analyte add / edit / delete
 
-1. Pick one **analyte** from the library (defines target m/z + expected RT).
-2. Pick a **grouping axis**: by **column** or by **method**.
-3. Pick **2–6 runs** to overlay (auto-suggested: most recent run per column/method).
-4. See, side by side:
-   - **EIC overlay** of the analyte's m/z across the chosen runs (color-coded per group).
-   - **Per-run metrics table**: column, method, RT (observed), Δ vs expected, peak height, area, FWHM, S/N, asymmetry estimate.
-   - **Group summary chips**: mean RT, RT spread, mean area per column/method group.
-   - **Parameter strip**: small chips per run summarizing the differing method parameters (gradient %B at peak RT, flow, temp, mobile phase) so visual differences map back to conditions.
+Backend functions (`addAnalyte`, `updateAnalyte`, `deleteAnalyte`) and the dialog wiring already exist. The most likely failure modes seen in this kind of setup are:
 
-## UX
+- The Add / Edit dialog Save button is disabled because `mzPos` is `null` (no formula entered) and no manual m/z is provided — the form silently looks "broken" because the only failure cue is a greyed button.
+- Toast errors from the server fn never reach the user because the `addLocal` call only runs on success and the surrounding `try/catch` is missing on the create path (only delete has it).
+- After a server-fn error, the dialog stays open with no feedback.
 
-```text
-/methods/compare
-┌─ Tabs ─────────────────────────────────────────────┐
-│ [Method diff]  [Analyte across runs]               │
-└────────────────────────────────────────────────────┘
+Fix in `src/routes/_shell.analytes.tsx`:
 
-Analyte across runs:
-  Analyte: [Caffeine ▾]    Group by: (Column ◉ / Method ○)   ppm: [10]
-  Runs (max 6):
-    ☑ run-2025-11-12 · BEH C18 · Method A
-    ☑ run-2025-11-09 · HSS T3  · Method B
-    ☑ run-2025-10-30 · BEH C18 · Method A-v2
-    ...
+- Wrap the `onSubmit` in `CompoundFormDialog` invocations (both create and edit) so any thrown error from `addFn` / `updateFn` shows a `toast.error(...)` instead of being swallowed; keep the dialog open on failure.
+- Show an inline hint under the Save button when it is disabled, explaining which field is missing (name / RT / formula-or-mz).
+- Add `e.preventDefault()` guards inside dialog Save to ensure the click never bubbles into a parent route navigation.
+- Verify the Delete `AlertDialogAction` actually closes the dialog after success (it currently relies on default behavior; explicitly call the trigger's close so the row visibly updates).
 
-  ┌── EIC overlay (m/z 195.0877 ±10 ppm) ────────────┐
-  │  multi-line plot, legend grouped by column       │
-  └──────────────────────────────────────────────────┘
+No schema or server-fn changes.
 
-  Table:
-    Run | Column | Method | RT | ΔRT | Height | Area | FWHM | S/N
-    ... per row, sortable
+## 2. PDF report button
 
-  Group summary:
-    BEH C18 (n=2): RT 3.41 ± 0.02, area 1.2e7
-    HSS T3 (n=1):  RT 3.78,        area 9.4e6
-```
+The PDF flow (`renderReportPdf` → `createUploadUrl` → PUT to signed URL → `createReport`) is wired but fails silently in two common cases:
 
-## Implementation
+- `html2canvas-pro` throws on any element with computed `display: none` or zero size (the Past-reports card or sidebar). Right now `printRef` wraps a card with a chromatogram — if no `methodRun` exists for the selected method, the canvas is empty and jsPDF rejects with `Invalid coordinates`.
+- The `reports` storage bucket may not exist in the project; `createSignedUploadUrl` then 404s and the caller only sees a generic toast.
 
-### Files
+Fix in `src/routes/_shell.reports.tsx` and `src/lib/pdf-report.ts`:
 
-- **New**: `src/routes/_shell.methods.compare.analyte.tsx` — new route at `/methods/compare/analyte`.
-- **Edit**: `src/routes/_shell.methods.compare.tsx` — convert current single view into a Tabs container with two tabs (Method diff = existing content; Analyte across runs = new component). Keep existing functionality unchanged inside its tab.
-- **New**: `src/components/analyte-compare-panel.tsx` — the picker + plot + table component (reused by the route and the tab so it can also be embedded standalone).
-- **Edit (small)**: `src/components/app-sidebar.tsx` — add a sub-link "Analyte compare" under Methods (only if a Methods group exists; otherwise skip).
+- Disable the Generate button (with a tooltip) when there is no `method` OR no `methodRun`, so users get an explicit reason instead of a silent failure.
+- In `renderReportPdf`, guard against zero-size canvases (return a friendly Error). Bubble the error message into the Reports page toast.
+- In the Generate handler, if the `PUT` to the signed URL fails, surface the actual response text in the toast (currently only status code).
+- Add a one-time check: on first Generate, if `createUploadUrl` errors with "Bucket not found", show a clear "Reports storage bucket missing — re-run Phase 3 migration" toast.
 
-### Data flow
+If the bucket is genuinely missing, I'll add a small idempotent SQL snippet to `chroma_lab_phase3b_migration.sql` (or a new `chroma_lab_phase3c_migration.sql`) that creates the `reports` bucket and the matching storage RLS — only as a copy/run snippet, not auto-applied.
 
-- Read `analytes`, `runs`, `columns`, `methods` from `useLab()` store (already populated).
-- For each selected run:
-  - If `run.scansBlobPath` exists → call existing `getRunEIC` server fn (parallel `useQueries`) for the analyte m/z + ppm.
-  - If no scans blob (mock/synthetic runs) → fall back to the run's TIC trace and use `peaks` matched by `analyteId`/`analyteName` for the metrics row, so the page still works on seed data.
-- Compute metrics client-side via `integrateBand` from `src/lib/peak-math.ts` over a window around the EIC apex (apex ± 3·FWHM, fallback to ±0.5 min around expected RT).
-- No new server functions, no schema changes.
+## 3. Click analyte → cross-column view
 
-### Component sketch
+New route: `src/routes/_shell.analytes.$analyteId.tsx`
 
-```tsx
-// AnalyteComparePanel
-const { analytes, runs, columns, methods } = useLab();
-const [analyteId, setAnalyteId] = useState(analytes[0]?.id);
-const [groupBy, setGroupBy] = useState<"column" | "method">("column");
-const [runIds, setRunIds] = useState<string[]>(/* auto: 1 most-recent run per group */);
-const [ppm, setPpm] = useState(10);
+The `analyte-compare-panel.tsx` component already does most of the work (EIC overlay + per-run metrics + group summaries). The new page reuses it with these defaults:
 
-const fetchEIC = useServerFn(getRunEIC);
-const queries = useQueries({
-  queries: runIds.map((id) => {
-    const run = runs.find(r => r.id === id)!;
-    return {
-      queryKey: ["analyte-eic", id, analyte.mz, ppm],
-      queryFn: () => run.scansBlobPath
-        ? fetchEIC({ data: { runId: id, mz: analyte.mz, ppm } })
-        : Promise.resolve({ x: run.trace.x, y: run.trace.tic, mz: analyte.mz, ppm, mzLow: 0, mzHigh: 0 }),
-    };
-  }),
-});
+- `analyteId` locked to the route param (no picker).
+- `groupBy` defaults to `column`.
+- Auto-selects up to 6 runs: for every column that has at least one run with a peak matching this analyte (by `analyteId` or `analyteName`), pick the most recent qualifying run. Falls back to most-recent runs overall if no annotated peaks exist.
+- Header: analyte name + formula + [M+H]⁺, "Seen on N columns across M runs" summary.
+- Empty state when the compound has never been recorded on any column.
 
-// Build ChromatogramPlot runs: one entry per selected run, color via groupKey.
-// Build table rows by integrating each trace around its apex.
-```
+Wire-up in `src/routes/_shell.analytes.tsx`:
 
-### Reused primitives
+- Wrap each row's name cell in a `<Link to="/analytes/$analyteId" params={{ analyteId: a.id }}>` (keeps Edit/Delete buttons unaffected via `e.stopPropagation()`).
+- Add a "View across columns" item near the row actions for discoverability.
 
-- `ChromatogramPlot` (already supports per-run x/y).
-- `Table`, `Card`, `Select`, `Checkbox`, `Badge` from `src/components/ui/*`.
-- `integrateBand` from `src/lib/peak-math.ts`.
-- `getRunEIC` server function — no changes.
+Small refactor in `analyte-compare-panel.tsx`: accept optional props `lockedAnalyteId`, `defaultGroupBy`, `hideAnalytePicker` so the new route can reuse it without duplicating logic.
 
-### Edge cases
+## Phase 3 status
 
-- 0 runs selected → empty state with hint.
-- Run with no scans blob and no annotated peak for the analyte → row shows "—" metrics with a "no EIC data" note; trace still plotted from TIC.
-- Different x-axis ranges across runs → `ChromatogramPlot` already supports this.
-- Same color collisions across groups → assign color per group (column or method), with line dash style varying per run inside the group.
+After these three fixes, Phase 3 (PDF reports, public share links, admin audit log, method/analyte comparison) is **complete**. No further Phase 3 items remain on the plan.
+
+## Files
+
+- Edit `src/routes/_shell.analytes.tsx` — error handling, disabled-button hint, row link.
+- Edit `src/routes/_shell.reports.tsx` — better error messages, disable when no run.
+- Edit `src/lib/pdf-report.ts` — guard empty canvas, surface readable errors.
+- Edit `src/components/analyte-compare-panel.tsx` — accept locked-analyte props.
+- New `src/routes/_shell.analytes.$analyteId.tsx` — cross-column analyte page.
+- (Optional) New `chroma_lab_phase3c_migration.sql` — only if `reports` bucket is missing.
 
 ## Out of scope
 
-- No new persistence, no new RLS, no new migrations.
-- No PDF export of this view in this pass (can be added later via existing `pdf-report` capture flow).
-- No editing of analytes from this page.
-
-## Acceptance
-
-- From `/methods/compare`, switch to "Analyte across runs", pick Caffeine, group by Column, pick 3 runs across 2 columns → overlay renders and table shows RT/area/FWHM per run + group summary.
-- Works on seed data (no scans blob) by falling back to TIC + annotated peaks.
-- No regressions to the existing Method diff tab.
+- No new server functions, no schema changes (except the optional bucket-only SQL snippet).
+- No changes to auth, RLS, or the existing PDF layout.

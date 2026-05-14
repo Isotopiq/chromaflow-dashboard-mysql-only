@@ -56,15 +56,29 @@ function Reports() {
     try {
       const blob = await renderReportPdf(printRef.current);
       const filename = `${method.name.replace(/\s+/g, "_")}.pdf`;
-      const up = await uploadFn({
-        data: { filename, bucket: "reports" },
-      });
+      let up;
+      try {
+        up = await uploadFn({ data: { filename, bucket: "reports" } });
+      } catch (e: any) {
+        const msg = e?.message ?? "";
+        if (/bucket.*not.*found|not_found/i.test(msg)) {
+          throw new Error(
+            "Reports storage bucket missing. Re-run the Phase 3 SQL migration to create it.",
+          );
+        }
+        throw e;
+      }
       const putRes = await fetch(up.signedUrl, {
         method: "PUT",
         headers: { "Content-Type": "application/pdf" },
         body: blob,
       });
-      if (!putRes.ok) throw new Error(`Upload failed (${putRes.status})`);
+      if (!putRes.ok) {
+        const detail = await putRes.text().catch(() => "");
+        throw new Error(
+          `Upload failed (${putRes.status})${detail ? `: ${detail.slice(0, 160)}` : ""}`,
+        );
+      }
       await createReportFn({
         data: {
           title: method.name,
@@ -108,14 +122,24 @@ function Reports() {
             Compose PDF reports from method parameters, chromatograms and peak tables.
           </p>
         </div>
-        <Button onClick={generate} disabled={busy || !method}>
-          {busy ? (
-            <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Download className="mr-1 h-3.5 w-3.5" />
+        <div className="flex flex-col items-end gap-1">
+          <Button onClick={generate} disabled={busy || !method}>
+            {busy ? (
+              <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Download className="mr-1 h-3.5 w-3.5" />
+            )}
+            {busy ? "Generating…" : "Generate PDF"}
+          </Button>
+          {!method && (
+            <div className="text-[10px] text-muted-foreground">Select a method first.</div>
           )}
-          {busy ? "Generating…" : "Generate PDF"}
-        </Button>
+          {method && !methodRun && (
+            <div className="text-[10px] text-[color:var(--status-warn)]">
+              No run is linked to this method — chromatogram & peaks will be omitted.
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
