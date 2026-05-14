@@ -89,6 +89,12 @@ export const useLab = create<State>((set) => ({
     set((s) => ({ analytes: s.analytes.map((x) => (x.id === a.id ? a : x)) })),
   removeAnalyteLocal: (id) =>
     set((s) => ({ analytes: s.analytes.filter((x) => x.id !== id) })),
+  addPeakLocal: (runId, peak) =>
+    set((s) => ({
+      runs: s.runs.map((r) =>
+        r.id === runId ? { ...r, peaks: [...r.peaks, peak] } : r,
+      ),
+    })),
   annotatePeakLocal: (runId, peakId, label, analyteId) =>
     set((s) => ({
       runs: s.runs.map((r) =>
