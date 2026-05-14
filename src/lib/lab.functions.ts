@@ -434,22 +434,60 @@ export const getRunEICBatch = createServerFn({ method: "POST" })
     const x = scans.map((s) => s.rt);
     const traces = data.targets.map((t) => {
       const tr = extractEIC(scans, t.mz, data.ppm);
+      const y = tr.y;
+      const xs = tr.x;
       let peakIdx = -1;
       let peakInt = 0;
-      for (let i = 0; i < tr.y.length; i++) {
-        if (tr.y[i] > peakInt) {
-          peakInt = tr.y[i];
+      for (let i = 0; i < y.length; i++) {
+        if (y[i] > peakInt) {
+          peakInt = y[i];
           peakIdx = i;
         }
+      }
+      // FWHM bounds
+      let fwhm = 0;
+      let area = 0;
+      let sn = 0;
+      if (peakIdx >= 0 && peakInt > 0) {
+        const half = peakInt / 2;
+        let l = peakIdx;
+        while (l > 0 && y[l] > half) l--;
+        let r = peakIdx;
+        while (r < y.length - 1 && y[r] > half) r++;
+        fwhm = Math.max(0, xs[r] - xs[l]);
+        // Area bounds at 5% of apex (trapezoidal)
+        const cut = peakInt * 0.05;
+        let al = peakIdx;
+        while (al > 0 && y[al] > cut) al--;
+        let ar = peakIdx;
+        while (ar < y.length - 1 && y[ar] > cut) ar++;
+        for (let i = al; i < ar; i++) {
+          area += ((y[i] + y[i + 1]) / 2) * (xs[i + 1] - xs[i]);
+        }
+        // S/N: apex / median of points outside the peak window
+        const noise: number[] = [];
+        for (let i = 0; i < y.length; i++) {
+          if (i < al || i > ar) noise.push(y[i]);
+        }
+        let med = 0;
+        if (noise.length > 0) {
+          noise.sort((a, b) => a - b);
+          med = noise[Math.floor(noise.length / 2)];
+        }
+        sn = peakInt / Math.max(1, med);
       }
       return {
         id: t.id,
         mz: t.mz,
-        y: tr.y,
+        y,
         mzLow: tr.mzLow,
         mzHigh: tr.mzHigh,
-        peakRt: peakIdx >= 0 ? tr.x[peakIdx] : null,
+        peakRt: peakIdx >= 0 ? xs[peakIdx] : null,
         peakIntensity: peakInt,
+        area,
+        height: peakInt,
+        fwhm,
+        sn,
       };
     });
     return { x, traces };
