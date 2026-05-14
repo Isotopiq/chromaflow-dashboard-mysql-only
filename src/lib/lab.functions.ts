@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { mzFromFormula } from "./chem";
 import {
   fetchAllForUser,
@@ -199,15 +200,19 @@ export const updateAnalyte = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => UpdateAnalyteInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context as any;
-    const { data: existing, error: fErr } = await supabase
+    const { userId } = context as any;
+    const [{ data: existing, error: fErr }, { data: roles }] = await Promise.all([
+      supabaseAdmin
       .from("analytes")
       .select("id, created_by, library_source")
       .eq("id", data.id)
-      .maybeSingle();
+        .maybeSingle(),
+      supabaseAdmin.from("user_roles").select("role").eq("user_id", userId),
+    ]);
     if (fErr) throw fErr;
     if (!existing) throw new Error("Compound not found.");
-    if (existing.library_source === "system" || existing.created_by !== userId) {
+    const isAdmin = (roles ?? []).some((r: any) => r.role === "admin");
+    if (existing.created_by && existing.created_by !== userId && !isAdmin) {
       throw new Error("You can only edit compounds you created.");
     }
     let mz = data.mz ?? null;
@@ -218,7 +223,7 @@ export const updateAnalyte = createServerFn({ method: "POST" })
       }
       mz = computed;
     }
-    const { data: saved, error } = await supabase
+    const { data: saved, error } = await supabaseAdmin
       .from("analytes")
       .update({
         name: data.name,
@@ -237,18 +242,27 @@ export const deleteAnalyte = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({ id: z.string() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context as any;
-    const { data: existing, error: fErr } = await supabase
+    const { userId } = context as any;
+    const [{ data: existing, error: fErr }, { data: roles }] = await Promise.all([
+      supabaseAdmin
       .from("analytes")
       .select("id, created_by, library_source")
       .eq("id", data.id)
-      .maybeSingle();
+        .maybeSingle(),
+      supabaseAdmin.from("user_roles").select("role").eq("user_id", userId),
+    ]);
     if (fErr) throw fErr;
     if (!existing) return { ok: true, missing: true };
-    if (existing.library_source === "system" || existing.created_by !== userId) {
+    const isAdmin = (roles ?? []).some((r: any) => r.role === "admin");
+    if (existing.created_by && existing.created_by !== userId && !isAdmin) {
       throw new Error("You can only delete compounds you created.");
     }
-    const { error } = await supabase.from("analytes").delete().eq("id", data.id);
+    const { error: peakErr } = await supabaseAdmin
+      .from("peaks")
+      .update({ analyte_id: null })
+      .eq("analyte_id", data.id);
+    if (peakErr) throw peakErr;
+    const { error } = await supabaseAdmin.from("analytes").delete().eq("id", data.id);
     if (error) throw error;
     return { ok: true };
   });
