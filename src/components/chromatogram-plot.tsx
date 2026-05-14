@@ -49,6 +49,8 @@ export function ChromatogramPlot({
   baseline = null,
   onSelectRange,
 }: Props) {
+  const [dragStart, setDragStart] = useState<number | null>(null);
+  const [dragEnd, setDragEnd] = useState<number | null>(null);
   if (runs.length === 0) return null;
 
   // Each run carries its own x/y dataset — Line accepts its own `data` prop,
