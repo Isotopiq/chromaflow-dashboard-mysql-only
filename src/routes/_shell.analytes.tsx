@@ -136,11 +136,16 @@ function LibraryTab() {
             title="Add compound"
             initial={null}
             onSubmit={async (vals) => {
-              const saved = await addFn({ data: vals });
-              addLocal(saved);
-              qc.invalidateQueries({ queryKey: ["lab"] });
-              toast.success(`Added ${saved.name}`);
-              setCreating(false);
+              try {
+                const saved = await addFn({ data: vals });
+                addLocal(saved);
+                qc.invalidateQueries({ queryKey: ["lab"] });
+                toast.success(`Added ${saved.name}`);
+                setCreating(false);
+              } catch (e: any) {
+                toast.error(e?.message ?? "Failed to add compound");
+                throw e;
+              }
             }}
           />
         </Dialog>
