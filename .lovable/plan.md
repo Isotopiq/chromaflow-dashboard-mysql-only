@@ -1,192 +1,116 @@
-# Manual peak integration + Phase 3 wrap-up
+## Goal
 
-Four work packages, shipped in order. Each is independently usable.
+Today `/methods/compare` only diffs parameters of two methods and overlays their TIC. Users can't yet answer the question: *"How does Caffeine look on the BEH C18 vs HSS T3 column, or with Method A vs Method B?"* This plan adds that capability.
 
-## 1. Manual peak integration on the EIC plot
+## What gets built
 
-Lets users drag on the EIC chart to set their own peak bounds when the
-auto-picked peak is wrong (or missing entirely).
+A new tab on the Compare page (and a sibling route) that lets the user:
 
-### UX
+1. Pick one **analyte** from the library (defines target m/z + expected RT).
+2. Pick a **grouping axis**: by **column** or by **method**.
+3. Pick **2–6 runs** to overlay (auto-suggested: most recent run per column/method).
+4. See, side by side:
+   - **EIC overlay** of the analyte's m/z across the chosen runs (color-coded per group).
+   - **Per-run metrics table**: column, method, RT (observed), Δ vs expected, peak height, area, FWHM, S/N, asymmetry estimate.
+   - **Group summary chips**: mean RT, RT spread, mean area per column/method group.
+   - **Parameter strip**: small chips per run summarizing the differing method parameters (gradient %B at peak RT, flow, temp, mobile phase) so visual differences map back to conditions.
 
-- The EIC card grows a small toolbar: **Auto / Integrate** toggle.
-- In Integrate mode, the cursor turns into a crosshair. The user
-  click-drags horizontally on the chart to set RT-start and RT-end.
-- A shaded band overlays the chart between the two RTs, plus a dotted
-  baseline drawn linearly from `(rtStart, y(rtStart))` to `(rtEnd, y(rtEnd))`.
-- A live results strip under the chart shows: `RT_start`, `RT_end`,
-  `apex RT`, `height`, `area (baseline-subtracted)`, `FWHM`, `S/N`.
-- Buttons:
-  - **Reset** — clears the manual region.
-  - **Save as peak** — persists via `addManualPeak` (server fn below).
-    For runs with no real `peaks` rows, the saved peak replaces the
-    derived row in the bottom Peak Table and becomes annotatable.
+## UX
 
-### Math (client)
+```text
+/methods/compare
+┌─ Tabs ─────────────────────────────────────────────┐
+│ [Method diff]  [Analyte across runs]               │
+└────────────────────────────────────────────────────┘
 
-Given EIC arrays `x[], y[]` and `[rtStart, rtEnd]`:
+Analyte across runs:
+  Analyte: [Caffeine ▾]    Group by: (Column ◉ / Method ○)   ppm: [10]
+  Runs (max 6):
+    ☑ run-2025-11-12 · BEH C18 · Method A
+    ☑ run-2025-11-09 · HSS T3  · Method B
+    ☑ run-2025-10-30 · BEH C18 · Method A-v2
+    ...
 
-1. Find inclusive index range `[il, ir]` covering the band.
-2. Linear baseline `b(t) = y[il] + (y[ir]-y[il]) * (t - x[il])/(x[ir]-x[il])`.
-3. `apex = max(y[i] - b(x[i]))` for `i in [il, ir]` → `height`,
-   `apexRt = x[argmax]`.
-4. `area = Σ ((y[i]-b(x[i])) + (y[i+1]-b(x[i+1])))/2 * (x[i+1]-x[i])`
-   for `i in [il, ir-1]`, clamped to ≥0.
-5. FWHM: walk left/right from apex while `(y - b) > apex/2`, return
-   `xRight - xLeft`.
-6. S/N: `apex / max(1, median(|y - b|) outside [il, ir])`.
+  ┌── EIC overlay (m/z 195.0877 ±10 ppm) ────────────┐
+  │  multi-line plot, legend grouped by column       │
+  └──────────────────────────────────────────────────┘
 
-### Server: `addManualPeak`
+  Table:
+    Run | Column | Method | RT | ΔRT | Height | Area | FWHM | S/N
+    ... per row, sortable
 
-File: `src/lib/lab.functions.ts`.
-
-```
-addManualPeak({ runId, mz, mzLow?, mzHigh?, rt, rtStart, rtEnd,
-                area, height, fwhm, sn, analyteId?, analyteName? })
-  → { peak }
+  Group summary:
+    BEH C18 (n=2): RT 3.41 ± 0.02, area 1.2e7
+    HSS T3 (n=1):  RT 3.78,        area 9.4e6
 ```
 
-- `requireSupabaseAuth`. Verifies the run belongs to the current user
-  via the existing run-ownership check (mirror of `deleteRun`).
-- Inserts into `public.peaks` with the manual values plus
-  `manual = true` (see migration below) and returns the new row mapped
-  by `mapPeak`.
+## Implementation
 
-### Schema delta (migration)
+### Files
 
-```sql
-alter table public.peaks add column if not exists manual boolean default false;
+- **New**: `src/routes/_shell.methods.compare.analyte.tsx` — new route at `/methods/compare/analyte`.
+- **Edit**: `src/routes/_shell.methods.compare.tsx` — convert current single view into a Tabs container with two tabs (Method diff = existing content; Analyte across runs = new component). Keep existing functionality unchanged inside its tab.
+- **New**: `src/components/analyte-compare-panel.tsx` — the picker + plot + table component (reused by the route and the tab so it can also be embedded standalone).
+- **Edit (small)**: `src/components/app-sidebar.tsx` — add a sub-link "Analyte compare" under Methods (only if a Methods group exists; otherwise skip).
+
+### Data flow
+
+- Read `analytes`, `runs`, `columns`, `methods` from `useLab()` store (already populated).
+- For each selected run:
+  - If `run.scansBlobPath` exists → call existing `getRunEIC` server fn (parallel `useQueries`) for the analyte m/z + ppm.
+  - If no scans blob (mock/synthetic runs) → fall back to the run's TIC trace and use `peaks` matched by `analyteId`/`analyteName` for the metrics row, so the page still works on seed data.
+- Compute metrics client-side via `integrateBand` from `src/lib/peak-math.ts` over a window around the EIC apex (apex ± 3·FWHM, fallback to ±0.5 min around expected RT).
+- No new server functions, no schema changes.
+
+### Component sketch
+
+```tsx
+// AnalyteComparePanel
+const { analytes, runs, columns, methods } = useLab();
+const [analyteId, setAnalyteId] = useState(analytes[0]?.id);
+const [groupBy, setGroupBy] = useState<"column" | "method">("column");
+const [runIds, setRunIds] = useState<string[]>(/* auto: 1 most-recent run per group */);
+const [ppm, setPpm] = useState(10);
+
+const fetchEIC = useServerFn(getRunEIC);
+const queries = useQueries({
+  queries: runIds.map((id) => {
+    const run = runs.find(r => r.id === id)!;
+    return {
+      queryKey: ["analyte-eic", id, analyte.mz, ppm],
+      queryFn: () => run.scansBlobPath
+        ? fetchEIC({ data: { runId: id, mz: analyte.mz, ppm } })
+        : Promise.resolve({ x: run.trace.x, y: run.trace.tic, mz: analyte.mz, ppm, mzLow: 0, mzHigh: 0 }),
+    };
+  }),
+});
+
+// Build ChromatogramPlot runs: one entry per selected run, color via groupKey.
+// Build table rows by integrating each trace around its apex.
 ```
 
-### Files touched
+### Reused primitives
 
-- `src/components/chromatogram-plot.tsx` — accept optional
-  `selectionBand`, `baseline`, `onSelectRange` props; mouse handlers
-  that translate pixel→time using Recharts' chart instance.
-- `src/lib/peak-math.ts` — new pure helpers (`integrateBand`,
-  `linearBaseline`, `fwhmAroundApex`).
-- `src/lib/lab.functions.ts` — add `addManualPeak`.
-- `src/lib/store.ts` — `addPeakLocal(runId, peak)`.
-- `src/routes/_shell.runs.$runId.tsx` — toolbar, integration overlay,
-  results strip, save handler.
-- New migration adding `peaks.manual`.
+- `ChromatogramPlot` (already supports per-run x/y).
+- `Table`, `Card`, `Select`, `Checkbox`, `Badge` from `src/components/ui/*`.
+- `integrateBand` from `src/lib/peak-math.ts`.
+- `getRunEIC` server function — no changes.
 
----
+### Edge cases
 
-## 2. Phase 3 — Real PDF report generation
-
-The reports route still toasts a placeholder. Wire it up end-to-end.
-
-### Approach
-
-Render the PDF **client-side** with `jsPDF` + `html2canvas-pro`
-(works with oklch tokens; the legacy html2canvas does not). The current
-template's Worker SSR runtime can't run native PDF/canvas binaries, and
-the existing `createReport` server fn already accepts a pre-uploaded
-storage path — it just needs the actual file on the other end.
-
-### Flow
-
-1. User picks template (`run` / `batch` / `method`), subject(s),
-   sections (method, chromatogram, peaks, notes), title.
-2. Click **Generate PDF**:
-   - Render the report markup into an off-screen container styled with
-     the existing design tokens.
-   - `html2canvas-pro` → page images, `jsPDF` `addImage` per page.
-   - `jsPDF.output("blob")` → upload via `createUploadUrl({ bucket: "reports" })`
-     using the returned `signedUrl`/`token`.
-   - `createReport({ title, template, runIds, batchId?, storagePath })`.
-3. Toast success + add the new report to a **Past reports** list on the
-   same page (powered by `listReports`), each row with a
-   **Download** button calling `getReportSignedUrl` and opening the URL.
-
-### Files touched
-
-- `src/lib/pdf-report.ts` — `renderReportPdf({ node, pageSize })`
-  helper.
-- `src/routes/_shell.reports.tsx` — replace placeholder with full flow,
-  add Past Reports list.
-- `package.json` — add `jspdf` and `html2canvas-pro`.
-
----
-
-## 3. Phase 3 — Public share links
-
-Already have `createShareLink`. Need a UI surface and a public route.
-
-### UI
-
-- On `/runs/$runId` and on the new Past Reports list, add a **Share**
-  button. Opens a dialog:
-  - Choose expiry (`24h / 7d / 30d / 1y`).
-  - On confirm → `createShareLink({ resourceKind, resourceId, expiresInHours })`.
-  - Display the resulting URL `${origin}/shared/${token}` with a
-    **Copy** button.
-
-### Public route
-
-`src/routes/shared.$token.tsx` (no auth):
-
-- Loader calls a new server fn `getSharedResource({ token })` that
-  uses `supabaseAdmin` to:
-  1. Fetch `shared_links` by token; reject if missing or
-     `expires_at < now()`.
-  2. Resolve the resource — for a `run`, return the same DTO shape
-     the run-detail page reads (basic run + peaks + scans-blob signed URL
-     for the TIC/EIC). For a `report`, return a 10-minute
-     `getSignedUrl` to the PDF.
-- Renders a **read-only** view: TIC, peak table, no annotation/delete
-  controls. Reports route just embeds an `<iframe>` of the signed URL.
-
-### Server route alternative
-
-If the loader pattern is awkward for unauthenticated reads,
-`src/routes/api/public/shared.$token.ts` exposes the same data as JSON
-and the page consumes it via `fetch`. Pick the loader path; switch only
-if the loader runs into auth-attacher issues.
-
-### Files touched
-
-- `src/lib/lab.functions.ts` — `getSharedResource` (uses `supabaseAdmin`,
-  no auth middleware; expiry-checked).
-- `src/components/share-dialog.tsx` — reusable dialog.
-- `src/routes/shared.$token.tsx` — public viewer.
-- `src/routes/_shell.runs.$runId.tsx` — Share button.
-- `src/routes/_shell.reports.tsx` — Share button per report row.
-
----
-
-## 4. Phase 3 — Audit log viewer (admin)
-
-`audit_events` is populated by triggers; no UI yet.
-
-### Server
-
-- `listAuditEvents({ table?, action?, actorId?, since?, until?, limit })`
-  in `src/lib/lab.functions.ts`. `requireSupabaseAuth` + admin-role
-  check (mirror of `listAdminUsers`). Returns rows ordered by
-  `created_at desc`, capped at 200.
-
-### UI
-
-`src/routes/_shell.admin.tsx` — add an **Audit log** tab next to the
-existing user/role table:
-
-- Filter row: table (select), action (insert/update/delete), actor
-  (select from existing users list), date range.
-- Table columns: timestamp, actor (email), table, action, row id,
-  diff preview (collapsed JSON; click to expand).
-
-### Files touched
-
-- `src/lib/lab.functions.ts` — `listAuditEvents`.
-- `src/routes/_shell.admin.tsx` — new tab + table.
-
----
+- 0 runs selected → empty state with hint.
+- Run with no scans blob and no annotated peak for the analyte → row shows "—" metrics with a "no EIC data" note; trace still plotted from TIC.
+- Different x-axis ranges across runs → `ChromatogramPlot` already supports this.
+- Same color collisions across groups → assign color per group (column or method), with line dash style varying per run inside the group.
 
 ## Out of scope
 
-- Re-running raw peak picking server-side (separate task).
-- Editing existing manual peaks (delete + re-add for now).
-- Server-side PDF rendering (Worker runtime can't host a real renderer).
-- Realtime audit-log streaming.
+- No new persistence, no new RLS, no new migrations.
+- No PDF export of this view in this pass (can be added later via existing `pdf-report` capture flow).
+- No editing of analytes from this page.
+
+## Acceptance
+
+- From `/methods/compare`, switch to "Analyte across runs", pick Caffeine, group by Column, pick 3 runs across 2 columns → overlay renders and table shows RT/area/FWHM per run + group summary.
+- Works on seed data (no scans blob) by falling back to TIC + annotated peaks.
+- No regressions to the existing Method diff tab.
