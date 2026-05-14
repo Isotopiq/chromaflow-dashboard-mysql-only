@@ -185,6 +185,35 @@ export function ChromatogramPlot({
               isFront
             />
           ))}
+          {selectionBand && (
+            <ReferenceArea
+              x1={selectionBand.x1}
+              x2={selectionBand.x2}
+              fill="var(--primary)"
+              fillOpacity={0.12}
+              stroke="var(--primary)"
+              strokeOpacity={0.4}
+            />
+          )}
+          {dragStart != null && dragEnd != null && dragStart !== dragEnd && (
+            <ReferenceArea
+              x1={Math.min(dragStart, dragEnd)}
+              x2={Math.max(dragStart, dragEnd)}
+              fill="var(--primary)"
+              fillOpacity={0.18}
+            />
+          )}
+          {baseline && (
+            <ReferenceLine
+              segment={[
+                { x: baseline.x1, y: baseline.y1 },
+                { x: baseline.x2, y: baseline.y2 },
+              ]}
+              stroke="var(--peak-annotated)"
+              strokeDasharray="3 3"
+              ifOverflow="extendDomain"
+            />
+          )}
         </LineChart>
       </ResponsiveContainer>
     </div>
