@@ -31,6 +31,12 @@ type Props = {
   showPeaks?: boolean;
   channel?: "tic" | "bpc";
   compact?: boolean;
+  /** When set, draw a shaded vertical band between these RT values. */
+  selectionBand?: { x1: number; x2: number } | null;
+  /** Optional dotted baseline points across the band. */
+  baseline?: { x1: number; y1: number; x2: number; y2: number } | null;
+  /** Enable click-drag selection. Receives the selected [x1, x2]. */
+  onSelectRange?: (x1: number, x2: number) => void;
 };
 
 export function ChromatogramPlot({
@@ -39,6 +45,9 @@ export function ChromatogramPlot({
   showPeaks = false,
   channel = "tic",
   compact = false,
+  selectionBand = null,
+  baseline = null,
+  onSelectRange,
 }: Props) {
   if (runs.length === 0) return null;
 
