@@ -169,6 +169,65 @@ function RunDetail() {
     });
   }, [batchQuery.data, activeTargets, rtTol]);
 
+  // EIC trace: prefer the batch result for the selected analyte; otherwise the on-demand fetch.
+  const eicTrace = useMemo(() => {
+    if (selectedTargetId && batchQuery.data) {
+      const tr = batchQuery.data.traces.find((t) => t.id === selectedTargetId);
+      if (tr) {
+        return {
+          id: `eic-${tr.id}`,
+          name: selectedTargetName
+            ? `${selectedTargetName} (m/z ${tr.mz.toFixed(4)})`
+            : `EIC m/z ${tr.mz.toFixed(4)}`,
+          trace: { x: batchQuery.data.x, tic: tr.y, bpc: tr.y },
+        };
+      }
+    }
+    if (!eicQuery.data) return null;
+    return {
+      id: `eic-${eicMz}`,
+      name: `EIC m/z ${eicMz?.toFixed(4)} ±${ppm} ppm`,
+      trace: { x: eicQuery.data.x, tic: eicQuery.data.y, bpc: eicQuery.data.y },
+    };
+  }, [eicQuery.data, eicMz, ppm, selectedTargetId, selectedTargetName, batchQuery.data]);
+
+  // Synthesized peaks from auto-XIC when the run has no detected peaks of its own.
+  const derivedPeaks = useMemo(() => {
+    if (run.peaks.length > 0 || !batchQuery.data) return [] as typeof run.peaks;
+    return matchRows
+      .filter(({ tr }) => tr.peakIntensity > 0 && tr.peakRt != null)
+      .map(({ tr, t }) => ({
+        id: `eic-${tr.id}`,
+        rt: tr.peakRt as number,
+        area: (tr as any).area ?? 0,
+        height: (tr as any).height ?? tr.peakIntensity,
+        fwhm: (tr as any).fwhm ?? 0,
+        sn: (tr as any).sn ?? 0,
+        mz: tr.mz,
+        mzLow: tr.mzLow,
+        mzHigh: tr.mzHigh,
+        analyteId: t?.id,
+        analyteName: t?.name,
+        confidence: 1,
+      })) as typeof run.peaks;
+  }, [run.peaks, batchQuery.data, matchRows]);
+
+  const usingDerivedPeaks = run.peaks.length === 0 && derivedPeaks.length > 0;
+  const peaksForTable = usingDerivedPeaks ? derivedPeaks : run.peaks;
+  const selectedDerived = derivedPeaks.find((p) => p.id === selectedId);
+  const effectiveSelected = selected ?? selectedDerived;
+
+  const onSelectTarget = (targetId: string, name?: string, mz?: number) => {
+    setSelectedTargetId(targetId);
+    setSelectedTargetName(name);
+    setSelected(`eic-${targetId}`);
+    if (mz != null) setCustomMz(mz.toFixed(4));
+    requestAnimationFrame(() => {
+      eicCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  };
+
+
 
   const suggested = analytes
     .map((a) => {
