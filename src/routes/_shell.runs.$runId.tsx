@@ -8,7 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
-import { ArrowLeft, Sparkles, Download, Activity, Trash2 } from "lucide-react";
+import { ArrowLeft, Sparkles, Download, Activity, Trash2, Share2 } from "lucide-react";
+import { ShareDialog } from "@/components/share-dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -293,6 +294,15 @@ function RunDetail() {
           <Button variant="outline" size="sm" onClick={downloadCsv}>
             <Download className="mr-1 h-3.5 w-3.5" /> Peaks CSV
           </Button>
+          <ShareDialog
+            resourceKind="run"
+            resourceId={run.id}
+            trigger={
+              <Button variant="outline" size="sm">
+                <Share2 className="mr-1 h-3.5 w-3.5" /> Share
+              </Button>
+            }
+          />
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button variant="outline" size="sm" className="text-destructive hover:text-destructive">
