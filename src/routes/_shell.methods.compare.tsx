@@ -10,7 +10,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChromatogramPlot } from "@/components/chromatogram-plot";
+import { AnalyteComparePanel } from "@/components/analyte-compare-panel";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_shell/methods/compare")({
@@ -21,8 +23,8 @@ function CompareMethods() {
   const { methods, runs, columns } = useLab();
   const [aId, setA] = useState(methods[0]?.id ?? "");
   const [bId, setB] = useState(methods[1]?.id ?? methods[0]?.id ?? "");
-  const a = methods.find((m) => m.id === aId)!;
-  const b = methods.find((m) => m.id === bId)!;
+  const a = methods.find((m) => m.id === aId);
+  const b = methods.find((m) => m.id === bId);
   const aRun = runs.find((r) => r.methodId === aId);
   const bRun = runs.find((r) => r.methodId === bId);
 
