@@ -31,22 +31,47 @@ const MAX_RUNS = 6;
 
 type GroupBy = "column" | "method";
 
-export function AnalyteComparePanel() {
+export type AnalyteComparePanelProps = {
+  lockedAnalyteId?: string;
+  defaultGroupBy?: GroupBy;
+  hideAnalytePicker?: boolean;
+  /** Prefer runs whose peaks reference this analyte when auto-seeding. */
+  preferAnnotatedRuns?: boolean;
+};
+
+export function AnalyteComparePanel({
+  lockedAnalyteId,
+  defaultGroupBy = "column",
+  hideAnalytePicker = false,
+  preferAnnotatedRuns = false,
+}: AnalyteComparePanelProps = {}) {
   const { analytes, runs, columns, methods } = useLab();
-  const [analyteId, setAnalyteId] = useState<string>(analytes[0]?.id ?? "");
-  const [groupBy, setGroupBy] = useState<GroupBy>("column");
+  const [analyteId, setAnalyteId] = useState<string>(
+    lockedAnalyteId ?? analytes[0]?.id ?? "",
+  );
+  const effectiveAnalyteId = lockedAnalyteId ?? analyteId;
+  const [groupBy, setGroupBy] = useState<GroupBy>(defaultGroupBy);
   const [ppm, setPpm] = useState<number>(10);
 
-  const analyte = analytes.find((a) => a.id === analyteId);
+  const analyte = analytes.find((a) => a.id === effectiveAnalyteId);
 
-  // Auto-suggest: most recent run per group key.
+  // Auto-suggest: most recent run per group key. When preferAnnotatedRuns is on,
+  // prioritise runs that have a peak matching this analyte.
   const initialRunIds = useMemo(() => {
     const sorted = [...runs].sort(
       (a, b) => +new Date(b.acquiredAt) - +new Date(a.acquiredAt),
     );
+    const matchesAnalyte = (r: (typeof runs)[number]) =>
+      !!analyte &&
+      r.peaks.some(
+        (p) => p.analyteId === analyte.id || p.analyteName === analyte.name,
+      );
+    const ordered = preferAnnotatedRuns
+      ? [...sorted.filter(matchesAnalyte), ...sorted.filter((r) => !matchesAnalyte(r))]
+      : sorted;
     const seen = new Set<string>();
     const picked: string[] = [];
-    for (const r of sorted) {
+    for (const r of ordered) {
       const key = groupBy === "column" ? r.columnId : r.methodId;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -54,7 +79,7 @@ export function AnalyteComparePanel() {
       if (picked.length >= MAX_RUNS) break;
     }
     return picked;
-  }, [runs, groupBy]);
+  }, [runs, groupBy, preferAnnotatedRuns, analyte]);
 
   const [runIds, setRunIds] = useState<string[]>(initialRunIds);
 
