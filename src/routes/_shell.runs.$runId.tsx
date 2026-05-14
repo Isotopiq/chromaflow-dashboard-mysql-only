@@ -62,13 +62,14 @@ function RunDetail() {
   const method = methods.find((m) => m.id === run.methodId);
   const column = columns.find((c) => c.id === run.columnId);
   const [selectedId, setSelected] = useState<string | undefined>(run.peaks[0]?.id);
+  const [selectedTargetId, setSelectedTargetId] = useState<string | undefined>(undefined);
+  const [selectedTargetName, setSelectedTargetName] = useState<string | undefined>(undefined);
   const [annotation, setAnnotation] = useState("");
   const [ppm, setPpm] = useState(10);
   const [customMz, setCustomMz] = useState("");
 
   const selected = run.peaks.find((p) => p.id === selectedId);
   // Custom m/z (when typed and valid) ALWAYS overrides the selected peak.
-  // parseFloat("") and parseFloat("abc") return NaN — we filter those out.
   const customMzNum = customMz.trim() ? parseFloat(customMz) : NaN;
   const eicMz: number | null = Number.isFinite(customMzNum)
     ? customMzNum
@@ -77,21 +78,14 @@ function RunDetail() {
       : null;
 
   const fetchEIC = useServerFn(getRunEIC);
+  // Skip fetching when we already have this trace from the batch query (analyte click).
+  const hasBatchTrace = !!selectedTargetId;
   const eicQuery = useQuery({
     queryKey: ["eic", run.id, eicMz, ppm],
-    enabled: eicMz != null && Number.isFinite(eicMz) && !!run.scansBlobPath,
+    enabled: !hasBatchTrace && eicMz != null && Number.isFinite(eicMz) && !!run.scansBlobPath,
     queryFn: () => fetchEIC({ data: { runId: run.id, mz: eicMz!, ppm } }),
     staleTime: 60_000,
   });
-
-  const eicTrace = useMemo(() => {
-    if (!eicQuery.data) return null;
-    return {
-      id: `eic-${eicMz}`,
-      name: `EIC m/z ${eicMz?.toFixed(4)} ±${ppm} ppm`,
-      trace: { x: eicQuery.data.x, tic: eicQuery.data.y, bpc: eicQuery.data.y },
-    };
-  }, [eicQuery.data, eicMz, ppm]);
 
   // ---- Auto-XIC from analyte library ----
   const [polarity, setPolarity] = useState<"positive" | "negative">(
@@ -99,7 +93,6 @@ function RunDetail() {
   );
   const adductOptions: Adduct[] = polarity === "negative" ? ADDUCTS_NEG : ADDUCTS_POS;
   const [adduct, setAdduct] = useState<Adduct>(defaultAdduct(polarity));
-  // Keep adduct valid when polarity flips.
   useEffect(() => {
     if (!adductOptions.includes(adduct)) setAdduct(defaultAdduct(polarity));
   }, [polarity, adductOptions, adduct]);
@@ -108,7 +101,8 @@ function RunDetail() {
   const eicCardRef = useRef<HTMLDivElement | null>(null);
   const onSelectPeak = (id: string) => {
     setSelected(id);
-    // Clear any prior custom m/z so the selected peak's m/z (if any) takes over.
+    setSelectedTargetId(undefined);
+    setSelectedTargetName(undefined);
     setCustomMz("");
     requestAnimationFrame(() => {
       eicCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -174,6 +168,65 @@ function RunDetail() {
       return { tr, t, dRt, matched };
     });
   }, [batchQuery.data, activeTargets, rtTol]);
+
+  // EIC trace: prefer the batch result for the selected analyte; otherwise the on-demand fetch.
+  const eicTrace = useMemo(() => {
+    if (selectedTargetId && batchQuery.data) {
+      const tr = batchQuery.data.traces.find((t) => t.id === selectedTargetId);
+      if (tr) {
+        return {
+          id: `eic-${tr.id}`,
+          name: selectedTargetName
+            ? `${selectedTargetName} (m/z ${tr.mz.toFixed(4)})`
+            : `EIC m/z ${tr.mz.toFixed(4)}`,
+          trace: { x: batchQuery.data.x, tic: tr.y, bpc: tr.y },
+        };
+      }
+    }
+    if (!eicQuery.data) return null;
+    return {
+      id: `eic-${eicMz}`,
+      name: `EIC m/z ${eicMz?.toFixed(4)} ±${ppm} ppm`,
+      trace: { x: eicQuery.data.x, tic: eicQuery.data.y, bpc: eicQuery.data.y },
+    };
+  }, [eicQuery.data, eicMz, ppm, selectedTargetId, selectedTargetName, batchQuery.data]);
+
+  // Synthesized peaks from auto-XIC when the run has no detected peaks of its own.
+  const derivedPeaks = useMemo(() => {
+    if (run.peaks.length > 0 || !batchQuery.data) return [] as typeof run.peaks;
+    return matchRows
+      .filter(({ tr }) => tr.peakIntensity > 0 && tr.peakRt != null)
+      .map(({ tr, t }) => ({
+        id: `eic-${tr.id}`,
+        rt: tr.peakRt as number,
+        area: (tr as any).area ?? 0,
+        height: (tr as any).height ?? tr.peakIntensity,
+        fwhm: (tr as any).fwhm ?? 0,
+        sn: (tr as any).sn ?? 0,
+        mz: tr.mz,
+        mzLow: tr.mzLow,
+        mzHigh: tr.mzHigh,
+        analyteId: t?.id,
+        analyteName: t?.name,
+        confidence: 1,
+      })) as typeof run.peaks;
+  }, [run.peaks, batchQuery.data, matchRows]);
+
+  const usingDerivedPeaks = run.peaks.length === 0 && derivedPeaks.length > 0;
+  const peaksForTable = usingDerivedPeaks ? derivedPeaks : run.peaks;
+  const selectedDerived = derivedPeaks.find((p) => p.id === selectedId);
+  const effectiveSelected = selected ?? selectedDerived;
+
+  const onSelectTarget = (targetId: string, name?: string, mz?: number) => {
+    setSelectedTargetId(targetId);
+    setSelectedTargetName(name);
+    setSelected(`eic-${targetId}`);
+    if (mz != null) setCustomMz(mz.toFixed(4));
+    requestAnimationFrame(() => {
+      eicCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  };
+
 
 
   const suggested = analytes
@@ -399,7 +452,11 @@ function RunDetail() {
                 </TableHeader>
                 <TableBody>
                   {matchRows.map(({ tr, t, dRt, matched }) => (
-                    <TableRow key={tr.id} className="text-xs">
+                    <TableRow
+                      key={tr.id}
+                      onClick={() => onSelectTarget(tr.id, t?.name, tr.mz)}
+                      className={`cursor-pointer text-xs ${selectedTargetId === tr.id ? "bg-accent/40" : ""}`}
+                    >
                       <TableCell className="font-medium">{t?.name ?? "—"}</TableCell>
                       <TableCell className="font-mono text-muted-foreground">{t?.formula ?? "—"}</TableCell>
                       <TableCell className="font-mono">{tr.mz.toFixed(4)}</TableCell>
@@ -504,84 +561,125 @@ function RunDetail() {
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="border-border bg-card p-0 lg:col-span-2">
-          <div className="border-b border-border px-4 py-3">
-            <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Peak table</div>
-            <h2 className="text-sm font-semibold">Detected peaks — click any row to extract its EIC</h2>
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+            <div>
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Peak table</div>
+              <h2 className="text-sm font-semibold">
+                {usingDerivedPeaks
+                  ? "Detected peaks (from Auto-XIC) — click any row to extract its EIC"
+                  : "Detected peaks — click any row to extract its EIC"}
+              </h2>
+            </div>
+            {usingDerivedPeaks && (
+              <Badge variant="outline" className="text-[10px]">derived</Badge>
+            )}
           </div>
           <div className="p-3">
-            <PeakTable peaks={run.peaks} selectedId={selectedId} onSelect={(p) => onSelectPeak(p.id)} />
+            {peaksForTable.length === 0 ? (
+              <div className="rounded-md border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
+                No peaks detected on the raw run, and no Auto-XIC matches yet. Pick analytes above to extract candidate peaks.
+              </div>
+            ) : (
+              <PeakTable
+                peaks={peaksForTable}
+                selectedId={selectedId}
+                onSelect={(p) => {
+                  if (p.id.startsWith("eic-") && p.analyteId) {
+                    onSelectTarget(p.analyteId, p.analyteName, p.mz ?? undefined);
+                  } else {
+                    onSelectPeak(p.id);
+                  }
+                }}
+              />
+            )}
           </div>
         </Card>
 
         <Card className="border-border bg-card p-4">
           <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Annotation</div>
-          {selected ? (
+          {effectiveSelected ? (
             <>
               <div className="mt-2 font-mono text-xs">
-                <div>RT {selected.rt.toFixed(2)} min</div>
-                <div className="text-muted-foreground">m/z {selected.mz?.toFixed(4) ?? "—"}</div>
-                {selected.mzLow != null && (
-                  <div className="text-muted-foreground">±10 ppm: [{selected.mzLow.toFixed(4)}, {selected.mzHigh?.toFixed(4)}]</div>
+                <div>RT {effectiveSelected.rt.toFixed(2)} min</div>
+                <div className="text-muted-foreground">m/z {effectiveSelected.mz?.toFixed(4) ?? "—"}</div>
+                {effectiveSelected.mzLow != null && (
+                  <div className="text-muted-foreground">±{ppm} ppm: [{effectiveSelected.mzLow.toFixed(4)}, {effectiveSelected.mzHigh?.toFixed(4)}]</div>
+                )}
+                {effectiveSelected.analyteName && (
+                  <div className="mt-1">
+                    <Badge className="bg-[color:var(--peak-annotated)]/20 text-[10px] text-[color:var(--peak-annotated)]">
+                      {effectiveSelected.analyteName}
+                    </Badge>
+                  </div>
                 )}
               </div>
 
-              <div className="mt-4 text-[10px] uppercase tracking-widest text-muted-foreground">
-                Suggested matches (RT + m/z)
-              </div>
-              <div className="mt-2 space-y-1">
-                {suggested.map(({ a, dRt, dPpm }) => (
-                  <button
-                    key={a.id}
-                    onClick={async () => {
-                      try {
-                        await annotatePeak(run.id, selected.id, a.name, a.id);
-                        toast.success(`Annotated as ${a.name}`);
-                      } catch (err: any) {
-                        toast.error(err?.message ?? "Failed");
-                      }
-                    }}
-                    className="flex w-full items-center justify-between rounded-md border border-border bg-surface-elevated px-2 py-1.5 text-left text-xs hover:border-primary/60"
-                  >
-                    <div>
-                      <div className="font-medium">{a.name}</div>
-                      <div className="font-mono text-[10px] text-muted-foreground">
-                        {a.formula} · {a.mz.toFixed(4)}
-                      </div>
-                    </div>
-                    <div className="flex flex-col items-end gap-0.5">
-                      <Badge variant="outline" className="text-[10px]">ΔRT {dRt.toFixed(2)}</Badge>
-                      <span className="font-mono text-[9px] text-muted-foreground">
-                        {dPpm < 999 ? `${dPpm.toFixed(0)} ppm` : "—"}
-                      </span>
-                    </div>
-                  </button>
-                ))}
-              </div>
+              {usingDerivedPeaks ? (
+                <div className="mt-4 rounded-md border border-dashed border-border p-3 text-[11px] text-muted-foreground">
+                  This peak was extracted from the analyte library, not picked from the raw run. Run peak detection on this run to enable persistent annotation.
+                </div>
+              ) : (
+                <>
+                  <div className="mt-4 text-[10px] uppercase tracking-widest text-muted-foreground">
+                    Suggested matches (RT + m/z)
+                  </div>
+                  <div className="mt-2 space-y-1">
+                    {suggested.map(({ a, dRt, dPpm }) => (
+                      <button
+                        key={a.id}
+                        onClick={async () => {
+                          if (!selected) return;
+                          try {
+                            await annotatePeak(run.id, selected.id, a.name, a.id);
+                            toast.success(`Annotated as ${a.name}`);
+                          } catch (err: any) {
+                            toast.error(err?.message ?? "Failed");
+                          }
+                        }}
+                        className="flex w-full items-center justify-between rounded-md border border-border bg-surface-elevated px-2 py-1.5 text-left text-xs hover:border-primary/60"
+                      >
+                        <div>
+                          <div className="font-medium">{a.name}</div>
+                          <div className="font-mono text-[10px] text-muted-foreground">
+                            {a.formula} · {a.mz.toFixed(4)}
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-0.5">
+                          <Badge variant="outline" className="text-[10px]">ΔRT {dRt.toFixed(2)}</Badge>
+                          <span className="font-mono text-[9px] text-muted-foreground">
+                            {dPpm < 999 ? `${dPpm.toFixed(0)} ppm` : "—"}
+                          </span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
 
-              <div className="mt-4 text-[10px] uppercase tracking-widest text-muted-foreground">Manual label</div>
-              <div className="mt-2 flex gap-2">
-                <Input
-                  value={annotation}
-                  onChange={(e) => setAnnotation(e.target.value)}
-                  placeholder="Label this peak…"
-                  className="h-8 text-xs"
-                />
-                <Button
-                  size="sm"
-                  onClick={async () => {
-                    if (!annotation.trim()) return;
-                    try {
-                      await annotatePeak(run.id, selected.id, annotation);
-                      toast.success("Annotated");
-                      setAnnotation("");
-                    } catch (err: any) {
-                      toast.error(err?.message ?? "Failed");
-                    }
-                  }}
-                >
-                  <Sparkles className="mr-1 h-3.5 w-3.5" /> Save
-                </Button>
-              </div>
+                  <div className="mt-4 text-[10px] uppercase tracking-widest text-muted-foreground">Manual label</div>
+                  <div className="mt-2 flex gap-2">
+                    <Input
+                      value={annotation}
+                      onChange={(e) => setAnnotation(e.target.value)}
+                      placeholder="Label this peak…"
+                      className="h-8 text-xs"
+                    />
+                    <Button
+                      size="sm"
+                      onClick={async () => {
+                        if (!annotation.trim() || !selected) return;
+                        try {
+                          await annotatePeak(run.id, selected.id, annotation);
+                          toast.success("Annotated");
+                          setAnnotation("");
+                        } catch (err: any) {
+                          toast.error(err?.message ?? "Failed");
+                        }
+                      }}
+                    >
+                      <Sparkles className="mr-1 h-3.5 w-3.5" /> Save
+                    </Button>
+                  </div>
+                </>
+              )}
             </>
           ) : (
             <div className="mt-4 text-xs text-muted-foreground">Select a peak to annotate.</div>
