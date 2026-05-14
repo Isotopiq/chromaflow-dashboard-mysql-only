@@ -452,7 +452,11 @@ function RunDetail() {
                 </TableHeader>
                 <TableBody>
                   {matchRows.map(({ tr, t, dRt, matched }) => (
-                    <TableRow key={tr.id} className="text-xs">
+                    <TableRow
+                      key={tr.id}
+                      onClick={() => onSelectTarget(tr.id, t?.name, tr.mz)}
+                      className={`cursor-pointer text-xs ${selectedTargetId === tr.id ? "bg-accent/40" : ""}`}
+                    >
                       <TableCell className="font-medium">{t?.name ?? "—"}</TableCell>
                       <TableCell className="font-mono text-muted-foreground">{t?.formula ?? "—"}</TableCell>
                       <TableCell className="font-mono">{tr.mz.toFixed(4)}</TableCell>
