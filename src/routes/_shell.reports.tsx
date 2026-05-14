@@ -56,15 +56,29 @@ function Reports() {
     try {
       const blob = await renderReportPdf(printRef.current);
       const filename = `${method.name.replace(/\s+/g, "_")}.pdf`;
-      const up = await uploadFn({
-        data: { filename, bucket: "reports" },
-      });
+      let up;
+      try {
+        up = await uploadFn({ data: { filename, bucket: "reports" } });
+      } catch (e: any) {
+        const msg = e?.message ?? "";
+        if (/bucket.*not.*found|not_found/i.test(msg)) {
+          throw new Error(
+            "Reports storage bucket missing. Re-run the Phase 3 SQL migration to create it.",
+          );
+        }
+        throw e;
+      }
       const putRes = await fetch(up.signedUrl, {
         method: "PUT",
         headers: { "Content-Type": "application/pdf" },
         body: blob,
       });
-      if (!putRes.ok) throw new Error(`Upload failed (${putRes.status})`);
+      if (!putRes.ok) {
+        const detail = await putRes.text().catch(() => "");
+        throw new Error(
+          `Upload failed (${putRes.status})${detail ? `: ${detail.slice(0, 160)}` : ""}`,
+        );
+      }
       await createReportFn({
         data: {
           title: method.name,
