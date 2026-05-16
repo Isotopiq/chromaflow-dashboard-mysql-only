@@ -1,77 +1,60 @@
-## Goals
+# Finish the Column Library
 
-Three small fixes + one new view, then close out Phase 3.
+The backend already supports columns: `upsertColumn` server fn (with full Zod schema for name, chemistry, dimensions, particle size, serial, rated/used injections, status, notes), `mapColumn` row mapper, and `upsertColumnLocal` in the Zustand store. The UI is the only missing piece — the "Add column" button on `/columns` does nothing today, and the detail page has no Edit affordance.
 
-1. Make Add / Edit / Delete buttons on `/analytes` reliably work.
-2. Make the Generate-PDF button on `/reports` actually produce + save a PDF.
-3. Make analyte rows on `/analytes` clickable → new `/analytes/$analyteId` page that shows that compound across every column it's been recorded on.
+## What to build
 
-## 1. Analyte add / edit / delete
+### 1. Reusable column form dialog
 
-Backend functions (`addAnalyte`, `updateAnalyte`, `deleteAnalyte`) and the dialog wiring already exist. The most likely failure modes seen in this kind of setup are:
+New component `src/components/column-form-dialog.tsx`:
 
-- The Add / Edit dialog Save button is disabled because `mzPos` is `null` (no formula entered) and no manual m/z is provided — the form silently looks "broken" because the only failure cue is a greyed button.
-- Toast errors from the server fn never reach the user because the `addLocal` call only runs on success and the surrounding `try/catch` is missing on the create path (only delete has it).
-- After a server-fn error, the dialog stays open with no feedback.
+- Controlled `Dialog` with fields: Name, Manufacturer, Chemistry, Dimensions (e.g. `2.1 x 100 mm`), Particle size (e.g. `1.7 µm`), Serial #, Rated injections, Used injections, Status (`healthy` / `warn` / `expired`), Notes.
+- Client-side validation matching the server Zod schema; disable Save with an inline hint when required fields are missing.
+- Single `onSubmit(values)` prop — parent owns the server call.
+- Works in both "create" and "edit" mode via an optional `initial` prop.
 
-Fix in `src/routes/_shell.analytes.tsx`:
+### 2. Wire "Add column" on the list page
 
-- Wrap the `onSubmit` in `CompoundFormDialog` invocations (both create and edit) so any thrown error from `addFn` / `updateFn` shows a `toast.error(...)` instead of being swallowed; keep the dialog open on failure.
-- Show an inline hint under the Save button when it is disabled, explaining which field is missing (name / RT / formula-or-mz).
-- Add `e.preventDefault()` guards inside dialog Save to ensure the click never bubbles into a parent route navigation.
-- Verify the Delete `AlertDialogAction` actually closes the dialog after success (it currently relies on default behavior; explicitly call the trigger's close so the row visibly updates).
+Edit `src/routes/_shell.columns.index.tsx`:
 
-No schema or server-fn changes.
+- Replace the dead `<Button>Add column</Button>` with a trigger that opens `ColumnFormDialog`.
+- On submit, call `upsertColumn` via `useServerFn`, then `upsertColumnLocal(saved)` so the new card appears immediately without a refetch.
+- `try/catch` with `toast.error(...)` on failure; `toast.success` + close on success.
+- Empty state: when `columns.length === 0`, show a friendly card with a CTA that opens the same dialog.
 
-## 2. PDF report button
+### 3. Edit + maintenance actions on the detail page
 
-The PDF flow (`renderReportPdf` → `createUploadUrl` → PUT to signed URL → `createReport`) is wired but fails silently in two common cases:
+Edit `src/routes/_shell.columns.$columnId.tsx`:
 
-- `html2canvas-pro` throws on any element with computed `display: none` or zero size (the Past-reports card or sidebar). Right now `printRef` wraps a card with a chromatogram — if no `methodRun` exists for the selected method, the canvas is empty and jsPDF rejects with `Invalid coordinates`.
-- The `reports` storage bucket may not exist in the project; `createSignedUploadUrl` then 404s and the caller only sees a generic toast.
+- Add an "Edit column" button in the header (next to the status badge) that opens `ColumnFormDialog` pre-filled with the current column.
+- Wire the existing "Log maintenance event" button to a small inline popover that lets the user bump `usedInjections` by N and/or change `status` — same `upsertColumn` path, appends a note line to `notes_md` like `2026-05-16 · +50 inj, status → warn`.
+- Add a "Delete column" action behind an `AlertDialog` confirm. Uses a new server fn (see Technical) and only enabled when no methods/runs reference the column; otherwise show the count and disable.
 
-Fix in `src/routes/_shell.reports.tsx` and `src/lib/pdf-report.ts`:
+### 4. Server: deletion safety
 
-- Disable the Generate button (with a tooltip) when there is no `method` OR no `methodRun`, so users get an explicit reason instead of a silent failure.
-- In `renderReportPdf`, guard against zero-size canvases (return a friendly Error). Bubble the error message into the Reports page toast.
-- In the Generate handler, if the `PUT` to the signed URL fails, surface the actual response text in the toast (currently only status code).
-- Add a one-time check: on first Generate, if `createUploadUrl` errors with "Bucket not found", show a clear "Reports storage bucket missing — re-run Phase 3 migration" toast.
+Add `deleteColumn` to `src/lib/lab.functions.ts`:
 
-If the bucket is genuinely missing, I'll add a small idempotent SQL snippet to `chroma_lab_phase3b_migration.sql` (or a new `chroma_lab_phase3c_migration.sql`) that creates the `reports` bucket and the matching storage RLS — only as a copy/run snippet, not auto-applied.
+- Auth-protected; loads the column, ensures it's owned by the user (or user is admin), refuses if any `methods.column_id` or `runs.column_id` still references it.
+- Returns `{ ok: true }` so the client can `setColumns(s => s.filter(...))`.
 
-## 3. Click analyte → cross-column view
+No schema changes needed — the `columns` table and RLS already exist from earlier phases.
 
-New route: `src/routes/_shell.analytes.$analyteId.tsx`
+## Technical notes
 
-The `analyte-compare-panel.tsx` component already does most of the work (EIC overlay + per-run metrics + group summaries). The new page reuses it with these defaults:
-
-- `analyteId` locked to the route param (no picker).
-- `groupBy` defaults to `column`.
-- Auto-selects up to 6 runs: for every column that has at least one run with a peak matching this analyte (by `analyteId` or `analyteName`), pick the most recent qualifying run. Falls back to most-recent runs overall if no annotated peaks exist.
-- Header: analyte name + formula + [M+H]⁺, "Seen on N columns across M runs" summary.
-- Empty state when the compound has never been recorded on any column.
-
-Wire-up in `src/routes/_shell.analytes.tsx`:
-
-- Wrap each row's name cell in a `<Link to="/analytes/$analyteId" params={{ analyteId: a.id }}>` (keeps Edit/Delete buttons unaffected via `e.stopPropagation()`).
-- Add a "View across columns" item near the row actions for discoverability.
-
-Small refactor in `analyte-compare-panel.tsx`: accept optional props `lockedAnalyteId`, `defaultGroupBy`, `hideAnalytePicker` so the new route can reuse it without duplicating logic.
-
-## Phase 3 status
-
-After these three fixes, Phase 3 (PDF reports, public share links, admin audit log, method/analyte comparison) is **complete**. No further Phase 3 items remain on the plan.
+- Reuse `toast` from `sonner`, `Dialog`/`AlertDialog`/`Input`/`Select` from `@/components/ui/*`, matching the patterns in `src/routes/_shell.analytes.tsx`.
+- Store integration: `useLab().upsertColumnLocal(saved)` already handles both insert and update, so the same call works for create and edit.
+- `pressureTrend` is read-only telemetry — not in the form. New columns start with `[]` (the mapper already defaults to that).
+- Keep all changes in frontend + the one new server fn; no migrations.
 
 ## Files
 
-- Edit `src/routes/_shell.analytes.tsx` — error handling, disabled-button hint, row link.
-- Edit `src/routes/_shell.reports.tsx` — better error messages, disable when no run.
-- Edit `src/lib/pdf-report.ts` — guard empty canvas, surface readable errors.
-- Edit `src/components/analyte-compare-panel.tsx` — accept locked-analyte props.
-- New `src/routes/_shell.analytes.$analyteId.tsx` — cross-column analyte page.
-- (Optional) New `chroma_lab_phase3c_migration.sql` — only if `reports` bucket is missing.
+- New `src/components/column-form-dialog.tsx`
+- New `deleteColumn` export in `src/lib/lab.functions.ts`
+- Edit `src/routes/_shell.columns.index.tsx` — Add-column wiring + empty state
+- Edit `src/routes/_shell.columns.$columnId.tsx` — Edit, maintenance, delete
 
 ## Out of scope
 
-- No new server functions, no schema changes (except the optional bucket-only SQL snippet).
-- No changes to auth, RLS, or the existing PDF layout.
+- Auto-derived pressure trend from new runs (already handled where runs are ingested).
+- Bulk import / CSV upload for columns.
+- Changes to method or run pages beyond what they already render.
