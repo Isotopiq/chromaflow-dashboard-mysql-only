@@ -108,6 +108,8 @@ function LibraryTab() {
 
   const [editing, setEditing] = useState<Analyte | null>(null);
   const [creating, setCreating] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   const sorted = useMemo(
     () =>
@@ -120,6 +122,53 @@ function LibraryTab() {
       }),
     [analytes],
   );
+
+  const selectable = useMemo(
+    () =>
+      sorted.filter(
+        (a) => !a.createdBy || a.createdBy === currentUser.id || a.librarySource === "user",
+      ),
+    [sorted, currentUser.id],
+  );
+  const allSelected = selectable.length > 0 && selectable.every((a) => selected.has(a.id));
+  const someSelected = selected.size > 0 && !allSelected;
+
+  function toggleOne(id: string, on: boolean) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  function toggleAll(on: boolean) {
+    setSelected(on ? new Set(selectable.map((a) => a.id)) : new Set());
+  }
+
+  async function bulkDelete() {
+    const ids = Array.from(selected);
+    if (ids.length === 0) return;
+    setBulkDeleting(true);
+    let ok = 0;
+    let failed = 0;
+    for (const id of ids) {
+      try {
+        await deleteFn({ data: { id } });
+        removeLocal(id);
+        ok++;
+      } catch (e) {
+        failed++;
+        console.error("Bulk delete failed", id, e);
+      }
+    }
+    qc.invalidateQueries({ queryKey: ["lab"] });
+    setSelected(new Set());
+    setBulkDeleting(false);
+    if (ok) toast.success(`Deleted ${ok} compound${ok === 1 ? "" : "s"}${failed ? ` (${failed} failed)` : ""}.`);
+    else toast.error("No compounds deleted.");
+  }
+
 
   return (
     <div className="flex flex-col gap-4">
