@@ -267,6 +267,15 @@ function Reports() {
           </div>
           <div className="mt-2 space-y-2">
             <div>
+              <label className="text-[10px] text-muted-foreground">Header (eyebrow)</label>
+              <Input
+                value={reportHeader}
+                onChange={(e) => setReportHeader(e.target.value)}
+                placeholder="CHROMA.LAB · Method Report"
+                className="mt-1 h-8 text-xs"
+              />
+            </div>
+            <div>
               <label className="text-[10px] text-muted-foreground">Title</label>
               <Input
                 value={reportTitle}
@@ -285,6 +294,7 @@ function Reports() {
               />
             </div>
           </div>
+
 
           <div className="mt-5 flex items-center justify-between text-[10px] uppercase tracking-widest text-muted-foreground">
             <span>Sections</span>
