@@ -108,6 +108,8 @@ function LibraryTab() {
 
   const [editing, setEditing] = useState<Analyte | null>(null);
   const [creating, setCreating] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   const sorted = useMemo(
     () =>
@@ -121,11 +123,92 @@ function LibraryTab() {
     [analytes],
   );
 
+  const selectable = useMemo(
+    () =>
+      sorted.filter(
+        (a) => !a.createdBy || a.createdBy === currentUser.id || a.librarySource === "user",
+      ),
+    [sorted, currentUser.id],
+  );
+  const allSelected = selectable.length > 0 && selectable.every((a) => selected.has(a.id));
+  const someSelected = selected.size > 0 && !allSelected;
+
+  function toggleOne(id: string, on: boolean) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  function toggleAll(on: boolean) {
+    setSelected(on ? new Set(selectable.map((a) => a.id)) : new Set());
+  }
+
+  async function bulkDelete() {
+    const ids = Array.from(selected);
+    if (ids.length === 0) return;
+    setBulkDeleting(true);
+    let ok = 0;
+    let failed = 0;
+    for (const id of ids) {
+      try {
+        await deleteFn({ data: { id } });
+        removeLocal(id);
+        ok++;
+      } catch (e) {
+        failed++;
+        console.error("Bulk delete failed", id, e);
+      }
+    }
+    qc.invalidateQueries({ queryKey: ["lab"] });
+    setSelected(new Set());
+    setBulkDeleting(false);
+    if (ok) toast.success(`Deleted ${ok} compound${ok === 1 ? "" : "s"}${failed ? ` (${failed} failed)` : ""}.`);
+    else toast.error("No compounds deleted.");
+  }
+
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="text-xs text-muted-foreground">
-          Add compounds, edit library entries, or open a compound to compare it across columns.
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          <span>
+            Add compounds, edit library entries, or open a compound to compare it across columns.
+          </span>
+          {selected.size > 0 && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  disabled={bulkDeleting}
+                  className="h-7"
+                >
+                  <Trash2 className="mr-1 h-3.5 w-3.5" />
+                  Delete selected ({selected.size})
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>
+                    Delete {selected.size} compound{selected.size === 1 ? "" : "s"}?
+                  </AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Removes the selected compounds from your library. Existing peak
+                    annotations are kept.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={bulkDelete}>
+                    {bulkDeleting ? "Deleting…" : "Delete"}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <Button size="sm" variant="outline" onClick={downloadCsvTemplate}>
@@ -169,6 +252,14 @@ function LibraryTab() {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/30 hover:bg-muted/30">
+                <TableHead className="w-8">
+                  <Checkbox
+                    aria-label="Select all"
+                    checked={allSelected ? true : someSelected ? "indeterminate" : false}
+                    onCheckedChange={(v) => toggleAll(v === true)}
+                    disabled={selectable.length === 0}
+                  />
+                </TableHead>
                 <TableHead className="text-[10px] uppercase tracking-wider">Name</TableHead>
                 <TableHead className="text-[10px] uppercase tracking-wider">Formula</TableHead>
                 <TableHead className="text-[10px] uppercase tracking-wider">Neutral mass</TableHead>
@@ -187,7 +278,15 @@ function LibraryTab() {
                 const isUser = a.librarySource === "user";
                 const canManage = !a.createdBy || a.createdBy === currentUser.id || isUser;
                 return (
-                  <TableRow key={a.id} className="text-xs">
+                  <TableRow key={a.id} className="text-xs" data-state={selected.has(a.id) ? "selected" : undefined}>
+                    <TableCell className="w-8">
+                      <Checkbox
+                        aria-label={`Select ${a.name}`}
+                        checked={selected.has(a.id)}
+                        onCheckedChange={(v) => toggleOne(a.id, v === true)}
+                        disabled={!canManage}
+                      />
+                    </TableCell>
                     <TableCell className="font-medium">
                       <Link
                         to="/analytes/$analyteId"
