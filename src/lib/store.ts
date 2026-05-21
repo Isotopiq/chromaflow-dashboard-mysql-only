@@ -35,6 +35,7 @@ type State = {
   updateAnalyteLocal: (a: Analyte) => void;
   removeAnalyteLocal: (id: string) => void;
   annotatePeakLocal: (runId: string, peakId: string, label: string, analyteId?: string) => void;
+  unassignPeaksLocal: (runId: string, peakIds: string[]) => void;
   addPeakLocal: (runId: string, peak: Peak) => void;
   removeRunLocal: (id: string) => void;
   removeBatchLocal: (id: string) => void;
