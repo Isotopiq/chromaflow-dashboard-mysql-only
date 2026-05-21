@@ -39,7 +39,7 @@ export const Route = createFileRoute("/_shell/reports")({
 });
 
 function Reports() {
-  const { runs, methods, analytes } = useLab();
+  const { runs, methods, analytes, columns } = useLab();
   const [methodId, setMethodId] = useState(methods[0]?.id ?? "");
   const [sections, setSections] = useState({
     method: true,
