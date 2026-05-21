@@ -538,7 +538,7 @@ function EicReportBlock({
   const nameById = new Map(analytes.map((a) => [a.id, a.name]));
   const overlayRuns = data.traces.map((t) => ({
     id: t.id,
-    name: `${nameById.get(t.id) ?? "?"} · m/z ${t.mz.toFixed(3)}`,
+    name: nameById.get(t.id) ?? "?",
     trace: { x: data.x, tic: t.y, bpc: t.y },
   }));
   return (
