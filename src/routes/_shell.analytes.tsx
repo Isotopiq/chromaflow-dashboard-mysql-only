@@ -252,6 +252,14 @@ function LibraryTab() {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/30 hover:bg-muted/30">
+                <TableHead className="w-8">
+                  <Checkbox
+                    aria-label="Select all"
+                    checked={allSelected ? true : someSelected ? "indeterminate" : false}
+                    onCheckedChange={(v) => toggleAll(v === true)}
+                    disabled={selectable.length === 0}
+                  />
+                </TableHead>
                 <TableHead className="text-[10px] uppercase tracking-wider">Name</TableHead>
                 <TableHead className="text-[10px] uppercase tracking-wider">Formula</TableHead>
                 <TableHead className="text-[10px] uppercase tracking-wider">Neutral mass</TableHead>
