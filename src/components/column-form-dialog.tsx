@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { Column } from "@/lib/mock-data";
+import type { Column } from "@/lib/lab-types";
 
 export type ColumnFormValues = {
   id?: string;

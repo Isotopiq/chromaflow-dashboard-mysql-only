@@ -1,4 +1,4 @@
-import type { Peak } from "@/lib/mock-data";
+import type { Peak } from "@/lib/lab-types";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,

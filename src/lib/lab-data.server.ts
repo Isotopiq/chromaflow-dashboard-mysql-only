@@ -9,7 +9,7 @@ import type {
   Analyte,
   Peak,
   User,
-} from "@/lib/mock-data";
+} from "@/lib/lab-types";
 
 export type SupabaseUserClient = ReturnType<typeof createUserClient>;
 

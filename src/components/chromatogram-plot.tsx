@@ -12,7 +12,7 @@ import {
   Legend,
 } from "recharts";
 import { useState } from "react";
-import type { Run, Peak } from "@/lib/mock-data";
+import type { Run, Peak } from "@/lib/lab-types";
 
 const TRACE_COLORS = [
   "var(--chart-1)",
