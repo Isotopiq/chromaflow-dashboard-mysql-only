@@ -427,16 +427,25 @@ function Reports() {
             ref={printRef}
             className="mx-auto max-w-3xl space-y-6 rounded-md bg-card p-8 shadow-lg"
           >
-            <div className="flex items-center justify-between border-b border-border pb-3">
+            <div className="flex items-center justify-between gap-4 border-b border-border pb-3">
               <div>
                 <div className="text-[10px] uppercase tracking-[0.2em] text-primary">
                   {reportHeader.trim() || "CHROMA.LAB · Method Report"}
                 </div>
                 <h2 className="mt-1 text-lg font-semibold">{effectiveTitle}</h2>
-
               </div>
-              <FileText className="h-5 w-5 text-muted-foreground" />
+              {branding?.pdfLogoUrl ? (
+                <img
+                  src={branding.pdfLogoUrl}
+                  alt="Logo"
+                  crossOrigin="anonymous"
+                  className="h-10 max-w-[140px] object-contain"
+                />
+              ) : (
+                <FileText className="h-5 w-5 text-muted-foreground" />
+              )}
             </div>
+
 
             {sectionOrder.map((key) => {
               if (!sections[key]) return null;
