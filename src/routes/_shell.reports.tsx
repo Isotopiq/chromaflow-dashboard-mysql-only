@@ -375,7 +375,7 @@ function Reports() {
                 <div className="text-[10px] uppercase tracking-[0.2em] text-primary">
                   CHROMA.LAB · Method Report
                 </div>
-                <h2 className="mt-1 text-lg font-semibold">{method?.name}</h2>
+                <h2 className="mt-1 text-lg font-semibold">{effectiveTitle}</h2>
               </div>
               <FileText className="h-5 w-5 text-muted-foreground" />
             </div>
