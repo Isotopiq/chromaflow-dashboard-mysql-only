@@ -1,60 +1,61 @@
-# Finish the Column Library
+# Fix Docker/Easypanel deployment
 
-The backend already supports columns: `upsertColumn` server fn (with full Zod schema for name, chemistry, dimensions, particle size, serial, rated/used injections, status, notes), `mapColumn` row mapper, and `upsertColumnLocal` in the Zustand store. The UI is the only missing piece — the "Add column" button on `/columns` does nothing today, and the detail page has no Edit affordance.
+## Root cause
 
-## What to build
+The project's `vite.config.ts` enables the `@cloudflare/vite-plugin`, which makes `vite build` emit a Cloudflare Worker bundle instead of the standard Node server file (`dist/server/server.js`). At runtime, `vite preview` invokes TanStack's `preview-server-plugin`, which looks for that Node file and crashes:
 
-### 1. Reusable column form dialog
+```
+Cannot find module '/app/dist/server/server.js'
+```
 
-New component `src/components/column-form-dialog.tsx`:
+So `vite preview` is fundamentally incompatible with the Cloudflare build target. We have to either run the worker via `wrangler`/`workerd` in the container, or switch the build to a plain Node target. For Easypanel/Docker self-hosting, the Node target is the right call — it's lighter, faster to boot, and matches how `vite preview` already works.
 
-- Controlled `Dialog` with fields: Name, Manufacturer, Chemistry, Dimensions (e.g. `2.1 x 100 mm`), Particle size (e.g. `1.7 µm`), Serial #, Rated injections, Used injections, Status (`healthy` / `warn` / `expired`), Notes.
-- Client-side validation matching the server Zod schema; disable Save with an inline hint when required fields are missing.
-- Single `onSubmit(values)` prop — parent owns the server call.
-- Works in both "create" and "edit" mode via an optional `initial` prop.
+## Plan
 
-### 2. Wire "Add column" on the list page
+### 1. Disable the Cloudflare plugin for self-hosted builds
 
-Edit `src/routes/_shell.columns.index.tsx`:
+Edit `vite.config.ts`:
 
-- Replace the dead `<Button>Add column</Button>` with a trigger that opens `ColumnFormDialog`.
-- On submit, call `upsertColumn` via `useServerFn`, then `upsertColumnLocal(saved)` so the new card appears immediately without a refetch.
-- `try/catch` with `toast.error(...)` on failure; `toast.success` + close on success.
-- Empty state: when `columns.length === 0`, show a friendly card with a CTA that opens the same dialog.
+```ts
+import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
-### 3. Edit + maintenance actions on the detail page
+export default defineConfig({
+  cloudflare: false,
+  tanstackStart: { server: { entry: "server" } },
+});
+```
 
-Edit `src/routes/_shell.columns.$columnId.tsx`:
+The Lovable wrapper only attaches `@cloudflare/vite-plugin` when `cloudflare !== false`. With it off, `vite build` produces `dist/client/` (static assets) and `dist/server/server.js` (Node SSR entry), and `vite preview` serves them correctly.
 
-- Add an "Edit column" button in the header (next to the status badge) that opens `ColumnFormDialog` pre-filled with the current column.
-- Wire the existing "Log maintenance event" button to a small inline popover that lets the user bump `usedInjections` by N and/or change `status` — same `upsertColumn` path, appends a note line to `notes_md` like `2026-05-16 · +50 inj, status → warn`.
-- Add a "Delete column" action behind an `AlertDialog` confirm. Uses a new server fn (see Technical) and only enabled when no methods/runs reference the column; otherwise show the count and disable.
+This change only affects self-hosted builds. Lovable's cloud preview/publish runs through its own pipeline and is unaffected.
 
-### 4. Server: deletion safety
+### 2. Simplify the Dockerfile
 
-Add `deleteColumn` to `src/lib/lab.functions.ts`:
+- Remove the `ARG VITE_SUPABASE_*` build args and the `COPY --from=builder /app/src ./src` line — neither is needed anymore. The browser already fetches Supabase config at runtime from `/api/public/config` (see `src/integrations/supabase/client.ts`), so no `VITE_*` value has to be baked into the client bundle.
+- Keep only `dist/`, `node_modules/`, and `package.json` in the runtime image.
 
-- Auth-protected; loads the column, ensures it's owned by the user (or user is admin), refuses if any `methods.column_id` or `runs.column_id` still references it.
-- Returns `{ ok: true }` so the client can `setColumns(s => s.filter(...))`.
+### 3. Rewrite `docker-compose.yml` to be Easypanel-native
 
-No schema changes needed — the `columns` table and RLS already exist from earlier phases.
+- No `build.args` block (nothing to bake in at build time).
+- All Supabase vars are runtime-only `environment:` entries, passed through from Easypanel's env vars with `${VAR}` interpolation (no `:?` strict checks, since Easypanel injects env at container runtime, not at compose-parse time).
+- Service exposes port 5273, restart policy `unless-stopped`, healthcheck on `/`.
 
-## Technical notes
+### 4. Required Easypanel environment variables
 
-- Reuse `toast` from `sonner`, `Dialog`/`AlertDialog`/`Input`/`Select` from `@/components/ui/*`, matching the patterns in `src/routes/_shell.analytes.tsx`.
-- Store integration: `useLab().upsertColumnLocal(saved)` already handles both insert and update, so the same call works for create and edit.
-- `pressureTrend` is read-only telemetry — not in the form. New columns start with `[]` (the mapper already defaults to that).
-- Keep all changes in frontend + the one new server fn; no migrations.
+Only **server-side** vars are needed (no `VITE_*` prefix required at build):
 
-## Files
+- `SUPABASE_URL` — your self-hosted Supabase URL
+- `SUPABASE_PUBLISHABLE_KEY` — anon key
+- `SUPABASE_SERVICE_ROLE_KEY` — service role key
+- `SUPABASE_PROJECT_ID` — any placeholder string (e.g. `selfhosted`)
+- `LOVABLE_API_KEY` — optional, only if AI features are used
 
-- New `src/components/column-form-dialog.tsx`
-- New `deleteColumn` export in `src/lib/lab.functions.ts`
-- Edit `src/routes/_shell.columns.index.tsx` — Add-column wiring + empty state
-- Edit `src/routes/_shell.columns.$columnId.tsx` — Edit, maintenance, delete
+## Files changed
 
-## Out of scope
+- `vite.config.ts` — add `cloudflare: false`
+- `Dockerfile` — drop build args, drop `src/` copy
+- `docker-compose.yml` — remove build args, runtime env only
 
-- Auto-derived pressure trend from new runs (already handled where runs are ingested).
-- Bulk import / CSV upload for columns.
-- Changes to method or run pages beyond what they already render.
+## Verification
+
+After redeploy, `vite preview` should boot cleanly and serve the SSR bundle from `dist/server/server.js` on port 5273.
