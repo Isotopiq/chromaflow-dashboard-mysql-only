@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,8 +22,29 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Shield, AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
-import { listAdminUsers, setUserRole, listAuditEvents } from "@/lib/lab.functions";
+import {
+  Shield,
+  AlertTriangle,
+  ChevronDown,
+  ChevronRight,
+  Upload,
+  Copy,
+  Trash2,
+  Plus,
+} from "lucide-react";
+import {
+  listAdminUsers,
+  setUserRole,
+  listAuditEvents,
+  createUploadUrl,
+} from "@/lib/lab.functions";
+import {
+  setBranding,
+  createInviteCode,
+  listInviteCodes,
+  revokeInviteCode,
+} from "@/lib/branding.functions";
+import { useBranding } from "@/lib/use-branding";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_shell/admin")({ component: Admin });
@@ -35,17 +56,25 @@ function Admin() {
         <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Admin</div>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">Administration</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Manage users, roles, and review the audit trail.
+          Manage users, roles, invite codes, branding, and review the audit trail.
         </p>
       </div>
 
       <Tabs defaultValue="users" className="w-full">
         <TabsList>
           <TabsTrigger value="users">Users & roles</TabsTrigger>
+          <TabsTrigger value="invites">Invite codes</TabsTrigger>
+          <TabsTrigger value="branding">Branding</TabsTrigger>
           <TabsTrigger value="audit">Audit log</TabsTrigger>
         </TabsList>
         <TabsContent value="users" className="mt-4">
           <UsersTab />
+        </TabsContent>
+        <TabsContent value="invites" className="mt-4">
+          <InvitesTab />
+        </TabsContent>
+        <TabsContent value="branding" className="mt-4">
+          <BrandingTab />
         </TabsContent>
         <TabsContent value="audit" className="mt-4">
           <AuditTab />
@@ -54,6 +83,7 @@ function Admin() {
     </div>
   );
 }
+
 
 function UsersTab() {
   const list = useServerFn(listAdminUsers);
@@ -365,3 +395,379 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     </div>
   );
 }
+
+// ============================================================
+// Invite codes
+// ============================================================
+function InvitesTab() {
+  const listFn = useServerFn(listInviteCodes);
+  const createFn = useServerFn(createInviteCode);
+  const revokeFn = useServerFn(revokeInviteCode);
+  const qc = useQueryClient();
+  const [role, setRole] = useState<"admin" | "developer" | "reviewer">("developer");
+  const [expiresInDays, setExpiresInDays] = useState<string>("30");
+  const [note, setNote] = useState("");
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["invite-codes"],
+    queryFn: () => listFn(),
+  });
+
+  const createMut = useMutation({
+    mutationFn: () =>
+      createFn({
+        data: {
+          role,
+          expiresInDays: expiresInDays ? Number(expiresInDays) : undefined,
+          note: note || undefined,
+        },
+      }),
+    onSuccess: (row: any) => {
+      navigator.clipboard?.writeText(row.code).catch(() => {});
+      toast.success(`Code generated and copied: ${row.code}`);
+      setNote("");
+      qc.invalidateQueries({ queryKey: ["invite-codes"] });
+    },
+    onError: (e: any) => toast.error(e?.message ?? "Failed"),
+  });
+
+  const revokeMut = useMutation({
+    mutationFn: (id: string) => revokeFn({ data: { id } }),
+    onSuccess: () => {
+      toast.success("Code revoked");
+      qc.invalidateQueries({ queryKey: ["invite-codes"] });
+    },
+    onError: (e: any) => toast.error(e?.message ?? "Failed"),
+  });
+
+  return (
+    <div className="flex flex-col gap-4">
+      {error && (
+        <Card className="flex items-center gap-2 border-destructive/40 bg-destructive/5 p-3 text-xs">
+          <AlertTriangle className="h-4 w-4 text-destructive" />
+          <span>{(error as any)?.message ?? "Failed to load codes"}</span>
+        </Card>
+      )}
+
+      <Card className="border-border bg-card p-4">
+        <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+          Generate invite code
+        </div>
+        <div className="mt-3 flex flex-wrap items-end gap-3">
+          <Field label="Role">
+            <Select value={role} onValueChange={(v) => setRole(v as any)}>
+              <SelectTrigger className="h-8 w-36 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="admin">Admin</SelectItem>
+                <SelectItem value="developer">Developer</SelectItem>
+                <SelectItem value="reviewer">Reviewer</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Expires in (days)">
+            <Input
+              type="number"
+              min={1}
+              max={365}
+              value={expiresInDays}
+              onChange={(e) => setExpiresInDays(e.target.value)}
+              className="h-8 w-32 text-xs"
+            />
+          </Field>
+          <Field label="Note (optional)">
+            <Input
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="For Jane Doe"
+              className="h-8 w-56 text-xs"
+            />
+          </Field>
+          <Button
+            size="sm"
+            onClick={() => createMut.mutate()}
+            disabled={createMut.isPending}
+          >
+            <Plus className="mr-1 h-3.5 w-3.5" />
+            {createMut.isPending ? "Generating…" : "Generate code"}
+          </Button>
+        </div>
+      </Card>
+
+      <Card className="border-border bg-card p-0">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/30 hover:bg-muted/30">
+              <TableHead className="text-[10px] uppercase tracking-wider">Code</TableHead>
+              <TableHead className="text-[10px] uppercase tracking-wider">Role</TableHead>
+              <TableHead className="text-[10px] uppercase tracking-wider">Status</TableHead>
+              <TableHead className="text-[10px] uppercase tracking-wider">Expires</TableHead>
+              <TableHead className="text-[10px] uppercase tracking-wider">Note</TableHead>
+              <TableHead className="text-[10px] uppercase tracking-wider" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {isLoading && (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center text-xs text-muted-foreground">
+                  Loading…
+                </TableCell>
+              </TableRow>
+            )}
+            {!isLoading && (data ?? []).length === 0 && (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center text-xs text-muted-foreground">
+                  No invite codes yet.
+                </TableCell>
+              </TableRow>
+            )}
+            {(data ?? []).map((c: any) => {
+              const status = c.used_at
+                ? "used"
+                : c.revoked_at
+                  ? "revoked"
+                  : c.expires_at && new Date(c.expires_at).getTime() < Date.now()
+                    ? "expired"
+                    : "active";
+              return (
+                <TableRow key={c.id} className="text-xs">
+                  <TableCell className="font-mono">{c.code}</TableCell>
+                  <TableCell className="capitalize">{c.role}</TableCell>
+                  <TableCell>
+                    <Badge
+                      variant={status === "active" ? "default" : "outline"}
+                      className="capitalize"
+                    >
+                      {status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="font-mono text-[10px] text-muted-foreground">
+                    {c.expires_at ? new Date(c.expires_at).toLocaleDateString() : "—"}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{c.note ?? "—"}</TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        navigator.clipboard?.writeText(c.code);
+                        toast.success("Copied");
+                      }}
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                    {status === "active" && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => revokeMut.mutate(c.id)}
+                        className="text-destructive hover:text-destructive"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </Card>
+    </div>
+  );
+}
+
+// ============================================================
+// Branding
+// ============================================================
+function BrandingTab() {
+  const uploadFn = useServerFn(createUploadUrl);
+  const setBrandingFn = useServerFn(setBranding);
+  const { data: branding, refetch } = useBranding();
+  const qc = useQueryClient();
+  const [appName, setAppName] = useState("");
+  const [savingName, setSavingName] = useState(false);
+
+  const upload = async (
+    file: File,
+    field: "faviconPath" | "webLogoPath" | "pdfLogoPath",
+    label: string,
+  ) => {
+    try {
+      const up = await uploadFn({
+        data: { filename: file.name, bucket: "branding" },
+      });
+      const put = await fetch(up.signedUrl, {
+        method: "PUT",
+        headers: { "Content-Type": file.type || "application/octet-stream" },
+        body: file,
+      });
+      if (!put.ok) throw new Error(`Upload failed (${put.status})`);
+      await setBrandingFn({ data: { [field]: up.path } as any });
+      toast.success(`${label} updated`);
+      qc.invalidateQueries({ queryKey: ["branding"] });
+      refetch();
+    } catch (e: any) {
+      toast.error(e?.message ?? "Upload failed");
+    }
+  };
+
+  const clearAsset = async (
+    field: "faviconPath" | "webLogoPath" | "pdfLogoPath",
+    label: string,
+  ) => {
+    try {
+      await setBrandingFn({ data: { [field]: null } as any });
+      toast.success(`${label} removed`);
+      qc.invalidateQueries({ queryKey: ["branding"] });
+      refetch();
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed");
+    }
+  };
+
+  const saveAppName = async () => {
+    setSavingName(true);
+    try {
+      await setBrandingFn({ data: { appName: appName.trim() || null } });
+      toast.success("App name updated");
+      qc.invalidateQueries({ queryKey: ["branding"] });
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed");
+    } finally {
+      setSavingName(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <Card className="border-border bg-card p-4">
+        <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+          App name
+        </div>
+        <div className="mt-2 flex items-end gap-2">
+          <Input
+            value={appName}
+            onChange={(e) => setAppName(e.target.value)}
+            placeholder={branding?.appName ?? "CHROMA.LAB"}
+            className="h-8 max-w-xs text-xs"
+          />
+          <Button size="sm" onClick={saveAppName} disabled={savingName}>
+            Save
+          </Button>
+        </div>
+      </Card>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <BrandingAsset
+          label="Favicon"
+          hint="PNG/SVG, ~32×32. Shown in browser tabs."
+          url={branding?.faviconUrl ?? null}
+          accept="image/png,image/svg+xml,image/x-icon,image/vnd.microsoft.icon"
+          onUpload={(f) => upload(f, "faviconPath", "Favicon")}
+          onClear={() => clearAsset("faviconPath", "Favicon")}
+        />
+        <BrandingAsset
+          label="Web logo"
+          hint="Shown in the app sidebar."
+          url={branding?.webLogoUrl ?? null}
+          accept="image/*"
+          onUpload={(f) => upload(f, "webLogoPath", "Web logo")}
+          onClear={() => clearAsset("webLogoPath", "Web logo")}
+        />
+        <BrandingAsset
+          label="PDF logo"
+          hint="Printed in the top right of generated PDF reports."
+          url={branding?.pdfLogoUrl ?? null}
+          accept="image/png,image/jpeg,image/svg+xml"
+          onUpload={(f) => upload(f, "pdfLogoPath", "PDF logo")}
+          onClear={() => clearAsset("pdfLogoPath", "PDF logo")}
+        />
+      </div>
+
+      <Card className="flex items-start gap-3 border-primary/30 bg-primary/5 p-3 text-xs">
+        <Shield className="h-4 w-4 text-primary" />
+        <div>
+          <div className="font-medium">Heads up</div>
+          <p className="mt-0.5 text-muted-foreground">
+            Branding requires the Phase 4 SQL migration (
+            <span className="font-mono">chroma_lab_phase4_migration.sql</span>) which
+            creates the <span className="font-mono">branding_settings</span> and{" "}
+            <span className="font-mono">invite_codes</span> tables plus the public{" "}
+            <span className="font-mono">branding</span> storage bucket.
+          </p>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function BrandingAsset({
+  label,
+  hint,
+  url,
+  accept,
+  onUpload,
+  onClear,
+}: {
+  label: string;
+  hint: string;
+  url: string | null;
+  accept: string;
+  onUpload: (f: File) => void;
+  onClear: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  return (
+    <Card className="border-border bg-card p-4">
+      <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+        {label}
+      </div>
+      <p className="mt-0.5 text-[10px] text-muted-foreground">{hint}</p>
+      <div className="mt-3 flex h-24 items-center justify-center rounded-md border border-dashed border-border bg-muted/20">
+        {url ? (
+          <img
+            src={url}
+            alt={label}
+            className="max-h-20 max-w-[80%] object-contain"
+          />
+        ) : (
+          <span className="text-[10px] text-muted-foreground">No image</span>
+        )}
+      </div>
+      <div className="mt-3 flex gap-2">
+        <input
+          ref={inputRef}
+          type="file"
+          accept={accept}
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) onUpload(f);
+            e.target.value = "";
+          }}
+        />
+        <Button
+          size="sm"
+          variant="outline"
+          className="flex-1"
+          onClick={() => inputRef.current?.click()}
+        >
+          <Upload className="mr-1 h-3.5 w-3.5" /> Upload
+        </Button>
+        {url && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={onClear}
+            className="text-destructive hover:text-destructive"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        )}
+      </div>
+    </Card>
+  );
+}
+

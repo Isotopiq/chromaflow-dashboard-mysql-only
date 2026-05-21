@@ -595,9 +595,10 @@ export const setUserRole = createServerFn({ method: "POST" })
 // ---- Storage signed-upload for raw / scans / report files ----
 const UploadUrlInput = z.object({
   filename: z.string().min(1).max(300),
-  bucket: z.enum(["raw-runs", "reports"]).default("raw-runs"),
+  bucket: z.enum(["raw-runs", "reports", "branding"]).default("raw-runs"),
   suffix: z.string().max(40).optional(),
 });
+
 export const createUploadUrl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => UploadUrlInput.parse(d))

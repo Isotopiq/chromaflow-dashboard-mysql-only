@@ -12,6 +12,8 @@ import appCss from "../styles.css?url";
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider, useTheme } from "@/components/theme-provider";
 import { AuthProvider } from "@/lib/auth-context";
+import { useApplyFavicon } from "@/lib/use-branding";
+
 
 function NotFoundComponent() {
   return (
@@ -133,6 +135,7 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <AuthProvider>
+          <BrandingSync />
           <Outlet />
           <ThemedToaster />
         </AuthProvider>
@@ -141,7 +144,13 @@ function RootComponent() {
   );
 }
 
+function BrandingSync() {
+  useApplyFavicon();
+  return null;
+}
+
 function ThemedToaster() {
   const { theme } = useTheme();
   return <Toaster richColors theme={theme} />;
 }
+

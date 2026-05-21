@@ -1,7 +1,9 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { getSupabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
+import { validateInviteCode, consumeInviteCode } from "@/lib/branding.functions";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -14,9 +16,12 @@ export const Route = createFileRoute("/signup")({ component: SignupPage });
 function SignupPage() {
   const { user, loading } = useAuth();
   const nav = useNavigate();
+  const validateFn = useServerFn(validateInviteCode);
+  const consumeFn = useServerFn(consumeInviteCode);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -29,10 +34,23 @@ function SignupPage() {
       toast.error("Password must be at least 8 characters");
       return;
     }
+    const code = inviteCode.trim().toUpperCase();
+    if (!code) {
+      toast.error("Invite code is required");
+      return;
+    }
     setBusy(true);
     try {
+      // 1. Pre-validate the invite code so we don't create orphan accounts.
+      const check = await validateFn({ data: { code } });
+      if (!check.ok) {
+        toast.error(check.reason ?? "Invalid invite code");
+        return;
+      }
+
+      // 2. Create the auth user.
       const sb = await getSupabase();
-      const { error } = await sb.auth.signUp({
+      const { data: signed, error } = await sb.auth.signUp({
         email,
         password,
         options: {
@@ -41,6 +59,23 @@ function SignupPage() {
         },
       });
       if (error) throw error;
+      const newUserId = signed.user?.id;
+      if (!newUserId) {
+        toast.success("Account created — check your email to verify, then sign in");
+        nav({ to: "/login" });
+        return;
+      }
+
+      // 3. Claim the code + assign role.
+      try {
+        await consumeFn({ data: { code, newUserId } });
+      } catch (claimErr: any) {
+        console.error("Invite claim failed", claimErr);
+        toast.error(
+          `Account created but invite claim failed: ${claimErr?.message ?? "unknown"}. Contact an admin.`,
+        );
+      }
+
       toast.success("Account created — check your email to verify, then sign in");
       nav({ to: "/login" });
     } catch (err: any) {
@@ -67,6 +102,17 @@ function SignupPage() {
 
         <form onSubmit={submit} className="flex flex-col gap-3">
           <div className="flex flex-col gap-1.5">
+            <Label htmlFor="invite" className="text-xs">Invite code</Label>
+            <Input
+              id="invite"
+              required
+              value={inviteCode}
+              onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
+              placeholder="XXXX-XXXX-XXXX"
+              className="font-mono uppercase tracking-widest"
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
             <Label htmlFor="name" className="text-xs">Display name</Label>
             <Input id="name" value={name} onChange={(e) => setName(e.target.value)} />
           </div>
@@ -90,8 +136,7 @@ function SignupPage() {
           </Link>
         </div>
         <p className="mt-3 text-[11px] text-muted-foreground">
-          The first account created becomes <span className="font-mono">admin</span>; subsequent
-          accounts default to <span className="font-mono">developer</span>.
+          Sign-ups require an invite code issued by an admin from the admin dashboard.
         </p>
       </Card>
     </div>

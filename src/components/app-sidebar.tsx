@@ -25,6 +25,8 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useLab } from "@/lib/store";
+import { useBranding } from "@/lib/use-branding";
+
 
 const groups: Array<{
   label: string;
@@ -72,6 +74,8 @@ export function AppSidebar() {
   const pathname = useRouterState({ select: (r) => r.location.pathname });
   const currentUser = useLab((s) => s.currentUser);
   const isAdmin = currentUser?.role === "admin";
+  const { data: branding } = useBranding();
+  const appName = branding?.appName?.trim() || "CHROMA.LAB";
 
   const isActive = (url: string) =>
     url === "/" ? pathname === "/" : pathname === url || pathname.startsWith(url + "/");
@@ -82,12 +86,16 @@ export function AppSidebar() {
     <Sidebar collapsible="icon">
       <SidebarHeader className="border-b border-sidebar-border px-3 py-3">
         <Link to="/" className="flex items-center gap-2">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <FlaskConical className="h-4 w-4" />
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-md bg-primary text-primary-foreground">
+            {branding?.webLogoUrl ? (
+              <img src={branding.webLogoUrl} alt={appName} className="h-full w-full object-contain" />
+            ) : (
+              <FlaskConical className="h-4 w-4" />
+            )}
           </div>
           {!collapsed && (
             <div className="flex flex-col leading-tight">
-              <span className="font-mono text-sm font-semibold tracking-tight">CHROMA.LAB</span>
+              <span className="font-mono text-sm font-semibold tracking-tight">{appName}</span>
               <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
                 Method Dev Platform
               </span>
@@ -95,6 +103,7 @@ export function AppSidebar() {
           )}
         </Link>
       </SidebarHeader>
+
       <SidebarContent>
         {visibleGroups.map((g) => (
           <SidebarGroup key={g.label}>
