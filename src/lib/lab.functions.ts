@@ -413,6 +413,30 @@ export const annotatePeak = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+// ---- Clear analyte assignments on one or many peaks ----
+const UnassignInput = z.object({
+  runId: z.string(),
+  peakIds: z.array(z.string()).min(1).max(500),
+});
+export const unassignPeaks = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => UnassignInput.parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase } = context as any;
+    const { error } = await supabase
+      .from("peaks")
+      .update({
+        analyte_id: null,
+        analyte_name: null,
+        annotated_by: null,
+        annotation_source: null,
+        confidence: null,
+      })
+      .in("id", data.peakIds);
+    if (error) throw error;
+    return { ok: true, count: data.peakIds.length };
+  });
+
 // ---- EIC: extract on the server from the persisted scans blob ----
 const EICInput = z.object({
   runId: z.string(),

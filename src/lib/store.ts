@@ -35,6 +35,7 @@ type State = {
   updateAnalyteLocal: (a: Analyte) => void;
   removeAnalyteLocal: (id: string) => void;
   annotatePeakLocal: (runId: string, peakId: string, label: string, analyteId?: string) => void;
+  unassignPeaksLocal: (runId: string, peakIds: string[]) => void;
   addPeakLocal: (runId: string, peak: Peak) => void;
   removeRunLocal: (id: string) => void;
   removeBatchLocal: (id: string) => void;
@@ -112,6 +113,24 @@ export const useLab = create<State>((set) => ({
           : r,
       ),
     })),
+  unassignPeaksLocal: (runId, peakIds) =>
+    set((s) => {
+      const ids = new Set(peakIds);
+      return {
+        runs: s.runs.map((r) =>
+          r.id === runId
+            ? {
+                ...r,
+                peaks: r.peaks.map((p) =>
+                  ids.has(p.id)
+                    ? { ...p, analyteName: undefined, analyteId: undefined, confidence: undefined }
+                    : p,
+                ),
+              }
+            : r,
+        ),
+      };
+    }),
   removeRunLocal: (id) =>
     set((s) => ({ runs: s.runs.filter((r) => r.id !== id) })),
   removeBatchLocal: (id) =>

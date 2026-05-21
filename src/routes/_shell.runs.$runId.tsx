@@ -25,7 +25,7 @@ import { ChromatogramPlot } from "@/components/chromatogram-plot";
 import { PeakTable } from "@/components/peak-table";
 import { ago } from "@/lib/time";
 import { toast } from "sonner";
-import { getRunEIC, getRunEICBatch, deleteRun, addManualPeak } from "@/lib/lab.functions";
+import { getRunEIC, getRunEICBatch, deleteRun, addManualPeak, unassignPeaks } from "@/lib/lab.functions";
 import { integrateBand, type IntegrationResult } from "@/lib/peak-math";
 import { mzFromFormula, defaultAdduct, ADDUCTS_POS, ADDUCTS_NEG, type Adduct } from "@/lib/chem";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -73,6 +73,21 @@ function RunDetail() {
   const [integration, setIntegration] = useState<IntegrationResult | null>(null);
   const addPeakLocal = useLab((s) => s.addPeakLocal);
   const addManualPeakFn = useServerFn(addManualPeak);
+  const unassignPeaksLocal = useLab((s) => s.unassignPeaksLocal);
+  const unassignPeaksFn = useServerFn(unassignPeaks);
+  const handleUnassign = async (peakIds: string[]) => {
+    try {
+      await unassignPeaksFn({ data: { runId: run.id, peakIds } });
+      unassignPeaksLocal(run.id, peakIds);
+      toast.success(
+        peakIds.length === 1
+          ? "Assignment cleared"
+          : `${peakIds.length} assignments cleared`,
+      );
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to clear assignment");
+    }
+  };
 
   const selected = run.peaks.find((p) => p.id === selectedId);
   // Custom m/z (when typed and valid) ALWAYS overrides the selected peak.
@@ -683,6 +698,7 @@ function RunDetail() {
                     onSelectPeak(p.id);
                   }
                 }}
+                onUnassign={usingDerivedPeaks ? undefined : handleUnassign}
               />
             )}
           </div>
