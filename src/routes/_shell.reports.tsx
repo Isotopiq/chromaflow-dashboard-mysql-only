@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ChromatogramPlot } from "@/components/chromatogram-plot";
 import { PeakTable } from "@/components/peak-table";
-import { FileText, Download, Loader2, Share2, Trash2 } from "lucide-react";
+import { FileText, Download, Loader2, Share2, Trash2, ChevronUp, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import {
   createReport,
