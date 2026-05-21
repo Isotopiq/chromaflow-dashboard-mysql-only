@@ -278,7 +278,15 @@ function LibraryTab() {
                 const isUser = a.librarySource === "user";
                 const canManage = !a.createdBy || a.createdBy === currentUser.id || isUser;
                 return (
-                  <TableRow key={a.id} className="text-xs">
+                  <TableRow key={a.id} className="text-xs" data-state={selected.has(a.id) ? "selected" : undefined}>
+                    <TableCell className="w-8">
+                      <Checkbox
+                        aria-label={`Select ${a.name}`}
+                        checked={selected.has(a.id)}
+                        onCheckedChange={(v) => toggleOne(a.id, v === true)}
+                        disabled={!canManage}
+                      />
+                    </TableCell>
                     <TableCell className="font-medium">
                       <Link
                         to="/analytes/$analyteId"
