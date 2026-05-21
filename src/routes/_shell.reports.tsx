@@ -113,7 +113,7 @@ function Reports() {
           `Upload failed (${putRes.status})${detail ? `: ${detail.slice(0, 160)}` : ""}`,
         );
       }
-      await createReportFn({
+      const report = await createReportFn({
         data: {
           title: method.name,
           template: "method",
@@ -121,7 +121,11 @@ function Reports() {
           storagePath: up.path,
         },
       });
-      toast.success("Report saved");
+      if ((report as any)?.metadataComplete === false) {
+        toast.warning("PDF generated, but report history was not saved because the reports table migration is incomplete.");
+      } else {
+        toast.success("Report saved");
+      }
       qc.invalidateQueries({ queryKey: ["reports"] });
     } catch (e: any) {
       toast.error(e?.message ?? "Failed to generate PDF");
@@ -410,7 +414,7 @@ function Reports() {
               No reports yet. Generate one above.
             </div>
           )}
-          {(reportsQuery.data ?? []).map((r: any) => (
+          {(reportsQuery.data ?? []).filter((r: any) => r.storage_path).map((r: any) => (
             <div
               key={r.id}
               className="flex items-center justify-between px-4 py-2 text-xs"
