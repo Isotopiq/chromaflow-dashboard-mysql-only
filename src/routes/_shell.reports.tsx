@@ -344,6 +344,33 @@ function Reports() {
               </section>
             )}
 
+            {sections.eics && methodRun && selectedEicAnalytes.length > 0 && (
+              <section>
+                <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                  Extracted ion chromatograms
+                </h3>
+                {!hasScans ? (
+                  <div className="mt-2 text-[11px] text-muted-foreground">
+                    Run has no raw scans blob — EICs unavailable.
+                  </div>
+                ) : eicQuery.isLoading ? (
+                  <div className="mt-2 text-[11px] text-muted-foreground">
+                    Extracting {selectedEicAnalytes.length} EIC trace(s)…
+                  </div>
+                ) : eicQuery.isError ? (
+                  <div className="mt-2 text-[11px] text-destructive">
+                    Failed to load EICs.
+                  </div>
+                ) : (
+                  <EicReportBlock
+                    analytes={selectedEicAnalytes}
+                    data={eicQuery.data}
+                  />
+                )}
+              </section>
+            )}
+
+
             {sections.notes && method && (
               <section>
                 <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
