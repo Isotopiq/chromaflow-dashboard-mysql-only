@@ -4,13 +4,14 @@
 # `vite preview` on port 5273.
 
 # ---------- deps ----------
-FROM oven/bun:1.1.38-alpine AS deps
+# Bun 1.3.x reports a Vite-compatible Node runtime (22.12+ / 24.x).
+FROM oven/bun:1.3.3-alpine AS deps
 WORKDIR /app
-COPY package.json bun.lockb* package-lock.json* ./
+COPY package.json bun.lock* package-lock.json* ./
 RUN bun install --frozen-lockfile || bun install
 
 # ---------- builder ----------
-FROM oven/bun:1.1.38-alpine AS builder
+FROM oven/bun:1.3.3-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -24,7 +25,7 @@ ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL \
 RUN bun run build
 
 # ---------- runtime ----------
-FROM oven/bun:1.1.38-alpine AS runtime
+FROM oven/bun:1.3.3-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
