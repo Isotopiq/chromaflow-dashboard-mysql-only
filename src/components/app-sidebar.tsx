@@ -10,6 +10,7 @@ import {
   FileText,
   Shield,
   Activity,
+  UserCog,
 } from "lucide-react";
 import {
   Sidebar,
@@ -61,6 +62,10 @@ const groups: Array<{
   {
     label: "Reporting",
     items: [{ title: "Reports", url: "/reports", icon: FileText }],
+  },
+  {
+    label: "Settings",
+    items: [{ title: "Account", url: "/account", icon: UserCog }],
   },
   {
     label: "Admin",
@@ -129,17 +134,28 @@ export function AppSidebar() {
       </SidebarContent>
       <SidebarFooter className="border-t border-sidebar-border p-3">
         {!collapsed && currentUser && (
-          <div className="flex items-center gap-2 text-xs">
-            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-accent text-[10px] font-semibold">
-              {currentUser.avatar}
+          <Link
+            to="/account"
+            className="flex items-center gap-2 rounded-md p-1 text-xs hover:bg-sidebar-accent"
+          >
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-accent text-[10px] font-semibold">
+              {currentUser.avatarUrl ? (
+                <img
+                  src={currentUser.avatarUrl}
+                  alt={currentUser.name}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                currentUser.avatar
+              )}
             </div>
-            <div className="flex flex-col leading-tight">
-              <span className="font-medium">{currentUser.name}</span>
+            <div className="flex min-w-0 flex-col leading-tight">
+              <span className="truncate font-medium">{currentUser.name}</span>
               <span className="text-[10px] capitalize text-muted-foreground">
                 {currentUser.role}
               </span>
             </div>
-          </div>
+          </Link>
         )}
       </SidebarFooter>
     </Sidebar>

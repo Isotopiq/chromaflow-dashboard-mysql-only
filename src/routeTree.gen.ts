@@ -20,6 +20,7 @@ import { Route as ShellOverlayRouteImport } from './routes/_shell.overlay'
 import { Route as ShellBatchesRouteImport } from './routes/_shell.batches'
 import { Route as ShellAnalytesRouteImport } from './routes/_shell.analytes'
 import { Route as ShellAdminRouteImport } from './routes/_shell.admin'
+import { Route as ShellAccountRouteImport } from './routes/_shell.account'
 import { Route as ShellRunsIndexRouteImport } from './routes/_shell.runs.index'
 import { Route as ShellMethodsIndexRouteImport } from './routes/_shell.methods.index'
 import { Route as ShellColumnsIndexRouteImport } from './routes/_shell.columns.index'
@@ -85,6 +86,11 @@ const ShellAdminRoute = ShellAdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => ShellRoute,
 } as any)
+const ShellAccountRoute = ShellAccountRouteImport.update({
+  id: '/account',
+  path: '/account',
+  getParentRoute: () => ShellRoute,
+} as any)
 const ShellRunsIndexRoute = ShellRunsIndexRouteImport.update({
   id: '/runs/',
   path: '/runs/',
@@ -141,6 +147,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
+  '/account': typeof ShellAccountRoute
   '/admin': typeof ShellAdminRoute
   '/analytes': typeof ShellAnalytesRouteWithChildren
   '/batches': typeof ShellBatchesRoute
@@ -162,6 +169,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
+  '/account': typeof ShellAccountRoute
   '/admin': typeof ShellAdminRoute
   '/analytes': typeof ShellAnalytesRouteWithChildren
   '/batches': typeof ShellBatchesRoute
@@ -186,6 +194,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
+  '/_shell/account': typeof ShellAccountRoute
   '/_shell/admin': typeof ShellAdminRoute
   '/_shell/analytes': typeof ShellAnalytesRouteWithChildren
   '/_shell/batches': typeof ShellBatchesRoute
@@ -211,6 +220,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/reset-password'
     | '/signup'
+    | '/account'
     | '/admin'
     | '/analytes'
     | '/batches'
@@ -232,6 +242,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/reset-password'
     | '/signup'
+    | '/account'
     | '/admin'
     | '/analytes'
     | '/batches'
@@ -255,6 +266,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/reset-password'
     | '/signup'
+    | '/_shell/account'
     | '/_shell/admin'
     | '/_shell/analytes'
     | '/_shell/batches'
@@ -362,6 +374,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellAdminRouteImport
       parentRoute: typeof ShellRoute
     }
+    '/_shell/account': {
+      id: '/_shell/account'
+      path: '/account'
+      fullPath: '/account'
+      preLoaderRoute: typeof ShellAccountRouteImport
+      parentRoute: typeof ShellRoute
+    }
     '/_shell/runs/': {
       id: '/_shell/runs/'
       path: '/runs'
@@ -448,6 +467,7 @@ const ShellAnalytesRouteWithChildren = ShellAnalytesRoute._addFileChildren(
 )
 
 interface ShellRouteChildren {
+  ShellAccountRoute: typeof ShellAccountRoute
   ShellAdminRoute: typeof ShellAdminRoute
   ShellAnalytesRoute: typeof ShellAnalytesRouteWithChildren
   ShellBatchesRoute: typeof ShellBatchesRoute
@@ -465,6 +485,7 @@ interface ShellRouteChildren {
 }
 
 const ShellRouteChildren: ShellRouteChildren = {
+  ShellAccountRoute: ShellAccountRoute,
   ShellAdminRoute: ShellAdminRoute,
   ShellAnalytesRoute: ShellAnalytesRouteWithChildren,
   ShellBatchesRoute: ShellBatchesRoute,
@@ -494,13 +515,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}

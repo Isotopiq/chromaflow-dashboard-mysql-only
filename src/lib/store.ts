@@ -7,6 +7,7 @@ const EMPTY_USER: User = {
   email: "",
   role: "developer",
   avatar: "—",
+  avatarUrl: null,
 };
 
 type State = {

@@ -125,6 +125,10 @@ export function mapAnalyte(r: any): Analyte {
 
 export function mapUser(profile: any, role: string): User {
   const name = profile.display_name ?? "user";
+  const avatarPath = profile.avatar_url ?? null;
+  const avatarUrl = avatarPath
+    ? supabaseAdmin.storage.from("avatars").getPublicUrl(avatarPath).data.publicUrl ?? null
+    : null;
   return {
     id: profile.id,
     name,
@@ -136,6 +140,7 @@ export function mapUser(profile: any, role: string): User {
       .slice(0, 2)
       .join("")
       .toUpperCase(),
+    avatarUrl,
   };
 }
 

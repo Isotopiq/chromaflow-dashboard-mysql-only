@@ -101,4 +101,5 @@ export type User = {
   email: string;
   role: "admin" | "developer" | "reviewer";
   avatar: string;
+  avatarUrl?: string | null;
 };
