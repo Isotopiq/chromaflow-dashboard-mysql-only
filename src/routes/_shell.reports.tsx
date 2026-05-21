@@ -27,14 +27,16 @@ export const Route = createFileRoute("/_shell/reports")({
 });
 
 function Reports() {
-  const { runs, methods } = useLab();
+  const { runs, methods, analytes } = useLab();
   const [methodId, setMethodId] = useState(methods[0]?.id ?? "");
   const [sections, setSections] = useState({
     method: true,
     chromatogram: true,
     peaks: true,
+    eics: true,
     notes: true,
   });
+  const [selectedEicIds, setSelectedEicIds] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const printRef = useRef<HTMLDivElement | null>(null);
 
@@ -45,12 +47,41 @@ function Reports() {
   const createReportFn = useServerFn(createReport);
   const listReportsFn = useServerFn(listReports);
   const getReportUrlFn = useServerFn(getReportSignedUrl);
+  const getEicBatchFn = useServerFn(getRunEICBatch);
   const qc = useQueryClient();
 
   const reportsQuery = useQuery({
     queryKey: ["reports"],
     queryFn: () => listReportsFn(),
   });
+
+  const eicCandidates = useMemo(
+    () => analytes.filter((a) => Number.isFinite(a.mz) && a.mz > 0),
+    [analytes],
+  );
+  const selectedEicAnalytes = useMemo(
+    () => eicCandidates.filter((a) => selectedEicIds.has(a.id)),
+    [eicCandidates, selectedEicIds],
+  );
+
+  const hasScans = !!methodRun?.scansBlobPath;
+  const eicQuery = useQuery({
+    queryKey: [
+      "report-eics",
+      methodRun?.id,
+      selectedEicAnalytes.map((a) => a.id).join(","),
+    ],
+    enabled: hasScans && sections.eics && selectedEicAnalytes.length > 0,
+    queryFn: () =>
+      getEicBatchFn({
+        data: {
+          runId: methodRun!.id,
+          ppm: 10,
+          targets: selectedEicAnalytes.map((a) => ({ id: a.id, mz: a.mz })),
+        },
+      }),
+  });
+
 
   const generate = async () => {
     if (!printRef.current || !method) return;
