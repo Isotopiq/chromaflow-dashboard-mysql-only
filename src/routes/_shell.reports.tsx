@@ -444,18 +444,19 @@ function Reports() {
                   return column ? (
                     <section key={key}>
                       <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                        Column
+                        Column Information
                       </h3>
                       <dl className="mt-2 grid grid-cols-2 gap-x-6 gap-y-2 font-mono text-xs">
-                        <RField label="Name" value={column.name} />
-                        <RField label="Chemistry / type" value={column.chemistry} />
-                        <RField label="Dimensions" value={column.dimensions} />
-                        <RField label="Particle size" value={column.particleSize} />
-                        <RField label="Manufacturer" value={column.manufacturer} />
-                        <RField label="Serial" value={column.serial} />
+                        <RField label="Name" value={column.name || "—"} />
+                        <RField label="Chemistry / type" value={column.chemistry || "—"} />
+                        <RField label="Dimensions" value={column.dimensions || "—"} />
+                        <RField label="Particle size" value={String(column.particleSize ?? "—")} />
+                        <RField label="Manufacturer" value={column.manufacturer || "—"} />
+                        <RField label="Serial" value={column.serial || "—"} />
                       </dl>
                     </section>
                   ) : null;
+
                 case "gradientTable":
                   return method && method.gradient.length > 0 ? (
                     <section key={key}>
