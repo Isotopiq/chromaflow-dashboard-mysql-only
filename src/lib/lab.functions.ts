@@ -612,14 +612,34 @@ export const createReport = createServerFn({ method: "POST" })
     };
     const insert = async (payload: Record<string, unknown>) =>
       await supabase.from("reports").insert(payload).select().single();
-    let { data: saved, error } = await insert(row);
-    const schemaCacheError = (e: any) => /schema cache|column/i.test(e?.message ?? "");
-    if (error && schemaCacheError(error)) {
-      const { run_ids: _runIds, batch_id: _batchId, ...withoutOptionalRefs } = row;
-      ({ data: saved, error } = await insert(withoutOptionalRefs));
+    const attempts = [
+      row,
+      (({ run_ids: _runIds, batch_id: _batchId, ...rest }) => rest)(row),
+      (({ run_ids: _runIds, batch_id: _batchId, storage_path: _storagePath, ...rest }) => rest)(row),
+      (({ run_ids: _runIds, batch_id: _batchId, storage_path: _storagePath, template: _template, ...rest }) => rest)(row),
+    ];
+    let lastError: any = null;
+    for (const payload of attempts) {
+      const { data: saved, error } = await insert(payload);
+      if (!error) {
+        return {
+          ...saved,
+          storage_path: (saved as any).storage_path ?? data.storagePath,
+          metadataComplete: "storage_path" in (saved ?? {}),
+        };
+      }
+      lastError = error;
+      if (!/schema cache|column/i.test(error.message ?? "")) break;
     }
-    if (error) throw error;
-    return saved;
+    return {
+      id: null,
+      title: data.title,
+      template: data.template,
+      storage_path: data.storagePath,
+      created_at: new Date().toISOString(),
+      metadataComplete: false,
+      metadataError: lastError?.message ?? "Report metadata could not be saved.",
+    };
   });
 
 export const listReports = createServerFn({ method: "GET" })
@@ -641,10 +661,11 @@ export const getReportSignedUrl = createServerFn({ method: "POST" })
     const { supabase } = context as any;
     const { data: row, error } = await supabase
       .from("reports")
-      .select("storage_path")
+      .select("*")
       .eq("id", data.id)
       .single();
     if (error) throw error;
+    if (!row?.storage_path) throw new Error("This report has no stored PDF path. Regenerate it after the reports migration is applied.");
     const { data: signed, error: se } = await supabase.storage
       .from("reports")
       .createSignedUrl(row.storage_path, 60 * 10);
