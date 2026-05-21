@@ -613,9 +613,10 @@ export const createReport = createServerFn({ method: "POST" })
     const insert = async (payload: Record<string, unknown>) =>
       await supabase.from("reports").insert(payload).select().single();
     let { data: saved, error } = await insert(row);
-    if (error && /schema cache|column.*run_ids|run_ids/i.test(error.message ?? "")) {
-      const { run_ids: _runIds, ...withoutRunIds } = row;
-      ({ data: saved, error } = await insert(withoutRunIds));
+    const schemaCacheError = (e: any) => /schema cache|column/i.test(e?.message ?? "");
+    if (error && schemaCacheError(error)) {
+      const { run_ids: _runIds, batch_id: _batchId, ...withoutOptionalRefs } = row;
+      ({ data: saved, error } = await insert(withoutOptionalRefs));
     }
     if (error) throw error;
     return saved;
