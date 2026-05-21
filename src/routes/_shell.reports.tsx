@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ChromatogramPlot } from "@/components/chromatogram-plot";
 import { PeakTable } from "@/components/peak-table";
-import { FileText, Download, Loader2, Share2, Trash2 } from "lucide-react";
+import { FileText, Download, Loader2, Share2, Trash2, ChevronUp, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import {
   createReport,
@@ -51,6 +51,36 @@ function Reports() {
     eics: true,
     notes: true,
   });
+  type SectionKey = keyof typeof sections;
+  const SECTION_LABELS: Record<SectionKey, string> = {
+    method: "Method parameters",
+    column: "Column (type & dimensions)",
+    gradientTable: "Gradient timetable",
+    gradientPlot: "Gradient plot",
+    chromatogram: "Chromatogram (TIC)",
+    peaks: "Peak table",
+    eics: "Extracted ion chromatograms",
+    notes: "Notes",
+  };
+  const [sectionOrder, setSectionOrder] = useState<SectionKey[]>([
+    "method",
+    "column",
+    "gradientTable",
+    "gradientPlot",
+    "chromatogram",
+    "peaks",
+    "eics",
+    "notes",
+  ]);
+  const moveSection = (idx: number, dir: -1 | 1) => {
+    setSectionOrder((prev) => {
+      const j = idx + dir;
+      if (j < 0 || j >= prev.length) return prev;
+      const next = prev.slice();
+      [next[idx], next[j]] = [next[j], next[idx]];
+      return next;
+    });
+  };
   const [selectedEicIds, setSelectedEicIds] = useState<Set<string>>(new Set());
   const [customNotes, setCustomNotes] = useState("");
   const [reportTitle, setReportTitle] = useState("");
@@ -254,29 +284,40 @@ function Reports() {
             </div>
           </div>
 
-          <div className="mt-5 text-[10px] uppercase tracking-widest text-muted-foreground">
-            Sections
+          <div className="mt-5 flex items-center justify-between text-[10px] uppercase tracking-widest text-muted-foreground">
+            <span>Sections</span>
+            <span className="normal-case tracking-normal">Drag order via ↑ ↓</span>
           </div>
           <div className="mt-2 space-y-1">
-            {(
-              [
-                ["method", "Method parameters"],
-                ["column", "Column (type & dimensions)"],
-                ["gradientTable", "Gradient timetable"],
-                ["gradientPlot", "Gradient plot"],
-                ["chromatogram", "Chromatogram (TIC)"],
-                ["peaks", "Peak table"],
-                ["eics", "Extracted ion chromatograms"],
-                ["notes", "Notes"],
-              ] as const
-            ).map(([key, label]) => (
-              <label key={key} className="flex cursor-pointer items-center gap-2 text-xs">
+            {sectionOrder.map((key, idx) => (
+              <div
+                key={key}
+                className="flex items-center gap-1 rounded-md px-1 py-0.5 hover:bg-accent/20"
+              >
                 <Checkbox
                   checked={sections[key]}
                   onCheckedChange={(v) => setSections({ ...sections, [key]: !!v })}
                 />
-                {label}
-              </label>
+                <span className="flex-1 text-xs">{SECTION_LABELS[key]}</span>
+                <button
+                  type="button"
+                  onClick={() => moveSection(idx, -1)}
+                  disabled={idx === 0}
+                  className="rounded p-0.5 text-muted-foreground hover:bg-accent/40 hover:text-foreground disabled:opacity-30"
+                  aria-label={`Move ${SECTION_LABELS[key]} up`}
+                >
+                  <ChevronUp className="h-3 w-3" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => moveSection(idx, 1)}
+                  disabled={idx === sectionOrder.length - 1}
+                  className="rounded p-0.5 text-muted-foreground hover:bg-accent/40 hover:text-foreground disabled:opacity-30"
+                  aria-label={`Move ${SECTION_LABELS[key]} down`}
+                >
+                  <ChevronDown className="h-3 w-3" />
+                </button>
+              </div>
             ))}
           </div>
 
@@ -380,150 +421,157 @@ function Reports() {
               <FileText className="h-5 w-5 text-muted-foreground" />
             </div>
 
-            {sections.method && method && (
-              <section>
-                <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                  Method parameters
-                </h3>
-                <dl className="mt-2 grid grid-cols-2 gap-x-6 gap-y-2 font-mono text-xs">
-                  <RField label="Modality" value={method.modality} />
-                  <RField label="Ionization" value={method.msIonization} />
-                  <RField label="Mobile phase A" value={method.mobilePhaseA} />
-                  <RField label="Mobile phase B" value={method.mobilePhaseB} />
-                  <RField label="Flow" value={`${method.flowRate} mL/min`} />
-                  <RField label="Column temp" value={`${method.columnTemp} °C`} />
-                </dl>
-              </section>
-            )}
-
-            {sections.column && column && (
-              <section>
-                <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                  Column
-                </h3>
-                <dl className="mt-2 grid grid-cols-2 gap-x-6 gap-y-2 font-mono text-xs">
-                  <RField label="Name" value={column.name} />
-                  <RField label="Chemistry / type" value={column.chemistry} />
-                  <RField label="Dimensions" value={column.dimensions} />
-                  <RField label="Particle size" value={column.particleSize} />
-                  <RField label="Manufacturer" value={column.manufacturer} />
-                  <RField label="Serial" value={column.serial} />
-                </dl>
-              </section>
-            )}
-
-            {sections.gradientTable && method && method.gradient.length > 0 && (
-              <section>
-                <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                  Gradient timetable
-                </h3>
-                <Table className="mt-2">
-                  <TableHeader>
-                    <TableRow className="bg-muted/30 hover:bg-muted/30">
-                      <TableHead className="text-[10px] uppercase tracking-wider">Time (min)</TableHead>
-                      <TableHead className="text-[10px] uppercase tracking-wider">% B</TableHead>
-                      <TableHead className="text-[10px] uppercase tracking-wider">Flow (mL/min)</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {method.gradient.map((g, i) => (
-                      <TableRow key={i} className="font-mono text-xs">
-                        <TableCell className="py-1.5">{g.time.toFixed(1)}</TableCell>
-                        <TableCell className="py-1.5">{g.pctB}</TableCell>
-                        <TableCell className="py-1.5">{g.flow.toFixed(2)}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </section>
-            )}
-
-            {sections.gradientPlot && method && method.gradient.length > 1 && (
-              <section>
-                <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                  Gradient plot
-                </h3>
-                <div className="mt-2 rounded-md border border-border p-2">
-                  <GradientPlot gradient={method.gradient} />
-                </div>
-              </section>
-            )}
-
-            {sections.chromatogram && methodRun && (
-              <section>
-                <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                  Representative chromatogram
-                </h3>
-                <div className="mt-2 rounded-md border border-border p-2">
-                  <ChromatogramPlot runs={[methodRun]} height={200} showPeaks />
-                </div>
-                <div className="mt-1 font-mono text-[10px] text-muted-foreground">
-                  {methodRun.name}
-                </div>
-              </section>
-            )}
-
-            {sections.peaks && methodRun && (
-              <section>
-                <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                  Peak table
-                </h3>
-                <div className="mt-2">
-                  <PeakTable peaks={methodRun.peaks.slice(0, 8)} />
-                </div>
-              </section>
-            )}
-
-            {sections.eics && methodRun && selectedEicAnalytes.length > 0 && (
-              <section>
-                <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                  Extracted ion chromatograms
-                </h3>
-                {!hasScans ? (
-                  <div className="mt-2 text-[11px] text-muted-foreground">
-                    Run has no raw scans blob — EICs unavailable.
-                  </div>
-                ) : eicQuery.isLoading ? (
-                  <div className="mt-2 text-[11px] text-muted-foreground">
-                    Extracting {selectedEicAnalytes.length} EIC trace(s)…
-                  </div>
-                ) : eicQuery.isError ? (
-                  <div className="mt-2 text-[11px] text-destructive">
-                    Failed to load EICs.
-                  </div>
-                ) : (
-                  <EicReportBlock
-                    analytes={selectedEicAnalytes}
-                    data={eicQuery.data}
-                  />
-                )}
-              </section>
-            )}
-
-
-            {sections.notes && method && (
-              <section>
-                <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                  Notes
-                </h3>
-                <p className="mt-2 text-xs text-muted-foreground">{method.notes}</p>
-                {customNotes.trim() && (
-                  <div className="mt-3 rounded-md border border-border bg-muted/20 p-2">
-                    <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
-                      Analyst notes
-                    </div>
-                    <p className="mt-1 whitespace-pre-wrap text-xs">{customNotes}</p>
-                  </div>
-                )}
-                <div className="mt-2 flex flex-wrap gap-1">
-                  {method.tags.map((t) => (
-                    <Badge key={t} variant="outline" className="text-[10px]">
-                      {t}
-                    </Badge>
-                  ))}
-                </div>
-              </section>
-            )}
+            {sectionOrder.map((key) => {
+              if (!sections[key]) return null;
+              switch (key) {
+                case "method":
+                  return method ? (
+                    <section key={key}>
+                      <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                        Method parameters
+                      </h3>
+                      <dl className="mt-2 grid grid-cols-2 gap-x-6 gap-y-2 font-mono text-xs">
+                        <RField label="Modality" value={method.modality} />
+                        <RField label="Ionization" value={method.msIonization} />
+                        <RField label="Mobile phase A" value={method.mobilePhaseA} />
+                        <RField label="Mobile phase B" value={method.mobilePhaseB} />
+                        <RField label="Flow" value={`${method.flowRate} mL/min`} />
+                        <RField label="Column temp" value={`${method.columnTemp} °C`} />
+                      </dl>
+                    </section>
+                  ) : null;
+                case "column":
+                  return column ? (
+                    <section key={key}>
+                      <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                        Column
+                      </h3>
+                      <dl className="mt-2 grid grid-cols-2 gap-x-6 gap-y-2 font-mono text-xs">
+                        <RField label="Name" value={column.name} />
+                        <RField label="Chemistry / type" value={column.chemistry} />
+                        <RField label="Dimensions" value={column.dimensions} />
+                        <RField label="Particle size" value={column.particleSize} />
+                        <RField label="Manufacturer" value={column.manufacturer} />
+                        <RField label="Serial" value={column.serial} />
+                      </dl>
+                    </section>
+                  ) : null;
+                case "gradientTable":
+                  return method && method.gradient.length > 0 ? (
+                    <section key={key}>
+                      <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                        Gradient timetable
+                      </h3>
+                      <Table className="mt-2">
+                        <TableHeader>
+                          <TableRow className="bg-muted/30 hover:bg-muted/30">
+                            <TableHead className="text-[10px] uppercase tracking-wider">Time (min)</TableHead>
+                            <TableHead className="text-[10px] uppercase tracking-wider">% B</TableHead>
+                            <TableHead className="text-[10px] uppercase tracking-wider">Flow (mL/min)</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {method.gradient.map((g, i) => (
+                            <TableRow key={i} className="font-mono text-xs">
+                              <TableCell className="py-1.5">{g.time.toFixed(1)}</TableCell>
+                              <TableCell className="py-1.5">{g.pctB}</TableCell>
+                              <TableCell className="py-1.5">{g.flow.toFixed(2)}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </section>
+                  ) : null;
+                case "gradientPlot":
+                  return method && method.gradient.length > 1 ? (
+                    <section key={key}>
+                      <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                        Gradient plot
+                      </h3>
+                      <div className="mt-2 rounded-md border border-border p-2">
+                        <GradientPlot gradient={method.gradient} />
+                      </div>
+                    </section>
+                  ) : null;
+                case "chromatogram":
+                  return methodRun ? (
+                    <section key={key}>
+                      <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                        Representative chromatogram
+                      </h3>
+                      <div className="mt-2 rounded-md border border-border p-2">
+                        <ChromatogramPlot runs={[methodRun]} height={200} showPeaks />
+                      </div>
+                      <div className="mt-1 font-mono text-[10px] text-muted-foreground">
+                        {methodRun.name}
+                      </div>
+                    </section>
+                  ) : null;
+                case "peaks":
+                  return methodRun ? (
+                    <section key={key}>
+                      <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                        Peak table
+                      </h3>
+                      <div className="mt-2">
+                        <PeakTable peaks={methodRun.peaks.slice(0, 8)} />
+                      </div>
+                    </section>
+                  ) : null;
+                case "eics":
+                  return methodRun && selectedEicAnalytes.length > 0 ? (
+                    <section key={key}>
+                      <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                        Extracted ion chromatograms
+                      </h3>
+                      {!hasScans ? (
+                        <div className="mt-2 text-[11px] text-muted-foreground">
+                          Run has no raw scans blob — EICs unavailable.
+                        </div>
+                      ) : eicQuery.isLoading ? (
+                        <div className="mt-2 text-[11px] text-muted-foreground">
+                          Extracting {selectedEicAnalytes.length} EIC trace(s)…
+                        </div>
+                      ) : eicQuery.isError ? (
+                        <div className="mt-2 text-[11px] text-destructive">
+                          Failed to load EICs.
+                        </div>
+                      ) : (
+                        <EicReportBlock
+                          analytes={selectedEicAnalytes}
+                          data={eicQuery.data}
+                        />
+                      )}
+                    </section>
+                  ) : null;
+                case "notes":
+                  return method ? (
+                    <section key={key}>
+                      <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                        Notes
+                      </h3>
+                      <p className="mt-2 text-xs text-muted-foreground">{method.notes}</p>
+                      {customNotes.trim() && (
+                        <div className="mt-3 rounded-md border border-border bg-muted/20 p-2">
+                          <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                            Analyst notes
+                          </div>
+                          <p className="mt-1 whitespace-pre-wrap text-xs">{customNotes}</p>
+                        </div>
+                      )}
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {method.tags.map((t) => (
+                          <Badge key={t} variant="outline" className="text-[10px]">
+                            {t}
+                          </Badge>
+                        ))}
+                      </div>
+                    </section>
+                  ) : null;
+                default:
+                  return null;
+              }
+            })}
 
             <div className="border-t border-border pt-2 text-[9px] text-muted-foreground">
               {(reportFooter.trim() || "Generated By ChromaFlow")} · {new Date().toLocaleDateString()}
