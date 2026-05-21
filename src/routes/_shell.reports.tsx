@@ -23,6 +23,7 @@ import {
 import { renderReportPdf } from "@/lib/pdf-report";
 import { ShareDialog } from "@/components/share-dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Textarea } from "@/components/ui/textarea";
 
 export const Route = createFileRoute("/_shell/reports")({
   component: Reports,
