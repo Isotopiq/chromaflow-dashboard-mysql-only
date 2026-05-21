@@ -135,6 +135,7 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <AuthProvider>
+          <BrandingSync />
           <Outlet />
           <ThemedToaster />
         </AuthProvider>
@@ -143,7 +144,13 @@ function RootComponent() {
   );
 }
 
+function BrandingSync() {
+  useApplyFavicon();
+  return null;
+}
+
 function ThemedToaster() {
   const { theme } = useTheme();
   return <Toaster richColors theme={theme} />;
 }
+
