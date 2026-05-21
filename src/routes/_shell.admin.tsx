@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,8 +22,29 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Shield, AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
-import { listAdminUsers, setUserRole, listAuditEvents } from "@/lib/lab.functions";
+import {
+  Shield,
+  AlertTriangle,
+  ChevronDown,
+  ChevronRight,
+  Upload,
+  Copy,
+  Trash2,
+  Plus,
+} from "lucide-react";
+import {
+  listAdminUsers,
+  setUserRole,
+  listAuditEvents,
+  createUploadUrl,
+} from "@/lib/lab.functions";
+import {
+  setBranding,
+  createInviteCode,
+  listInviteCodes,
+  revokeInviteCode,
+} from "@/lib/branding.functions";
+import { useBranding } from "@/lib/use-branding";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_shell/admin")({ component: Admin });
@@ -35,17 +56,25 @@ function Admin() {
         <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Admin</div>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">Administration</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Manage users, roles, and review the audit trail.
+          Manage users, roles, invite codes, branding, and review the audit trail.
         </p>
       </div>
 
       <Tabs defaultValue="users" className="w-full">
         <TabsList>
           <TabsTrigger value="users">Users & roles</TabsTrigger>
+          <TabsTrigger value="invites">Invite codes</TabsTrigger>
+          <TabsTrigger value="branding">Branding</TabsTrigger>
           <TabsTrigger value="audit">Audit log</TabsTrigger>
         </TabsList>
         <TabsContent value="users" className="mt-4">
           <UsersTab />
+        </TabsContent>
+        <TabsContent value="invites" className="mt-4">
+          <InvitesTab />
+        </TabsContent>
+        <TabsContent value="branding" className="mt-4">
+          <BrandingTab />
         </TabsContent>
         <TabsContent value="audit" className="mt-4">
           <AuditTab />
@@ -54,6 +83,7 @@ function Admin() {
     </div>
   );
 }
+
 
 function UsersTab() {
   const list = useServerFn(listAdminUsers);
