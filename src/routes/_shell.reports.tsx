@@ -291,7 +291,7 @@ function Reports() {
                     </button>
                   </div>
                   <ScrollArea className="mt-2 h-56 rounded-md border border-border">
-                    <div className="space-y-1 p-2">
+                    <div className="space-y-1 p-2 pr-3">
                       {eicCandidates.map((a) => (
                         <label
                           key={a.id}
@@ -308,8 +308,8 @@ function Reports() {
                               })
                             }
                           />
-                          <span className="flex-1 truncate">{a.name}</span>
-                          <span className="font-mono text-[10px] text-muted-foreground">
+                          <span className="min-w-0 flex-1 truncate">{a.name}</span>
+                          <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
                             {a.mz.toFixed(3)}
                           </span>
                         </label>
