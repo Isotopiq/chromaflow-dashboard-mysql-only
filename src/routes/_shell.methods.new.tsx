@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/select";
 import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import type { GradientStep, Method } from "@/lib/mock-data";
+import type { GradientStep, Method } from "@/lib/lab-types";
 
 export const Route = createFileRoute("/_shell/methods/new")({
   component: NewMethod,

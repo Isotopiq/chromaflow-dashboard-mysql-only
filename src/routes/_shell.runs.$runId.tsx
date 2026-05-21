@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { ChromatogramPlot } from "@/components/chromatogram-plot";
 import { PeakTable } from "@/components/peak-table";
-import { ago } from "@/lib/mock-data";
+import { ago } from "@/lib/time";
 import { toast } from "sonner";
 import { getRunEIC, getRunEICBatch, deleteRun, addManualPeak } from "@/lib/lab.functions";
 import { integrateBand, type IntegrationResult } from "@/lib/peak-math";

@@ -25,7 +25,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ChromatogramPlot } from "@/components/chromatogram-plot";
-import { ago } from "@/lib/mock-data";
+import { ago } from "@/lib/time";
 
 const MAX_RUNS = 6;
 
