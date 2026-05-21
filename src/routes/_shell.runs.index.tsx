@@ -19,7 +19,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { ChromatogramPlot } from "@/components/chromatogram-plot";
-import { ago } from "@/lib/mock-data";
+import { ago } from "@/lib/time";
 import {
   Select,
   SelectContent,

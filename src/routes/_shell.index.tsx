@@ -8,7 +8,7 @@ import { Progress } from "@/components/ui/progress";
 import { KpiCard } from "@/components/kpi-card";
 import { ChromatogramPlot } from "@/components/chromatogram-plot";
 import { StatusDot } from "@/components/status-dot";
-import { ago } from "@/lib/mock-data";
+import { ago } from "@/lib/time";
 
 export const Route = createFileRoute("/_shell/")({
   component: Dashboard,

@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ago } from "@/lib/mock-data";
+import { ago } from "@/lib/time";
 
 export const Route = createFileRoute("/_shell/overlay")({
   component: Overlay,
