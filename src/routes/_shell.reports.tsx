@@ -60,6 +60,8 @@ function Reports() {
 
   const method = methods.find((m) => m.id === methodId);
   const methodRun = runs.find((r) => r.methodId === methodId);
+  const column = columns.find((c) => c.id === method?.columnId);
+  const effectiveTitle = reportTitle.trim() || method?.name || "Method Report";
 
   const uploadFn = useServerFn(createUploadUrl);
   const createReportFn = useServerFn(createReport);
