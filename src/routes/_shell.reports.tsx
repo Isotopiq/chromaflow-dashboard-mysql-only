@@ -150,6 +150,18 @@ function Reports() {
     }
   };
 
+  const removeReport = async (id: string, title: string) => {
+    if (!confirm(`Delete report "${title}"? This cannot be undone.`)) return;
+    try {
+      await deleteReportFn({ data: { id } });
+      toast.success("Report deleted");
+      qc.invalidateQueries({ queryKey: ["reports"] });
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed to delete report");
+    }
+  };
+
+
   return (
     <div className="flex flex-col gap-4 p-6">
       <div className="flex items-end justify-between">
