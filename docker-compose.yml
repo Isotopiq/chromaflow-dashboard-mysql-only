@@ -19,6 +19,10 @@ services:
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: 5273
+      # Comma-separated hostnames the preview server will accept,
+      # e.g. "app.example.com,science-chromaflow.cu4huf.easypanel.host".
+      # Set to "all" to disable the host check (safe only behind a trusted proxy).
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-all}
       # Server-side Supabase config (primary names the app reads)
       LAB_SUPABASE_URL: ${LAB_SUPABASE_URL:-}
       LAB_SUPABASE_ANON_KEY: ${LAB_SUPABASE_ANON_KEY:-}
