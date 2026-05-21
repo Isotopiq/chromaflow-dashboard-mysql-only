@@ -1,61 +1,87 @@
-# Fix Docker/Easypanel deployment
+# Fix Easypanel Docker Compose deployment
 
-## Root cause
+## Goal
 
-The project's `vite.config.ts` enables the `@cloudflare/vite-plugin`, which makes `vite build` emit a Cloudflare Worker bundle instead of the standard Node server file (`dist/server/server.js`). At runtime, `vite preview` invokes TanStack's `preview-server-plugin`, which looks for that Node file and crashes:
+Make this app deploy cleanly as a single Easypanel Compose service and stop the current container loop:
 
-```
+```text
 Cannot find module '/app/dist/server/server.js'
 ```
 
-So `vite preview` is fundamentally incompatible with the Cloudflare build target. We have to either run the worker via `wrangler`/`workerd` in the container, or switch the build to a plain Node target. For Easypanel/Docker self-hosting, the Node target is the right call — it's lighter, faster to boot, and matches how `vite preview` already works.
+## Root cause
+
+The Docker container runs:
+
+```text
+vite preview --host 0.0.0.0 --port 5273
+```
+
+That runtime expects a normal TanStack/Vite production output containing `dist/server/server.js`. The current build is still using the Cloudflare build plugin, which produces a different server bundle layout. So the image builds, but the preview server cannot find the expected server entry when the container starts.
 
 ## Plan
 
-### 1. Disable the Cloudflare plugin for self-hosted builds
+### 1. Make the self-hosted Docker build produce the expected server output
 
-Edit `vite.config.ts`:
+Update `vite.config.ts` to disable the Cloudflare build plugin for this repo’s Docker build while keeping the existing TanStack server entry:
 
 ```ts
-import { defineConfig } from "@lovable.dev/vite-tanstack-config";
-
 export default defineConfig({
   cloudflare: false,
-  tanstackStart: { server: { entry: "server" } },
+  tanstackStart: {
+    server: { entry: "server" },
+  },
 });
 ```
 
-The Lovable wrapper only attaches `@cloudflare/vite-plugin` when `cloudflare !== false`. With it off, `vite build` produces `dist/client/` (static assets) and `dist/server/server.js` (Node SSR entry), and `vite preview` serves them correctly.
+This is the direct fix for the missing `/app/dist/server/server.js` error.
 
-This change only affects self-hosted builds. Lovable's cloud preview/publish runs through its own pipeline and is unaffected.
+### 2. Replace the Dockerfile with a clean Easypanel-compatible production image
 
-### 2. Simplify the Dockerfile
+Keep a simple multi-stage Bun image:
 
-- Remove the `ARG VITE_SUPABASE_*` build args and the `COPY --from=builder /app/src ./src` line — neither is needed anymore. The browser already fetches Supabase config at runtime from `/api/public/config` (see `src/integrations/supabase/client.ts`), so no `VITE_*` value has to be baked into the client bundle.
-- Keep only `dist/`, `node_modules/`, and `package.json` in the runtime image.
+- install dependencies
+- build the app
+- copy only `dist`, `node_modules`, `package.json`, and the small config files needed by `vite preview`
+- expose container port `5273`
+- run `bun run preview --host 0.0.0.0 --port 5273`
 
-### 3. Rewrite `docker-compose.yml` to be Easypanel-native
+Remove the previous workaround that copied `src/` into the runtime image. Once the build target is correct, the runtime image should not need source files.
 
-- No `build.args` block (nothing to bake in at build time).
-- All Supabase vars are runtime-only `environment:` entries, passed through from Easypanel's env vars with `${VAR}` interpolation (no `:?` strict checks, since Easypanel injects env at container runtime, not at compose-parse time).
-- Service exposes port 5273, restart policy `unless-stopped`, healthcheck on `/`.
+### 3. Rewrite `docker-compose.yml` in Easypanel style
 
-### 4. Required Easypanel environment variables
+Use a minimal Compose service:
 
-Only **server-side** vars are needed (no `VITE_*` prefix required at build):
+- one service: `chroma-lab`
+- `build: .`
+- `restart: unless-stopped`
+- `ports: "5273:5273"`
+- runtime `environment:` only
+- no `build.args`
+- no strict `${VAR:?message}` interpolation, because that caused Easypanel deploy failures before
+- healthcheck against `http://127.0.0.1:5273/`
 
-- `SUPABASE_URL` — your self-hosted Supabase URL
-- `SUPABASE_PUBLISHABLE_KEY` — anon key
-- `SUPABASE_SERVICE_ROLE_KEY` — service role key
-- `SUPABASE_PROJECT_ID` — any placeholder string (e.g. `selfhosted`)
-- `LOVABLE_API_KEY` — optional, only if AI features are used
+### 4. Environment variables to set in Easypanel
 
-## Files changed
+Use these runtime variables in the Easypanel service UI:
 
-- `vite.config.ts` — add `cloudflare: false`
-- `Dockerfile` — drop build args, drop `src/` copy
-- `docker-compose.yml` — remove build args, runtime env only
+```text
+SUPABASE_URL=https://your-self-hosted-supabase-url
+SUPABASE_PUBLISHABLE_KEY=your-anon-or-publishable-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+SUPABASE_PROJECT_ID=selfhosted
+VITE_SUPABASE_URL=https://your-self-hosted-supabase-url
+VITE_SUPABASE_PUBLISHABLE_KEY=your-anon-or-publishable-key
+VITE_SUPABASE_PROJECT_ID=selfhosted
+```
 
-## Verification
+`LOVABLE_API_KEY` stays optional and should only be set if the app uses Lovable AI features.
 
-After redeploy, `vite preview` should boot cleanly and serve the SSR bundle from `dist/server/server.js` on port 5273.
+## Files to change
+
+- `vite.config.ts`
+- `Dockerfile`
+- `docker-compose.yml`
+
+## Expected result
+
+After redeploying in Easypanel, the container should start once, keep running, and serve the app on port `5273` without the missing `dist/server/server.js` error.
