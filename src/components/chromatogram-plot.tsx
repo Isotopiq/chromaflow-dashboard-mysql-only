@@ -87,7 +87,7 @@ export function ChromatogramPlot({
     <div style={{ width: "100%", height, cursor: onSelectRange ? "crosshair" : undefined }}>
       <ResponsiveContainer>
         <LineChart
-          margin={{ top: 8, right: 12, left: compact ? -16 : 0, bottom: 0 }}
+          margin={{ top: 8, right: 12, left: compact ? -16 : 0, bottom: compact ? 0 : 20 }}
           onMouseDown={(e: any) => {
             if (!onSelectRange) return;
             if (e?.activeLabel == null) return;
