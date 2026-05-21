@@ -9,9 +9,9 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}
-        VITE_SUPABASE_PUBLISHABLE_KEY: ${VITE_SUPABASE_PUBLISHABLE_KEY}
-        VITE_SUPABASE_PROJECT_ID: ${VITE_SUPABASE_PROJECT_ID}
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:?Set VITE_SUPABASE_URL in Easypanel environment variables}
+        VITE_SUPABASE_PUBLISHABLE_KEY: ${VITE_SUPABASE_PUBLISHABLE_KEY:?Set VITE_SUPABASE_PUBLISHABLE_KEY in Easypanel environment variables}
+        VITE_SUPABASE_PROJECT_ID: ${VITE_SUPABASE_PROJECT_ID:?Set VITE_SUPABASE_PROJECT_ID in Easypanel environment variables}
     image: chroma-lab:latest
     container_name: chroma-lab
     restart: unless-stopped
@@ -22,10 +22,10 @@ services:
       HOST: 0.0.0.0
       PORT: 5273
       # Server-only Supabase credentials (do NOT prefix with VITE_)
-      SUPABASE_URL: ${SUPABASE_URL}
-      SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY}
-      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
-      SUPABASE_PROJECT_ID: ${SUPABASE_PROJECT_ID}
+      SUPABASE_URL: ${SUPABASE_URL:?Set SUPABASE_URL in Easypanel environment variables}
+      SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY:?Set SUPABASE_PUBLISHABLE_KEY in Easypanel environment variables}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:?Set SUPABASE_SERVICE_ROLE_KEY in Easypanel environment variables}
+      SUPABASE_PROJECT_ID: ${SUPABASE_PROJECT_ID:?Set SUPABASE_PROJECT_ID in Easypanel environment variables}
       # Optional: Lovable AI gateway key (only if you use AI features)
       LOVABLE_API_KEY: ${LOVABLE_API_KEY:-}
     healthcheck:
