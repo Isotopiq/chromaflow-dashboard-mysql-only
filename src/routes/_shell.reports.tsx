@@ -396,6 +396,59 @@ function Reports() {
               </section>
             )}
 
+            {sections.column && column && (
+              <section>
+                <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                  Column
+                </h3>
+                <dl className="mt-2 grid grid-cols-2 gap-x-6 gap-y-2 font-mono text-xs">
+                  <RField label="Name" value={column.name} />
+                  <RField label="Chemistry / type" value={column.chemistry} />
+                  <RField label="Dimensions" value={column.dimensions} />
+                  <RField label="Particle size" value={column.particleSize} />
+                  <RField label="Manufacturer" value={column.manufacturer} />
+                  <RField label="Serial" value={column.serial} />
+                </dl>
+              </section>
+            )}
+
+            {sections.gradientTable && method && method.gradient.length > 0 && (
+              <section>
+                <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                  Gradient timetable
+                </h3>
+                <Table className="mt-2">
+                  <TableHeader>
+                    <TableRow className="bg-muted/30 hover:bg-muted/30">
+                      <TableHead className="text-[10px] uppercase tracking-wider">Time (min)</TableHead>
+                      <TableHead className="text-[10px] uppercase tracking-wider">% B</TableHead>
+                      <TableHead className="text-[10px] uppercase tracking-wider">Flow (mL/min)</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {method.gradient.map((g, i) => (
+                      <TableRow key={i} className="font-mono text-xs">
+                        <TableCell className="py-1.5">{g.time.toFixed(1)}</TableCell>
+                        <TableCell className="py-1.5">{g.pctB}</TableCell>
+                        <TableCell className="py-1.5">{g.flow.toFixed(2)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </section>
+            )}
+
+            {sections.gradientPlot && method && method.gradient.length > 1 && (
+              <section>
+                <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                  Gradient plot
+                </h3>
+                <div className="mt-2 rounded-md border border-border p-2">
+                  <GradientPlot gradient={method.gradient} />
+                </div>
+              </section>
+            )}
+
             {sections.chromatogram && methodRun && (
               <section>
                 <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
