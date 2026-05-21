@@ -10,11 +10,12 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ChromatogramPlot } from "@/components/chromatogram-plot";
 import { PeakTable } from "@/components/peak-table";
-import { FileText, Download, Loader2, Share2 } from "lucide-react";
+import { FileText, Download, Loader2, Share2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   createReport,
   createUploadUrl,
+  deleteReport,
   getReportSignedUrl,
   getRunEICBatch,
   listReports,
@@ -48,6 +49,7 @@ function Reports() {
   const createReportFn = useServerFn(createReport);
   const listReportsFn = useServerFn(listReports);
   const getReportUrlFn = useServerFn(getReportSignedUrl);
+  const deleteReportFn = useServerFn(deleteReport);
   const getEicBatchFn = useServerFn(getRunEICBatch);
   const qc = useQueryClient();
 
@@ -147,6 +149,18 @@ function Reports() {
       toast.error(e?.message ?? "Failed to fetch download URL");
     }
   };
+
+  const removeReport = async (id: string, title: string) => {
+    if (!confirm(`Delete report "${title}"? This cannot be undone.`)) return;
+    try {
+      await deleteReportFn({ data: { id } });
+      toast.success("Report deleted");
+      qc.invalidateQueries({ queryKey: ["reports"] });
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed to delete report");
+    }
+  };
+
 
   return (
     <div className="flex flex-col gap-4 p-6">
@@ -446,6 +460,15 @@ function Reports() {
                 >
                   <Download className="mr-1 h-3.5 w-3.5" /> Download
                 </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => removeReport(r.id, r.title)}
+                  className="text-destructive hover:text-destructive"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+
               </div>
             </div>
           ))}

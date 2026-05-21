@@ -673,6 +673,26 @@ export const getReportSignedUrl = createServerFn({ method: "POST" })
     return { url: signed.signedUrl };
   });
 
+export const deleteReport = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase } = context as any;
+    const { data: row } = await supabase
+      .from("reports")
+      .select("storage_path")
+      .eq("id", data.id)
+      .maybeSingle();
+    if (row?.storage_path) {
+      await supabase.storage.from("reports").remove([row.storage_path]);
+    }
+    const { error } = await supabase.from("reports").delete().eq("id", data.id);
+    if (error) throw error;
+    return { ok: true };
+  });
+
+
+
 // ---- Sharing links ----
 const ShareInput = z.object({
   resourceKind: z.enum(["run", "report"]),
