@@ -1,8 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLab } from "@/lib/store";
+import type { Analyte } from "@/lib/mock-data";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,24 +16,28 @@ import {
   createReport,
   createUploadUrl,
   getReportSignedUrl,
+  getRunEICBatch,
   listReports,
 } from "@/lib/lab.functions";
 import { renderReportPdf } from "@/lib/pdf-report";
 import { ShareDialog } from "@/components/share-dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 export const Route = createFileRoute("/_shell/reports")({
   component: Reports,
 });
 
 function Reports() {
-  const { runs, methods } = useLab();
+  const { runs, methods, analytes } = useLab();
   const [methodId, setMethodId] = useState(methods[0]?.id ?? "");
   const [sections, setSections] = useState({
     method: true,
     chromatogram: true,
     peaks: true,
+    eics: true,
     notes: true,
   });
+  const [selectedEicIds, setSelectedEicIds] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const printRef = useRef<HTMLDivElement | null>(null);
 
@@ -43,12 +48,41 @@ function Reports() {
   const createReportFn = useServerFn(createReport);
   const listReportsFn = useServerFn(listReports);
   const getReportUrlFn = useServerFn(getReportSignedUrl);
+  const getEicBatchFn = useServerFn(getRunEICBatch);
   const qc = useQueryClient();
 
   const reportsQuery = useQuery({
     queryKey: ["reports"],
     queryFn: () => listReportsFn(),
   });
+
+  const eicCandidates = useMemo(
+    () => analytes.filter((a: Analyte) => Number.isFinite(a.mz) && a.mz > 0),
+    [analytes],
+  );
+  const selectedEicAnalytes = useMemo(
+    () => eicCandidates.filter((a: Analyte) => selectedEicIds.has(a.id)),
+    [eicCandidates, selectedEicIds],
+  );
+
+  const hasScans = !!methodRun?.scansBlobPath;
+  const eicQuery = useQuery({
+    queryKey: [
+      "report-eics",
+      methodRun?.id,
+      selectedEicAnalytes.map((a) => a.id).join(","),
+    ],
+    enabled: hasScans && sections.eics && selectedEicAnalytes.length > 0,
+    queryFn: () =>
+      getEicBatchFn({
+        data: {
+          runId: methodRun!.id,
+          ppm: 10,
+          targets: selectedEicAnalytes.map((a) => ({ id: a.id, mz: a.mz })),
+        },
+      }),
+  });
+
 
   const generate = async () => {
     if (!printRef.current || !method) return;
@@ -167,8 +201,9 @@ function Reports() {
             {(
               [
                 ["method", "Method parameters"],
-                ["chromatogram", "Chromatogram"],
+                ["chromatogram", "Chromatogram (TIC)"],
                 ["peaks", "Peak table"],
+                ["eics", "Extracted ion chromatograms"],
                 ["notes", "Notes"],
               ] as const
             ).map(([key, label]) => (
@@ -181,6 +216,76 @@ function Reports() {
               </label>
             ))}
           </div>
+
+          {sections.eics && (
+            <>
+              <div className="mt-5 flex items-center justify-between text-[10px] uppercase tracking-widest text-muted-foreground">
+                <span>EIC analytes</span>
+                <span className="font-mono normal-case tracking-normal text-muted-foreground">
+                  {selectedEicIds.size}/{eicCandidates.length}
+                </span>
+              </div>
+              {!hasScans && (
+                <div className="mt-2 rounded-md border border-border bg-muted/30 p-2 text-[10px] text-muted-foreground">
+                  Selected run has no raw scans blob — EICs can't be extracted.
+                </div>
+              )}
+              {hasScans && eicCandidates.length === 0 && (
+                <div className="mt-2 rounded-md border border-border bg-muted/30 p-2 text-[10px] text-muted-foreground">
+                  No analytes with an m/z in the library yet.
+                </div>
+              )}
+              {hasScans && eicCandidates.length > 0 && (
+                <>
+                  <div className="mt-1 flex gap-2 text-[10px]">
+                    <button
+                      type="button"
+                      className="text-primary hover:underline"
+                      onClick={() =>
+                        setSelectedEicIds(new Set(eicCandidates.map((a) => a.id)))
+                      }
+                    >
+                      Select all
+                    </button>
+                    <span className="text-muted-foreground">·</span>
+                    <button
+                      type="button"
+                      className="text-primary hover:underline"
+                      onClick={() => setSelectedEicIds(new Set())}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  <ScrollArea className="mt-2 h-56 rounded-md border border-border">
+                    <div className="space-y-1 p-2">
+                      {eicCandidates.map((a) => (
+                        <label
+                          key={a.id}
+                          className="flex cursor-pointer items-center gap-2 text-xs"
+                        >
+                          <Checkbox
+                            checked={selectedEicIds.has(a.id)}
+                            onCheckedChange={(v) =>
+                              setSelectedEicIds((prev) => {
+                                const next = new Set(prev);
+                                if (v) next.add(a.id);
+                                else next.delete(a.id);
+                                return next;
+                              })
+                            }
+                          />
+                          <span className="flex-1 truncate">{a.name}</span>
+                          <span className="font-mono text-[10px] text-muted-foreground">
+                            {a.mz.toFixed(3)}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </>
+              )}
+            </>
+          )}
         </Card>
 
         <Card className="border-border bg-surface-elevated p-6">
@@ -238,6 +343,33 @@ function Reports() {
                 </div>
               </section>
             )}
+
+            {sections.eics && methodRun && selectedEicAnalytes.length > 0 && (
+              <section>
+                <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                  Extracted ion chromatograms
+                </h3>
+                {!hasScans ? (
+                  <div className="mt-2 text-[11px] text-muted-foreground">
+                    Run has no raw scans blob — EICs unavailable.
+                  </div>
+                ) : eicQuery.isLoading ? (
+                  <div className="mt-2 text-[11px] text-muted-foreground">
+                    Extracting {selectedEicAnalytes.length} EIC trace(s)…
+                  </div>
+                ) : eicQuery.isError ? (
+                  <div className="mt-2 text-[11px] text-destructive">
+                    Failed to load EICs.
+                  </div>
+                ) : (
+                  <EicReportBlock
+                    analytes={selectedEicAnalytes}
+                    data={eicQuery.data}
+                  />
+                )}
+              </section>
+            )}
+
 
             {sections.notes && method && (
               <section>
@@ -325,5 +457,90 @@ function RField({ label, value }: { label: string; value: string }) {
       <dt className="text-[9px] uppercase tracking-widest text-muted-foreground">{label}</dt>
       <dd className="mt-0.5">{value}</dd>
     </div>
+  );
+}
+
+type EicBatch = {
+  x: number[];
+  traces: Array<{
+    id: string;
+    mz: number;
+    y: number[];
+    peakRt: number | null;
+    peakIntensity: number;
+    area: number;
+    fwhm: number;
+    sn: number;
+  }>;
+};
+
+function EicReportBlock({
+  analytes,
+  data,
+}: {
+  analytes: Analyte[];
+  data: EicBatch | undefined;
+}) {
+  if (!data || data.traces.length === 0) {
+    return <div className="mt-2 text-[11px] text-muted-foreground">No EIC data.</div>;
+  }
+  const nameById = new Map(analytes.map((a) => [a.id, a.name]));
+  const overlayRuns = data.traces.map((t) => ({
+    id: t.id,
+    name: `${nameById.get(t.id) ?? "?"} · m/z ${t.mz.toFixed(3)}`,
+    trace: { x: data.x, tic: t.y, bpc: t.y },
+  }));
+  return (
+    <>
+      <div className="mt-2 rounded-md border border-border p-2">
+        <ChromatogramPlot runs={overlayRuns} height={220} />
+      </div>
+      <table className="mt-3 w-full text-[10px]">
+        <thead>
+          <tr className="border-b border-border text-left text-muted-foreground">
+            <th className="py-1 font-medium uppercase tracking-widest">Analyte</th>
+            <th className="py-1 font-mono font-medium uppercase tracking-widest">m/z</th>
+            <th className="py-1 text-right font-mono font-medium uppercase tracking-widest">
+              RT
+            </th>
+            <th className="py-1 text-right font-mono font-medium uppercase tracking-widest">
+              Height
+            </th>
+            <th className="py-1 text-right font-mono font-medium uppercase tracking-widest">
+              Area
+            </th>
+            <th className="py-1 text-right font-mono font-medium uppercase tracking-widest">
+              FWHM
+            </th>
+            <th className="py-1 text-right font-mono font-medium uppercase tracking-widest">
+              S/N
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.traces.map((t) => (
+            <tr key={t.id} className="border-b border-border/60">
+              <td className="py-1">{nameById.get(t.id) ?? "?"}</td>
+              <td className="py-1 font-mono">{t.mz.toFixed(4)}</td>
+              <td className="py-1 text-right font-mono">
+                {t.peakRt != null ? t.peakRt.toFixed(2) : "—"}
+              </td>
+              <td className="py-1 text-right font-mono">
+                {t.peakIntensity ? t.peakIntensity.toExponential(2) : "—"}
+              </td>
+              <td className="py-1 text-right font-mono">
+                {t.area ? t.area.toExponential(2) : "—"}
+              </td>
+              <td className="py-1 text-right font-mono">
+                {t.fwhm ? t.fwhm.toFixed(3) : "—"}
+              </td>
+              <td className="py-1 text-right font-mono">
+                {t.sn ? t.sn.toFixed(1) : "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
   );
 }
