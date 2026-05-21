@@ -3,6 +3,8 @@ import { useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLab } from "@/lib/store";
+import { useBranding } from "@/lib/use-branding";
+
 import type { Analyte } from "@/lib/lab-types";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
