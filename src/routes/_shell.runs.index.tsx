@@ -36,7 +36,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
-import { createRun, createUploadUrl, deleteRun } from "@/lib/lab.functions";
+import { createRun, createUploadUrl, deleteRun, findRunByFilePath } from "@/lib/lab.functions";
 import { getSupabase } from "@/integrations/supabase/client";
 import type { WorkerRunSummary } from "@/workers/mzml.worker";
 
