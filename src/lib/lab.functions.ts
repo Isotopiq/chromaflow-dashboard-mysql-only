@@ -308,9 +308,9 @@ const RunInput = z.object({
   ionMode: z.enum(["positive", "negative"]).default("positive"),
   msLevel: z.number().int().min(1).max(3).default(1),
   trace: z.object({
-    x: z.array(z.number()).max(20000),
-    tic: z.array(z.number()).max(20000),
-    bpc: z.array(z.number()).max(20000),
+    x: z.array(z.number()).max(8000),
+    tic: z.array(z.number()).max(8000),
+    bpc: z.array(z.number()).max(8000),
   }),
   peaks: z
     .array(
@@ -325,8 +325,32 @@ const RunInput = z.object({
         mzHigh: z.number().nullable().optional(),
       }),
     )
-    .max(2000),
+    .max(1000),
 });
+
+// Look up an existing run by its raw file_path. Used by the upload UI to
+// recover from a dropped client connection where the insert already
+// succeeded on the server.
+export const findRunByFilePath = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ filePath: z.string().min(1).max(500) }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context as any;
+    const { data: run } = await supabase
+      .from("runs")
+      .select("*")
+      .eq("file_path", data.filePath)
+      .eq("uploaded_by", userId)
+      .order("acquired_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!run) return { run: null };
+    const { data: peakRows } = await supabase
+      .from("peaks")
+      .select("*")
+      .eq("run_id", run.id);
+    return { run: mapRun(run, (peakRows ?? []).map(mapPeak).sort((a: any, b: any) => a.rt - b.rt)) };
+  });
 
 export const createRun = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
