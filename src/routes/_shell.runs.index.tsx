@@ -67,6 +67,8 @@ function RunsList() {
   const [methodId, setMethodId] = useState<string>("");
   const [columnId, setColumnId] = useState<string>("");
   const [jobs, setJobs] = useState<ParseJob[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const workerRef = useRef<Worker | null>(null);
   const nav = useNavigate();
   const qc = useQueryClient();
