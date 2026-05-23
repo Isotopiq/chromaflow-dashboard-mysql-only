@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Upload, FileWarning, Loader2, Trash2 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -66,6 +67,8 @@ function RunsList() {
   const [methodId, setMethodId] = useState<string>("");
   const [columnId, setColumnId] = useState<string>("");
   const [jobs, setJobs] = useState<ParseJob[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const workerRef = useRef<Worker | null>(null);
   const nav = useNavigate();
   const qc = useQueryClient();
@@ -390,15 +393,78 @@ function RunsList() {
       )}
 
       <Card className="border-border bg-card p-0">
-        <div className="border-b border-border px-4 py-3">
-          <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
-            Parsed runs
+        <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+              Parsed runs
+            </div>
+            <h2 className="text-sm font-semibold">
+              {runs.length} runs{selectedIds.size > 0 ? ` · ${selectedIds.size} selected` : ""}
+            </h2>
           </div>
-          <h2 className="text-sm font-semibold">{runs.length} runs</h2>
+          {selectedIds.size > 0 && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button size="sm" variant="destructive" disabled={bulkDeleting} className="h-8">
+                  {bulkDeleting ? (
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                  )}
+                  Delete {selectedIds.size}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete {selectedIds.size} run(s)?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This permanently removes the selected runs, their peaks, and any uploaded raw / scan files. This can't be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={async () => {
+                      setBulkDeleting(true);
+                      const ids = Array.from(selectedIds);
+                      let ok = 0;
+                      let fail = 0;
+                      for (const id of ids) {
+                        try {
+                          await deleteRunFn({ data: { runId: id } });
+                          removeRunLocal(id);
+                          ok++;
+                        } catch {
+                          fail++;
+                        }
+                      }
+                      setSelectedIds(new Set());
+                      setBulkDeleting(false);
+                      qc.invalidateQueries({ queryKey: ["lab"] });
+                      if (ok) toast.success(`Deleted ${ok} run(s)`);
+                      if (fail) toast.error(`Failed to delete ${fail} run(s)`);
+                    }}
+                  >
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
         </div>
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/30 hover:bg-muted/30">
+              <TableHead className="w-10">
+                <Checkbox
+                  checked={runs.length > 0 && selectedIds.size === runs.length}
+                  onCheckedChange={(v) => {
+                    if (v) setSelectedIds(new Set(runs.map((r) => r.id)));
+                    else setSelectedIds(new Set());
+                  }}
+                  aria-label="Select all runs"
+                />
+              </TableHead>
               <TableHead className="text-[10px] uppercase tracking-wider">File</TableHead>
               <TableHead className="text-[10px] uppercase tracking-wider">Method</TableHead>
               <TableHead className="text-[10px] uppercase tracking-wider">Mode</TableHead>
@@ -412,7 +478,21 @@ function RunsList() {
             {runs.map((r) => {
               const m = methods.find((x) => x.id === r.methodId);
               return (
-                <TableRow key={r.id} className="text-xs">
+                <TableRow key={r.id} className="text-xs" data-state={selectedIds.has(r.id) ? "selected" : undefined}>
+                  <TableCell>
+                    <Checkbox
+                      checked={selectedIds.has(r.id)}
+                      onCheckedChange={(v) => {
+                        setSelectedIds((prev) => {
+                          const next = new Set(prev);
+                          if (v) next.add(r.id);
+                          else next.delete(r.id);
+                          return next;
+                        });
+                      }}
+                      aria-label={`Select ${r.name}`}
+                    />
+                  </TableCell>
                   <TableCell>
                     <Link
                       to="/runs/$runId"
