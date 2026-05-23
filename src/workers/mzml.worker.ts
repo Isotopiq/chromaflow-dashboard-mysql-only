@@ -1,10 +1,15 @@
 /// <reference lib="webworker" />
-// Browser mzML / mzXML parser. Extracts MS1 retention times, TIC, BPC,
-// per-scan centroided (m/z, intensity) arrays, picks peaks on the TIC and
-// assigns each peak an apex m/z + ±10 ppm window. Returns a compressed
-// scans blob suitable for storage and later EIC extraction.
+// Browser mzML / mzXML parser with mass-trace (XIC) peak detection.
 //
-// Posts back: { ok: true, summary, scansBlob } or { ok: false, error }
+// Pipeline:
+//   1. Parse spectra (mzML or mzXML), keep MS1 only.
+//   2. Centroid + threshold (baseline + 3·MAD) each scan.
+//   3. Build mass traces across scans (±10 ppm, max 3-scan gap).
+//   4. Pick peaks per trace with Savitzky-Golay smoothing + S/N>=3.
+//   5. Merge near-duplicate peaks (±5 ppm, <=0.05 min RT).
+//   6. Cap at 500 peaks by area.
+//
+// Returns: { ok: true, summary, scansBlob } or { ok: false, error }.
 
 import { XMLParser } from "fast-xml-parser";
 import { inflate, deflate } from "pako";
@@ -30,7 +35,7 @@ export type WorkerRunSummary = {
   truncated: boolean;
 };
 
-// ---------- helpers ----------
+// ---------- decode helpers ----------
 
 function b64ToFloat(
   b64: string,
@@ -100,24 +105,23 @@ function detectIonMode(spec: any): "positive" | "negative" | null {
   return null;
 }
 
-// Centroid + threshold a profile-mode scan: keep local maxima above
-// baseline + 5*MAD. For already-centroided data this is a no-op-ish filter.
+// Centroid + threshold: keep local maxima above baseline + 3·MAD.
 function centroidAndThreshold(mz: Float32Array, intens: Float32Array): {
   mz: Float32Array;
   intens: Float32Array;
 } {
   if (mz.length === 0) return { mz: new Float32Array(0), intens: new Float32Array(0) };
-  // Fast baseline from quantile
   const sorted = Float32Array.from(intens).sort();
   const baseline = sorted[Math.floor(sorted.length * 0.5)] || 0;
-  // MAD
   let madSum = 0;
   for (let i = 0; i < intens.length; i++) madSum += Math.abs(intens[i] - baseline);
   const mad = madSum / intens.length;
-  const thr = baseline + 5 * mad;
+  const thr = baseline + 3 * mad;
 
   const outMz: number[] = [];
   const outIn: number[] = [];
+  // Treat already-centroided data: any value > threshold is kept; for profile
+  // data the local-max constraint still applies.
   for (let i = 1; i < intens.length - 1; i++) {
     const v = intens[i];
     if (v <= thr) continue;
@@ -126,12 +130,17 @@ function centroidAndThreshold(mz: Float32Array, intens: Float32Array): {
       outIn.push(v);
     }
   }
+  // Catch endpoints in centroid-mode data
+  if (intens.length > 0 && intens[0] > thr) {
+    outMz.unshift(mz[0]);
+    outIn.unshift(intens[0]);
+  }
   // Hard cap to avoid unbounded blob growth
-  if (outMz.length > 2000) {
+  if (outMz.length > 5000) {
     const idx = outIn
       .map((v, i) => [v, i] as const)
       .sort((a, b) => b[0] - a[0])
-      .slice(0, 2000)
+      .slice(0, 5000)
       .map(([, i]) => i)
       .sort((a, b) => a - b);
     return {
@@ -142,52 +151,216 @@ function centroidAndThreshold(mz: Float32Array, intens: Float32Array): {
   return { mz: Float32Array.from(outMz), intens: Float32Array.from(outIn) };
 }
 
-function pickPeaks(
-  x: number[],
-  y: number[],
-  topN = 60,
-): Array<{ idx: number; rt: number; area: number; height: number; fwhm: number; sn: number }> {
-  if (x.length < 5) return [];
-  const sorted = [...y].sort((a, b) => a - b);
-  const baseline = sorted[Math.floor(sorted.length * 0.2)] || 0;
-  const lows = y.filter((v) => v <= baseline * 1.5);
-  const mean = lows.reduce((s, v) => s + v, 0) / Math.max(1, lows.length);
-  const sd = Math.sqrt(lows.reduce((s, v) => s + (v - mean) ** 2, 0) / Math.max(1, lows.length));
-  const noise = Math.max(1, sd);
-
-  const candidates: Array<{ i: number; h: number }> = [];
+// ---------- Savitzky-Golay (length 5, cubic) ----------
+function sg5(y: number[]): number[] {
+  if (y.length < 5) return y.slice();
+  const out = new Array(y.length);
+  out[0] = y[0];
+  out[1] = y[1];
+  out[y.length - 1] = y[y.length - 1];
+  out[y.length - 2] = y[y.length - 2];
   for (let i = 2; i < y.length - 2; i++) {
-    if (
-      y[i] > y[i - 1] &&
-      y[i] > y[i + 1] &&
-      y[i] > y[i - 2] &&
-      y[i] > y[i + 2] &&
-      y[i] > baseline + 5 * noise
-    ) {
-      candidates.push({ i, h: y[i] });
+    out[i] =
+      (-3 * y[i - 2] + 12 * y[i - 1] + 17 * y[i] + 12 * y[i + 1] - 3 * y[i + 2]) / 35;
+  }
+  return out;
+}
+
+// ---------- mass-trace builder ----------
+// Build XIC traces by clustering centroids across scans with ±ppm tolerance
+// and a max scan-gap. Greedy nearest-neighbor matching per scan.
+type MassTrace = {
+  // running weighted m/z
+  mz: number;
+  weight: number; // sum of intensity (for mz averaging)
+  // sparse points: scan index -> intensity (and apex mz)
+  scanIdx: number[];
+  intensity: number[];
+  apexMz: number[];
+  lastScan: number;
+  // peak m/z window
+  mzLowSeen: number;
+  mzHighSeen: number;
+};
+
+function buildMassTraces(
+  scans: Array<{ mz: Float32Array; intens: Float32Array }>,
+  ppm: number,
+  maxGap: number,
+): MassTrace[] {
+  // Active traces sorted by mz for fast lookup.
+  let active: MassTrace[] = [];
+  const finished: MassTrace[] = [];
+
+  for (let s = 0; s < scans.length; s++) {
+    const sc = scans[s];
+    const n = sc.mz.length;
+    if (n === 0) continue;
+
+    // Sort centroids by intensity desc so the strongest ions claim traces first.
+    const order = new Array(n);
+    for (let i = 0; i < n; i++) order[i] = i;
+    order.sort((a, b) => sc.intens[b] - sc.intens[a]);
+
+    const used = new Uint8Array(active.length);
+    for (const ci of order) {
+      const m = sc.mz[ci];
+      const it = sc.intens[ci];
+      // Find best matching active trace within ppm.
+      let bestK = -1;
+      let bestD = Infinity;
+      for (let k = 0; k < active.length; k++) {
+        if (used[k]) continue;
+        const t = active[k];
+        const tol = (t.mz * ppm) / 1e6;
+        const d = Math.abs(t.mz - m);
+        if (d <= tol && d < bestD) {
+          bestD = d;
+          bestK = k;
+        }
+      }
+      if (bestK >= 0) {
+        const t = active[bestK];
+        // Update running average m/z weighted by intensity.
+        const newW = t.weight + it;
+        t.mz = (t.mz * t.weight + m * it) / newW;
+        t.weight = newW;
+        t.scanIdx.push(s);
+        t.intensity.push(it);
+        t.apexMz.push(m);
+        t.lastScan = s;
+        if (m < t.mzLowSeen) t.mzLowSeen = m;
+        if (m > t.mzHighSeen) t.mzHighSeen = m;
+        used[bestK] = 1;
+      } else {
+        active.push({
+          mz: m,
+          weight: it,
+          scanIdx: [s],
+          intensity: [it],
+          apexMz: [m],
+          lastScan: s,
+          mzLowSeen: m,
+          mzHighSeen: m,
+        });
+      }
+    }
+
+    // Retire stale traces.
+    if (s % 8 === 0) {
+      const next: MassTrace[] = [];
+      for (const t of active) {
+        if (s - t.lastScan > maxGap) finished.push(t);
+        else next.push(t);
+      }
+      active = next;
     }
   }
-  const top = candidates.sort((a, b) => b.h - a.h).slice(0, topN);
-  return top
-    .map(({ i, h }) => {
-      const half = h / 2;
-      let l = i;
-      while (l > 0 && y[l] > half) l--;
-      let r = i;
-      while (r < y.length - 1 && y[r] > half) r++;
-      const fwhm = Math.max(0.001, x[r] - x[l]);
-      let area = 0;
-      for (let k = l; k < r; k++) area += ((y[k] + y[k + 1]) / 2) * (x[k + 1] - x[k]);
-      return {
-        idx: i,
-        rt: +x[i].toFixed(4),
-        area: +area.toFixed(0),
-        height: +h.toFixed(0),
-        fwhm: +fwhm.toFixed(4),
-        sn: +(h / noise).toFixed(1),
-      };
-    })
-    .sort((a, b) => a.rt - b.rt);
+  for (const t of active) finished.push(t);
+  return finished;
+}
+
+// ---------- per-trace peak picker ----------
+type TracePeak = {
+  rt: number;
+  rtL: number;
+  rtR: number;
+  area: number;
+  height: number;
+  fwhm: number;
+  sn: number;
+  mz: number;
+  mzLow: number;
+  mzHigh: number;
+};
+
+function pickTracePeaks(
+  trace: MassTrace,
+  scanRts: number[],
+  numScans: number,
+  ppm: number,
+): TracePeak[] {
+  const npts = trace.scanIdx.length;
+  if (npts < 5) return [];
+
+  // Dense vector of intensity across scans where this trace had hits.
+  // We work over [firstScan..lastScan] to keep things compact.
+  const first = trace.scanIdx[0];
+  const last = trace.scanIdx[npts - 1];
+  const len = last - first + 1;
+  if (len < 5) return [];
+  const y = new Array<number>(len).fill(0);
+  const xMz = new Array<number>(len).fill(0);
+  for (let i = 0; i < npts; i++) {
+    const idx = trace.scanIdx[i] - first;
+    y[idx] = trace.intensity[i];
+    xMz[idx] = trace.apexMz[i];
+  }
+  // Rt axis for this slice
+  const xRt = new Array<number>(len);
+  for (let i = 0; i < len; i++) xRt[i] = scanRts[first + i];
+
+  const ys = sg5(y);
+
+  // Noise: 20th percentile of all scans (global) — use the trace's own slice
+  // when long enough, otherwise zero.
+  const sortedY = [...ys].sort((a, b) => a - b);
+  const baseline = sortedY[Math.floor(sortedY.length * 0.2)] || 0;
+  let madSum = 0;
+  let madN = 0;
+  for (const v of sortedY) {
+    if (v <= baseline * 1.5) {
+      madSum += Math.abs(v - baseline);
+      madN++;
+    }
+  }
+  const noise = Math.max(1, madSum / Math.max(1, madN));
+
+  const minHeight = baseline + 3 * noise;
+  const peaks: TracePeak[] = [];
+
+  for (let i = 2; i < len - 2; i++) {
+    const v = ys[i];
+    if (v < minHeight) continue;
+    if (v <= ys[i - 1] || v <= ys[i + 1]) continue;
+    if (v <= ys[i - 2] || v <= ys[i + 2]) continue;
+
+    // Half max boundaries
+    const half = (v + baseline) / 2;
+    let l = i;
+    while (l > 0 && ys[l] > half) l--;
+    let r = i;
+    while (r < len - 1 && ys[r] > half) r++;
+    const fwhm = Math.max(0, xRt[r] - xRt[l]);
+    if (fwhm < 0.005 || fwhm > 2.5) continue;
+
+    // Extend to baseline (or trace edges) for area
+    let lb = i;
+    while (lb > 0 && ys[lb] > baseline + noise && ys[lb - 1] <= ys[lb]) lb--;
+    let rb = i;
+    while (rb < len - 1 && ys[rb] > baseline + noise && ys[rb + 1] <= ys[rb]) rb++;
+    let area = 0;
+    for (let k = lb; k < rb; k++) {
+      area += ((ys[k] + ys[k + 1]) / 2 - baseline) * (xRt[k + 1] - xRt[k]);
+    }
+    if (area <= 0) continue;
+
+    const apexMz = xMz[i] || trace.mz;
+    const window = (apexMz * ppm) / 1e6;
+    peaks.push({
+      rt: +xRt[i].toFixed(4),
+      rtL: xRt[lb],
+      rtR: xRt[rb],
+      area: +area.toFixed(0),
+      height: +(v - baseline).toFixed(0),
+      fwhm: +fwhm.toFixed(4),
+      sn: +((v - baseline) / noise).toFixed(1),
+      mz: +apexMz.toFixed(4),
+      mzLow: +(apexMz - window).toFixed(4),
+      mzHigh: +(apexMz + window).toFixed(4),
+    });
+  }
+  return peaks;
 }
 
 // ---------- scans blob format (little-endian) ----------
@@ -198,7 +371,6 @@ function pickPeaks(
 //     u32 n
 //     f32[n] mz
 //     f32[n] intensity
-// (All concatenated, then pako.deflate)
 
 function packScans(
   scans: Array<{ rt: number; mz: Float32Array; intens: Float32Array }>,
@@ -241,12 +413,10 @@ async function parseMzML(text: string): Promise<{ summary: WorkerRunSummary; sca
   let ionMode: "positive" | "negative" = "positive";
   let ionDetected = false;
   let truncated = false;
-  let pointBudget = 5_000_000;
+  let pointBudget = 12_000_000;
 
-  // Normalize to a list of MS1 spectrum-like records with rt + mz/intensity arrays.
   const specs: any[] = isMzXml
     ? (() => {
-        // mzXML: <scan> elements possibly nested; collect MS1 only.
         const acc: any[] = [];
         const walk = (s: any) => {
           if (!s) return;
@@ -287,15 +457,10 @@ async function parseMzML(text: string): Promise<{ summary: WorkerRunSummary; sca
         const raw = typeof node === "string" ? node : (node?.["#text"] ?? "");
         const precision: 32 | 64 = (parseInt(node?.["@_precision"] ?? "32", 10) === 64 ? 64 : 32) as 32 | 64;
         const compressed = (node?.["@_compressionType"] ?? "none") !== "none";
-        // mzXML defaults to network byte order (BIG-endian). Only "little" means LE.
         const byteOrder = String(node?.["@_byteOrder"] ?? "network").toLowerCase();
         const littleEndian = byteOrder === "little";
         return raw ? b64ToFloat(raw, precision, compressed, littleEndian) : new Float32Array(0);
       };
-
-      // Two layouts exist:
-      //   A) one <peaks> with interleaved m/z-int pairs (default)
-      //   B) two <peaks> with contentType="m/z" and contentType="intensity"
       const splitMz = peaksList.find((n: any) => /m\/?z/i.test(n?.["@_contentType"] ?? ""));
       const splitInt = peaksList.find((n: any) => /intensity/i.test(n?.["@_contentType"] ?? ""));
       if (splitMz && splitInt) {
@@ -351,7 +516,6 @@ async function parseMzML(text: string): Promise<{ summary: WorkerRunSummary; sca
     let kept = { mz: mzArr, intens: intArr };
     if (mzArr.length > 0) kept = centroidAndThreshold(mzArr, intArr);
 
-    // Budget guard
     if (pointBudget - kept.mz.length < 0) {
       truncated = true;
     } else {
@@ -364,36 +528,43 @@ async function parseMzML(text: string): Promise<{ summary: WorkerRunSummary; sca
     bpc.push(bpcVal);
   }
 
-  // Pick peaks on TIC, then for each peak find apex m/z = strongest m/z
-  // in the centroided scan at that retention time.
-  const pickedRaw = pickPeaks(x, tic);
-  const peaks: WorkerPeak[] = pickedRaw.map((p) => {
-    const sIdx = Math.min(scans.length - 1, Math.max(0, p.idx));
-    const sc = scans[sIdx];
-    let mz: number | null = null;
-    if (sc && sc.mz.length > 0) {
-      let best = 0;
-      let bestI = 0;
-      for (let i = 0; i < sc.intens.length; i++) {
-        if (sc.intens[i] > best) {
-          best = sc.intens[i];
-          bestI = i;
-        }
-      }
-      mz = +sc.mz[bestI].toFixed(4);
-    }
-    const window = mz != null ? mz * 10e-6 : 0;
-    return {
-      rt: p.rt,
-      area: p.area,
-      height: p.height,
-      fwhm: p.fwhm,
-      sn: p.sn,
-      mz,
-      mzLow: mz != null ? +(mz - window).toFixed(4) : null,
-      mzHigh: mz != null ? +(mz + window).toFixed(4) : null,
-    };
-  });
+  // ----- Mass-trace peak detection -----
+  const PPM = 10;
+  const MAX_GAP = 3;
+  const scanRts = scans.map((s) => s.rt);
+  const traces = buildMassTraces(scans, PPM, MAX_GAP);
+
+  const allPeaks: TracePeak[] = [];
+  for (const t of traces) {
+    if (t.scanIdx.length < 5) continue;
+    const peaks = pickTracePeaks(t, scanRts, scans.length, PPM);
+    for (const p of peaks) allPeaks.push(p);
+  }
+
+  // Merge near-duplicates: ±5 ppm AND <=0.05 min rt.
+  allPeaks.sort((a, b) => b.area - a.area);
+  const kept: TracePeak[] = [];
+  for (const p of allPeaks) {
+    const tol = (p.mz * 5) / 1e6;
+    const dup = kept.find(
+      (q) => Math.abs(q.mz - p.mz) <= tol && Math.abs(q.rt - p.rt) <= 0.05,
+    );
+    if (!dup) kept.push(p);
+    if (kept.length >= 500) break;
+  }
+
+  kept.sort((a, b) => a.rt - b.rt);
+
+  const peaks: WorkerPeak[] = kept.map((p) => ({
+    rt: p.rt,
+    area: p.area,
+    height: p.height,
+    fwhm: p.fwhm,
+    sn: p.sn,
+    mz: p.mz,
+    mzLow: p.mzLow,
+    mzHigh: p.mzHigh,
+  }));
 
   const summary: WorkerRunSummary = {
     trace: { x, tic, bpc },
