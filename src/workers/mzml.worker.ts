@@ -105,42 +105,56 @@ function detectIonMode(spec: any): "positive" | "negative" | null {
   return null;
 }
 
-// Centroid + threshold: keep local maxima above baseline + 3·MAD.
+// Centroid + threshold: estimate noise from the lower half of positive
+// intensities (robust against a few huge ions dominating MAD). For profile
+// data require a local maximum; for already-centroided (sparse) scans every
+// centroid above noise is kept.
 function centroidAndThreshold(mz: Float32Array, intens: Float32Array): {
   mz: Float32Array;
   intens: Float32Array;
 } {
-  if (mz.length === 0) return { mz: new Float32Array(0), intens: new Float32Array(0) };
-  const sorted = Float32Array.from(intens).sort();
-  const baseline = sorted[Math.floor(sorted.length * 0.5)] || 0;
+  const n = intens.length;
+  if (n === 0) return { mz: new Float32Array(0), intens: new Float32Array(0) };
+
+  let nonZero = 0;
+  for (let i = 0; i < n; i++) if (intens[i] > 0) nonZero++;
+  const isCentroid = nonZero / n < 0.5;
+
+  const positives: number[] = [];
+  for (let i = 0; i < n; i++) if (intens[i] > 0) positives.push(intens[i]);
+  positives.sort((a, b) => a - b);
+  const lowerHalf = positives.slice(0, Math.max(1, Math.floor(positives.length / 2)));
+  const med = lowerHalf[Math.floor(lowerHalf.length / 2)] || 0;
   let madSum = 0;
-  for (let i = 0; i < intens.length; i++) madSum += Math.abs(intens[i] - baseline);
-  const mad = madSum / intens.length;
-  const thr = baseline + 3 * mad;
+  for (const v of lowerHalf) madSum += Math.abs(v - med);
+  const mad = (madSum / Math.max(1, lowerHalf.length)) * 1.4826;
+  const noise = Math.max(med + 3 * mad, 1);
 
   const outMz: number[] = [];
   const outIn: number[] = [];
-  // Treat already-centroided data: any value > threshold is kept; for profile
-  // data the local-max constraint still applies.
-  for (let i = 1; i < intens.length - 1; i++) {
-    const v = intens[i];
-    if (v <= thr) continue;
-    if (v >= intens[i - 1] && v >= intens[i + 1]) {
-      outMz.push(mz[i]);
-      outIn.push(v);
+  if (isCentroid) {
+    for (let i = 0; i < n; i++) {
+      const v = intens[i];
+      if (v > noise) {
+        outMz.push(mz[i]);
+        outIn.push(v);
+      }
+    }
+  } else {
+    for (let i = 1; i < n - 1; i++) {
+      const v = intens[i];
+      if (v <= noise) continue;
+      if (v >= intens[i - 1] && v >= intens[i + 1]) {
+        outMz.push(mz[i]);
+        outIn.push(v);
+      }
     }
   }
-  // Catch endpoints in centroid-mode data
-  if (intens.length > 0 && intens[0] > thr) {
-    outMz.unshift(mz[0]);
-    outIn.unshift(intens[0]);
-  }
-  // Hard cap to avoid unbounded blob growth
-  if (outMz.length > 5000) {
+  if (outMz.length > 8000) {
     const idx = outIn
       .map((v, i) => [v, i] as const)
       .sort((a, b) => b[0] - a[0])
-      .slice(0, 5000)
+      .slice(0, 8000)
       .map(([, i]) => i)
       .sort((a, b) => a - b);
     return {
@@ -302,21 +316,19 @@ function pickTracePeaks(
 
   const ys = sg5(y);
 
-  // Noise: 20th percentile of all scans (global) — use the trace's own slice
-  // when long enough, otherwise zero.
-  const sortedY = [...ys].sort((a, b) => a - b);
-  const baseline = sortedY[Math.floor(sortedY.length * 0.2)] || 0;
+  // Noise from positive (non-zero) samples only — zeros are gaps where the
+  // ion wasn't detected, not noise. Use lower-half MAD for robustness.
+  const positives = ys.filter((v) => v > 0).sort((a, b) => a - b);
+  if (positives.length < 3) return [];
+  const lowerN = Math.max(1, Math.floor(positives.length / 2));
+  const lower = positives.slice(0, lowerN);
+  const baseline = lower[Math.floor(lower.length / 2)] || 0;
   let madSum = 0;
-  let madN = 0;
-  for (const v of sortedY) {
-    if (v <= baseline * 1.5) {
-      madSum += Math.abs(v - baseline);
-      madN++;
-    }
-  }
-  const noise = Math.max(1, madSum / Math.max(1, madN));
-
-  const minHeight = baseline + 3 * noise;
+  for (const v of lower) madSum += Math.abs(v - baseline);
+  const noise = Math.max(1, (madSum / lower.length) * 1.4826);
+  const apexMax = positives[positives.length - 1];
+  // Peak must be S/N >= 3 AND clearly above the trace's own baseline.
+  const minHeight = Math.max(baseline + 3 * noise, apexMax * 0.05);
   const peaks: TracePeak[] = [];
 
   for (let i = 2; i < len - 2; i++) {
