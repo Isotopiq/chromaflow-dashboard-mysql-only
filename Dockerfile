@@ -21,11 +21,10 @@ WORKDIR /app
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=5273
-# Only the built SSR server output is needed at runtime. The Node SSR
-# bundle lives at dist/server/server.js and self-contains its deps.
+# Nitro emits a fully self-contained Node SSR bundle under dist/.
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/package.json ./package.json
 EXPOSE 5273
-# Run the actual SSR server (NOT `vite preview`, which only serves the
-# static client bundle and would break server functions / /api routes).
-CMD ["bun", "dist/server/server.js"]
+# Run the SSR server. `vite preview` would only serve the static client
+# bundle and break /api routes + server functions (causing the app to hang
+# on "Loading…" because /api/public/config returns HTML instead of JSON).
+CMD ["bun", "dist/server/index.mjs"]
