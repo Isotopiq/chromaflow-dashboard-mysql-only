@@ -21,11 +21,10 @@ WORKDIR /app
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=5273
-COPY --from=builder /app/node_modules ./node_modules
+# Nitro emits a fully self-contained Node SSR bundle under dist/.
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/src ./src
-COPY --from=builder /app/package.json ./package.json
-COPY --from=builder /app/vite.config.ts ./vite.config.ts
-COPY --from=builder /app/tsconfig.json ./tsconfig.json
 EXPOSE 5273
-CMD ["bun", "run", "preview", "--host", "0.0.0.0", "--port", "5273"]
+# Run the SSR server. `vite preview` would only serve the static client
+# bundle and break /api routes + server functions (causing the app to hang
+# on "Loading…" because /api/public/config returns HTML instead of JSON).
+CMD ["bun", "dist/server/index.mjs"]

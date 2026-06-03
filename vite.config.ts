@@ -1,7 +1,9 @@
-// @lovable.dev/vite-tanstack-config injects framework defaults.
-// We disable the Cloudflare build plugin so `vite build` emits the standard
-// Node SSR output at dist/server/server.js, which is what `vite preview`
-// (used by the self-hosted Docker image) expects.
+// Self-hosted build configuration.
+//
+// `@lovable.dev/vite-tanstack-config` auto-runs Nitro only inside a Lovable
+// build. For self-hosted Docker we explicitly enable Nitro with the
+// `node-server` preset so `vite build` emits a standalone Node SSR server we
+// can run with `node dist/server/index.mjs`.
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
 // Self-hosted deployments can whitelist their public hostnames via env var.
@@ -17,7 +19,14 @@ const allowedHosts: true | string[] | undefined =
         : undefined;
 
 export default defineConfig({
-  cloudflare: false,
+  nitro: {
+    preset: "node-server",
+    output: {
+      dir: "dist",
+      publicDir: "dist/public",
+      serverDir: "dist/server",
+    },
+  },
   tanstackStart: {
     server: { entry: "server" },
   },
