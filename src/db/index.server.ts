@@ -7,9 +7,17 @@ if (!connectionString) {
   console.warn("[db] DATABASE_URL is not set");
 }
 
-const ssl = process.env.DATABASE_SSL === "true"
-  ? { rejectUnauthorized: false }
-  : undefined;
+// SSL handling:
+//   DATABASE_SSL=true  -> enable SSL, allow self-signed certs
+//   DATABASE_SSL=false -> force SSL OFF (overrides sslmode in URL)
+//   unset              -> let libpq/pg decide based on the connection string
+const sslEnv = (process.env.DATABASE_SSL ?? "").toLowerCase();
+const ssl =
+  sslEnv === "true"
+    ? { rejectUnauthorized: false }
+    : sslEnv === "false"
+      ? false
+      : undefined;
 
 declare global {
   // eslint-disable-next-line no-var
