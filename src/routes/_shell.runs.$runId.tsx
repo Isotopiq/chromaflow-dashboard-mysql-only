@@ -99,11 +99,9 @@ function RunDetail() {
       : null;
 
   const fetchEIC = useServerFn(getRunEIC);
-  // Skip fetching when we already have this trace from the batch query (analyte click).
-  const hasBatchTrace = !!selectedTargetId;
   const eicQuery = useQuery({
     queryKey: ["eic", run.id, eicMz, ppm],
-    enabled: !hasBatchTrace && eicMz != null && Number.isFinite(eicMz) && !!run.scansBlobPath,
+    enabled: eicMz != null && Number.isFinite(eicMz) && !!run.scansBlobPath,
     queryFn: () => fetchEIC({ data: { runId: run.id, mz: eicMz!, ppm } }),
     staleTime: 60_000,
   });
@@ -211,6 +209,10 @@ function RunDetail() {
       trace: { x: eicQuery.data.x, tic: eicQuery.data.y, bpc: eicQuery.data.y },
     };
   }, [eicQuery.data, eicMz, ppm, selectedTargetId, selectedTargetName, batchQuery.data]);
+  const eicTraceHasPoints = !!eicTrace && eicTrace.trace.x.length > 0;
+  const eicTraceHasSignal = !!eicTrace && eicTrace.trace.tic.some((v) => Number.isFinite(v) && v > 0);
+  const eicErrorMessage = eicQuery.error instanceof Error ? eicQuery.error.message : "Failed to extract EIC.";
+  const batchErrorMessage = batchQuery.error instanceof Error ? batchQuery.error.message : "Failed to extract Auto-XIC traces.";
 
   // Synthesized peaks from auto-XIC when the run has no detected peaks of its own.
   const derivedPeaks = useMemo(() => {
