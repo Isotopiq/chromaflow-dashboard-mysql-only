@@ -1,58 +1,65 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import type { Session, User } from "@supabase/supabase-js";
-import { getSupabase } from "@/integrations/supabase/client";
-import { installAuthFetch } from "@/integrations/supabase/auth-fetch";
+import { createContext, useContext, useEffect, useMemo, useState, useCallback } from "react";
+
+export type AuthUser = { id: string; email: string };
 
 type AuthCtx = {
-  session: Session | null;
-  user: User | null;
+  user: AuthUser | null;
   loading: boolean;
   signOut: () => Promise<void>;
+  refresh: () => Promise<void>;
 };
 
 const Ctx = createContext<AuthCtx>({
-  session: null,
   user: null,
   loading: true,
   signOut: async () => {},
+  refresh: async () => {},
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [session, setSession] = useState<Session | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    let mounted = true;
-    let unsub: (() => void) | null = null;
-
-    (async () => {
-      await installAuthFetch();
-      const sb = await getSupabase();
-      const { data } = await sb.auth.getSession();
-      if (!mounted) return;
-      setSession(data.session ?? null);
+  const refresh = useCallback(async () => {
+    try {
+      const res = await fetch("/api/auth/me", { credentials: "include" });
+      const data = await res.json();
+      setUser(data.user ?? null);
+    } catch {
+      setUser(null);
+    } finally {
       setLoading(false);
-      const sub = sb.auth.onAuthStateChange((_e, s) => setSession(s));
-      unsub = () => sub.data.subscription.unsubscribe();
-    })();
+    }
+  }, []);
 
-    return () => {
-      mounted = false;
-      unsub?.();
-    };
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/auth/me", { credentials: "include" });
+        const data = await res.json();
+        if (cancelled) return;
+        setUser(data.user ?? null);
+      } catch {
+        if (!cancelled) setUser(null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const signOut = useCallback(async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+    } finally {
+      setUser(null);
+    }
   }, []);
 
   const value = useMemo<AuthCtx>(
-    () => ({
-      session,
-      user: session?.user ?? null,
-      loading,
-      signOut: async () => {
-        const sb = await getSupabase();
-        await sb.auth.signOut();
-      },
-    }),
-    [session, loading],
+    () => ({ user, loading, signOut, refresh }),
+    [user, loading, signOut, refresh],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
