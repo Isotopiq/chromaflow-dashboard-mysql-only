@@ -101,7 +101,7 @@ export async function downloadObject(b: BucketName, path: string): Promise<Uint8
   if (typeof body[Symbol.asyncIterator] === "function") {
     const chunks: Uint8Array[] = [];
     let total = 0;
-    for await (const chunk of body as AsyncIterable<Uint8Array | Buffer | string>) {
+    for await (const chunk of body as AsyncIterable<Uint8Array | string>) {
       const bytes = typeof chunk === "string" ? new TextEncoder().encode(chunk) : new Uint8Array(chunk);
       chunks.push(bytes);
       total += bytes.byteLength;
