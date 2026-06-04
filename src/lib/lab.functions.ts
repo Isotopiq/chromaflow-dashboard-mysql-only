@@ -720,7 +720,7 @@ export const addManualPeak = createServerFn({ method: "POST" })
   });
 
 // ---- Delete run ----
-async function deleteRunInternal(db: any, userId: string, runId: string) {
+async function deleteRunInternal(db: import("@/db/index.server").Db, userId: string, runId: string) {
   const run = await db.maybe<any>(
     "select id, uploaded_by, file_path, scans_blob_path from public.runs where id=$1",
     [runId]);
