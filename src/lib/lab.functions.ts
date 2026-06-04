@@ -27,7 +27,7 @@ import {
 export const loadAll = createServerFn({ method: "GET" })
   .middleware([requireAuth])
   .handler(async ({ context }) => {
-    const { userId, email, db } = context as any;
+    const { userId, email, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
     const [data, currentUser] = await Promise.all([
       fetchAllForUser(db),
       getCurrentUserProfile(db, userId, email),
@@ -65,7 +65,7 @@ export const upsertMethod = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => MethodInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { userId, db } = context as any;
+    const { userId, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
     const msParams = {
       mobilePhaseA: data.mobilePhaseA,
       mobilePhaseB: data.mobilePhaseB,
@@ -117,7 +117,7 @@ export const upsertColumn = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => ColumnInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { userId, db } = context as any;
+    const { userId, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
     let row;
     if (data.id) {
       row = await db.one(
@@ -145,7 +145,7 @@ export const deleteColumn = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => z.object({ id: z.string() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { userId, isAdmin, db } = context as any;
+    const { userId, isAdmin, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
     const existing = await db.maybe<any>(
       "select id, owner_id from public.columns where id = $1", [data.id]);
     if (!existing) return { ok: true, missing: true };
@@ -171,7 +171,7 @@ export const upsertBatch = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => BatchInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { userId, db } = context as any;
+    const { userId, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
     let row;
     if (data.id) {
       row = await db.one(
@@ -196,7 +196,7 @@ export const addAnalyte = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => AnalyteInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { userId, db } = context as any;
+    const { userId, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
     let mz = data.mz ?? null;
     if (mz == null || mz <= 0) {
       const computed = data.formula ? mzFromFormula(data.formula, "[M+H]+") : null;
@@ -216,7 +216,7 @@ export const updateAnalyte = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => UpdateAnalyteInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { userId, isAdmin, db } = context as any;
+    const { userId, isAdmin, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
     const existing = await db.maybe<any>(
       "select id, created_by from public.analytes where id = $1", [data.id]);
     if (!existing) throw new Error("Compound not found.");
@@ -240,7 +240,7 @@ export const deleteAnalyte = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => z.object({ id: z.string() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { userId, isAdmin, db } = context as any;
+    const { userId, isAdmin, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
     const existing = await db.maybe<any>(
       "select id, created_by from public.analytes where id = $1", [data.id]);
     if (!existing) return { ok: true, missing: true };
@@ -284,7 +284,7 @@ export const findRunByFilePath = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => z.object({ filePath: z.string().min(1).max(500) }).parse(d))
   .handler(async ({ data, context }) => {
-    const { userId, db } = context as any;
+    const { userId, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
     const run = await db.maybe<any>(
       `select * from public.runs
        where file_path=$1 and uploaded_by=$2
@@ -301,7 +301,7 @@ export const createRun = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => RunInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { userId, db } = context as any;
+    const { userId, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
     const summary = {
       name: data.name,
       fileSize: data.fileSize,
@@ -342,7 +342,7 @@ export const annotatePeak = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => AnnotateInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { userId, db } = context as any;
+    const { userId, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
     await db.query(
       `update public.peaks set
          analyte_id=$1, annotated_by=$2, annotation_source='manual', confidence=1
@@ -366,7 +366,7 @@ export const unassignPeaks = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => UnassignInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { db } = context as any;
+    const { db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
     await db.query(
       `update public.peaks set
          analyte_id=null, analyte_name=null, annotated_by=null,
@@ -387,7 +387,7 @@ export const getRunEIC = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => EICInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { db } = context as any;
+    const { db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
     const run = await db.maybe<any>(
       "select scans_blob_path from public.runs where id=$1", [data.runId]);
     if (!run?.scans_blob_path) {
@@ -407,7 +407,7 @@ export const getRunEICBatch = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => EICBatchInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { db } = context as any;
+    const { db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
     const run = await db.maybe<any>(
       "select scans_blob_path from public.runs where id=$1", [data.runId]);
     if (!run?.scans_blob_path) return { x: [] as number[], traces: [] as Array<any> };
@@ -449,7 +449,7 @@ export const getRunEICBatch = createServerFn({ method: "POST" })
 export const listAdminUsers = createServerFn({ method: "GET" })
   .middleware([requireAuth])
   .handler(async ({ context }) => {
-    const { isAdmin } = context as any;
+    const { isAdmin } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
     if (!isAdmin) throw new Response("Forbidden", { status: 403 });
     return listAllUsersAdmin();
   });
@@ -462,7 +462,7 @@ export const setUserRole = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => SetRoleInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { isAdmin } = context as any;
+    const { isAdmin } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
     if (!isAdmin) throw new Response("Forbidden", { status: 403 });
     await setUserRoleAdmin(data.userId, data.role);
     return { ok: true };
@@ -480,7 +480,7 @@ export const createUploadUrl = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => UploadUrlInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { userId } = context as any;
+    const { userId } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
     const safe = data.filename.replace(/[^a-zA-Z0-9._-]/g, "_");
     const stamp = Date.now();
     const path = `${userId}/${stamp}-${safe}${data.suffix ?? ""}`;
@@ -504,7 +504,7 @@ export const createReport = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => ReportInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { userId, db } = context as any;
+    const { userId, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
     const saved = await db.one<any>(
       `insert into public.reports (title, template, run_ids, batch_id, storage_path, created_by)
        values ($1,$2,$3::uuid[],$4,$5,$6) returning *`,
@@ -516,7 +516,7 @@ export const createReport = createServerFn({ method: "POST" })
 export const listReports = createServerFn({ method: "GET" })
   .middleware([requireAuth])
   .handler(async ({ context }) => {
-    const { db } = context as any;
+    const { db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
     return db.many("select * from public.reports order by created_at desc");
   });
 
@@ -524,7 +524,7 @@ export const getReportSignedUrl = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { db } = context as any;
+    const { db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
     const row = await db.one<any>(
       "select storage_path from public.reports where id=$1", [data.id]);
     if (!row?.storage_path) throw new Error("This report has no stored PDF path.");
@@ -536,7 +536,7 @@ export const deleteReport = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { db } = context as any;
+    const { db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
     const row = await db.maybe<any>(
       "select storage_path from public.reports where id=$1", [data.id]);
     if (row?.storage_path) await removeObjects("reports", [row.storage_path]);
@@ -554,7 +554,7 @@ export const createShareLink = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => ShareInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { userId, db } = context as any;
+    const { userId, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
     const token = crypto.randomUUID().replace(/-/g, "");
     const expires = new Date(Date.now() + data.expiresInHours * 3_600_000).toISOString();
     const row = await db.one<any>(
@@ -614,7 +614,7 @@ export const listAuditEvents = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => AuditFilters.parse(d ?? {}))
   .handler(async ({ data, context }) => {
-    const { isAdmin, db } = context as any;
+    const { isAdmin, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
     if (!isAdmin) throw new Response("Forbidden", { status: 403 });
     const wh: string[] = [];
     const params: any[] = [];
@@ -641,7 +641,7 @@ export const autoAnnotateBatch = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => AutoAnnotateInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { userId, db } = context as any;
+    const { userId, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
     const runs = await db.many<any>(
       "select id from public.runs where batch_id=$1", [data.batchId]);
     if (runs.length === 0) return { annotated: 0, scanned: 0 };
@@ -695,7 +695,7 @@ export const addManualPeak = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => ManualPeakInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { userId, db } = context as any;
+    const { userId, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
     const run = await db.maybe<any>(
       "select id, uploaded_by from public.runs where id=$1", [data.runId]);
     if (!run) throw new Error("Run not found");
@@ -739,7 +739,7 @@ export const deleteRun = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => z.object({ runId: z.string() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { userId, db } = context as any;
+    const { userId, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
     return deleteRunInternal(db, userId, data.runId);
   });
 
@@ -747,7 +747,7 @@ export const deleteBatch = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => z.object({ batchId: z.string(), deleteRuns: z.boolean().default(false) }).parse(d))
   .handler(async ({ data, context }) => {
-    const { userId, db } = context as any;
+    const { userId, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
     const batch = await db.maybe<any>(
       "select id, owner_id from public.batches where id=$1", [data.batchId]);
     if (!batch) return { ok: true, missing: true };

@@ -36,7 +36,7 @@ export const setBranding = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => BrandingInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { userId, isAdmin, db } = context as any;
+    const { userId, isAdmin, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
     requireAdmin(isAdmin);
     await db.query(
       `insert into public.branding_settings
@@ -85,7 +85,7 @@ export const createInviteCode = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => CreateInviteInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { userId, isAdmin, db } = context as any;
+    const { userId, isAdmin, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
     requireAdmin(isAdmin);
     const code = genCode();
     const expires_at = data.expiresInDays
@@ -103,7 +103,7 @@ export const createInviteCode = createServerFn({ method: "POST" })
 export const listInviteCodes = createServerFn({ method: "GET" })
   .middleware([requireAuth])
   .handler(async ({ context }) => {
-    const { isAdmin, db } = context as any;
+    const { isAdmin, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
     requireAdmin(isAdmin);
     return db.many(
       "select * from public.invite_codes order by created_at desc limit 200",
@@ -114,7 +114,7 @@ export const revokeInviteCode = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { isAdmin, db } = context as any;
+    const { isAdmin, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
     requireAdmin(isAdmin);
     await db.query(
       "update public.invite_codes set revoked_at = now() where id = $1 and used_at is null",
