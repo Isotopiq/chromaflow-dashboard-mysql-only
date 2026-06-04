@@ -130,7 +130,7 @@ export function PeakTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {peaks.map((p) => {
+            {pagedPeaks.map((p) => {
               const isAssigned = !!p.analyteName;
               return (
                 <TableRow
