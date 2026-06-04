@@ -38,7 +38,7 @@ import {
 } from "@/components/ui/table";
 import { toast } from "sonner";
 import { createRun, createUploadUrl, deleteRun, findRunByFilePath } from "@/lib/lab.functions";
-import { getSupabase } from "@/integrations/supabase/client";
+
 import type { WorkerRunSummary } from "@/workers/mzml.worker";
 
 export const Route = createFileRoute("/_shell/runs/")({
@@ -179,7 +179,6 @@ function RunsList() {
 
       updateJob(id, { status: "uploading" });
 
-      const sb = await getSupabase();
       const [rawUrl, scansUrl] = await Promise.all([
         createUploadUrlFn({ data: { filename: file.name, bucket: "raw-runs" } }),
         createUploadUrlFn({
@@ -187,16 +186,12 @@ function RunsList() {
         }),
       ]);
 
-      const upRaw = await sb.storage
-        .from("raw-runs")
-        .uploadToSignedUrl(rawUrl.path, rawUrl.token, file);
-      if (upRaw.error) throw upRaw.error;
+      const upRaw = await fetch(rawUrl.signedUrl, { method: "PUT", body: file });
+      if (!upRaw.ok) throw new Error(`Raw upload failed: ${upRaw.status}`);
 
       const blobFile = new Blob([parsed.scansBlob as BlobPart], { type: "application/octet-stream" });
-      const upScans = await sb.storage
-        .from("raw-runs")
-        .uploadToSignedUrl(scansUrl.path, scansUrl.token, blobFile);
-      if (upScans.error) throw upScans.error;
+      const upScans = await fetch(scansUrl.signedUrl, { method: "PUT", body: blobFile });
+      if (!upScans.ok) throw new Error(`Scans upload failed: ${upScans.status}`);
 
       updateJob(id, { status: "saving" });
 

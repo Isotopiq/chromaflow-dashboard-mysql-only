@@ -24,7 +24,6 @@ import { Route as ShellAccountRouteImport } from './routes/_shell.account'
 import { Route as ShellRunsIndexRouteImport } from './routes/_shell.runs.index'
 import { Route as ShellMethodsIndexRouteImport } from './routes/_shell.methods.index'
 import { Route as ShellColumnsIndexRouteImport } from './routes/_shell.columns.index'
-import { Route as ApiPublicConfigRouteImport } from './routes/api/public/config'
 import { Route as ApiPublicBootstrapAdminRouteImport } from './routes/api/public/bootstrap-admin'
 import { Route as ApiAuthSignupRouteImport } from './routes/api/auth/signup'
 import { Route as ApiAuthResetRequestRouteImport } from './routes/api/auth/reset-request'
@@ -112,11 +111,6 @@ const ShellColumnsIndexRoute = ShellColumnsIndexRouteImport.update({
   id: '/columns/',
   path: '/columns/',
   getParentRoute: () => ShellRoute,
-} as any)
-const ApiPublicConfigRoute = ApiPublicConfigRouteImport.update({
-  id: '/api/public/config',
-  path: '/api/public/config',
-  getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPublicBootstrapAdminRoute = ApiPublicBootstrapAdminRouteImport.update({
   id: '/api/public/bootstrap-admin',
@@ -209,7 +203,6 @@ export interface FileRoutesByFullPath {
   '/api/auth/reset-request': typeof ApiAuthResetRequestRoute
   '/api/auth/signup': typeof ApiAuthSignupRoute
   '/api/public/bootstrap-admin': typeof ApiPublicBootstrapAdminRoute
-  '/api/public/config': typeof ApiPublicConfigRoute
   '/columns/': typeof ShellColumnsIndexRoute
   '/methods/': typeof ShellMethodsIndexRoute
   '/runs/': typeof ShellRunsIndexRoute
@@ -239,7 +232,6 @@ export interface FileRoutesByTo {
   '/api/auth/reset-request': typeof ApiAuthResetRequestRoute
   '/api/auth/signup': typeof ApiAuthSignupRoute
   '/api/public/bootstrap-admin': typeof ApiPublicBootstrapAdminRoute
-  '/api/public/config': typeof ApiPublicConfigRoute
   '/columns': typeof ShellColumnsIndexRoute
   '/methods': typeof ShellMethodsIndexRoute
   '/runs': typeof ShellRunsIndexRoute
@@ -271,7 +263,6 @@ export interface FileRoutesById {
   '/api/auth/reset-request': typeof ApiAuthResetRequestRoute
   '/api/auth/signup': typeof ApiAuthSignupRoute
   '/api/public/bootstrap-admin': typeof ApiPublicBootstrapAdminRoute
-  '/api/public/config': typeof ApiPublicConfigRoute
   '/_shell/columns/': typeof ShellColumnsIndexRoute
   '/_shell/methods/': typeof ShellMethodsIndexRoute
   '/_shell/runs/': typeof ShellRunsIndexRoute
@@ -303,7 +294,6 @@ export interface FileRouteTypes {
     | '/api/auth/reset-request'
     | '/api/auth/signup'
     | '/api/public/bootstrap-admin'
-    | '/api/public/config'
     | '/columns/'
     | '/methods/'
     | '/runs/'
@@ -333,7 +323,6 @@ export interface FileRouteTypes {
     | '/api/auth/reset-request'
     | '/api/auth/signup'
     | '/api/public/bootstrap-admin'
-    | '/api/public/config'
     | '/columns'
     | '/methods'
     | '/runs'
@@ -364,7 +353,6 @@ export interface FileRouteTypes {
     | '/api/auth/reset-request'
     | '/api/auth/signup'
     | '/api/public/bootstrap-admin'
-    | '/api/public/config'
     | '/_shell/columns/'
     | '/_shell/methods/'
     | '/_shell/runs/'
@@ -383,7 +371,6 @@ export interface RootRouteChildren {
   ApiAuthResetRequestRoute: typeof ApiAuthResetRequestRoute
   ApiAuthSignupRoute: typeof ApiAuthSignupRoute
   ApiPublicBootstrapAdminRoute: typeof ApiPublicBootstrapAdminRoute
-  ApiPublicConfigRoute: typeof ApiPublicConfigRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -492,13 +479,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/columns/'
       preLoaderRoute: typeof ShellColumnsIndexRouteImport
       parentRoute: typeof ShellRoute
-    }
-    '/api/public/config': {
-      id: '/api/public/config'
-      path: '/api/public/config'
-      fullPath: '/api/public/config'
-      preLoaderRoute: typeof ApiPublicConfigRouteImport
-      parentRoute: typeof rootRouteImport
     }
     '/api/public/bootstrap-admin': {
       id: '/api/public/bootstrap-admin'
@@ -657,8 +637,17 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthResetRequestRoute: ApiAuthResetRequestRoute,
   ApiAuthSignupRoute: ApiAuthSignupRoute,
   ApiPublicBootstrapAdminRoute: ApiPublicBootstrapAdminRoute,
-  ApiPublicConfigRoute: ApiPublicConfigRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
