@@ -65,7 +65,7 @@ These files still import from `@/integrations/supabase/*` and won't compile:
 ```
 NODE_ENV=production
 HOST=0.0.0.0
-PORT=5273
+PORT=29473
 ALLOWED_HOSTS=<your.domain.com>           # or "all" behind a trusted proxy
 APP_URL=https://<your.domain.com>         # used in password-reset email links
 
