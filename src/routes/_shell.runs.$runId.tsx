@@ -192,7 +192,7 @@ function RunDetail() {
   const eicTrace = useMemo(() => {
     if (selectedTargetId && batchQuery.data) {
       const tr = batchQuery.data.traces.find((t) => t.id === selectedTargetId);
-      if (tr) {
+      if (tr && batchQuery.data.x.length > 0) {
         return {
           id: `eic-${tr.id}`,
           name: selectedTargetName
