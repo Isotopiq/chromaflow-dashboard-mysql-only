@@ -1,9 +1,6 @@
 # Easypanel-compatible Compose file for CHROMA.LAB.
 # In Easypanel: create a "Compose" service pointed at this repo and set the
 # environment variables listed below in the service's Environment tab.
-# Easypanel injects them at container runtime — no build args, no strict
-# ${VAR:?} checks, and ${VAR:-} defaults so missing optional vars do not
-# trigger noisy "variable is not set" warnings during deploy.
 
 services:
   chroma-lab:
@@ -19,21 +16,38 @@ services:
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: 5273
-      # Comma-separated hostnames the preview server will accept,
-      # e.g. "app.example.com,science-chromaflow.cu4huf.easypanel.host".
-      # Set to "all" to disable the host check (safe only behind a trusted proxy).
+      # Comma-separated hostnames the server will accept,
+      # e.g. "app.example.com". Use "all" only behind a trusted proxy.
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-all}
-      # Server-side Supabase config (primary names the app reads)
-      LAB_SUPABASE_URL: ${LAB_SUPABASE_URL:-}
-      LAB_SUPABASE_ANON_KEY: ${LAB_SUPABASE_ANON_KEY:-}
-      LAB_SUPABASE_SERVICE_ROLE_KEY: ${LAB_SUPABASE_SERVICE_ROLE_KEY:-}
-      # Standard Supabase aliases (also accepted by the app)
-      SUPABASE_URL: ${SUPABASE_URL:-}
-      SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY:-}
-      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
-      SUPABASE_PROJECT_ID: ${SUPABASE_PROJECT_ID:-selfhosted}
-      # Optional: only needed if Lovable AI features are used
-      LOVABLE_API_KEY: ${LOVABLE_API_KEY:-}
+
+      # ---- Core app ----
+      APP_URL: ${APP_URL:?set APP_URL (e.g. https://app.example.com)}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET (64+ random chars: openssl rand -hex 32)}
+      # Optional one-time token for /api/public/bootstrap-admin. Unset after first admin is created.
+      BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN:-}
+
+      # ---- Postgres (self-hosted on Plesk) ----
+      # Example: postgresql://user:pass@host:5432/dbname?sslmode=require
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
+
+      # ---- S3-compatible storage ----
+      S3_ENDPOINT: ${S3_ENDPOINT:?set S3_ENDPOINT (e.g. https://s3.amazonaws.com or your provider's URL)}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_BUCKET: ${S3_BUCKET:?set S3_BUCKET}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?set S3_ACCESS_KEY_ID}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?set S3_SECRET_ACCESS_KEY}
+      # Public base URL for objects (CDN or bucket public URL). Optional but required for public file links.
+      S3_PUBLIC_URL_BASE: ${S3_PUBLIC_URL_BASE:-}
+      # Set "true" for MinIO / providers that require path-style addressing
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-false}
+
+      # ---- SMTP (password resets, notifications) ----
+      SMTP_HOST: ${SMTP_HOST:?set SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:?set SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:?set SMTP_PASSWORD}
+      SMTP_FROM: ${SMTP_FROM:?set SMTP_FROM (e.g. "CHROMA.LAB <noreply@example.com>")}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5273/"]
       interval: 30s
