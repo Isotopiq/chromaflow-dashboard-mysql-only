@@ -16,6 +16,17 @@ export type EICTrace = { x: number[]; y: number[]; mz: number; ppm: number; mzLo
 
 export type ParsedScans = Array<{ rt: number; mz: Float32Array; intens: Float32Array }>;
 
+function lowerBound(values: Float32Array, target: number): number {
+  let lo = 0;
+  let hi = values.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (values[mid] < target) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
 export function unpackScans(gzipped: Uint8Array): ParsedScans {
   const bytes = inflate(gzipped);
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -56,10 +67,9 @@ export function extractEIC(scans: ParsedScans, mz: number, ppm = 10): EICTrace {
   for (let s = 0; s < scans.length; s++) {
     const sc = scans[s];
     let sum = 0;
-    // m/z arrays from centroid step are typically sorted; do a simple linear pass.
-    for (let i = 0; i < sc.mz.length; i++) {
+    // m/z arrays from centroiding are sorted; jump directly to the extraction window.
+    for (let i = lowerBound(sc.mz, lo); i < sc.mz.length; i++) {
       const m = sc.mz[i];
-      if (m < lo) continue;
       if (m > hi) break;
       sum += sc.intens[i];
     }
