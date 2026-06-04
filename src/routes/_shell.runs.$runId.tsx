@@ -465,6 +465,10 @@ function RunDetail() {
           </div>
         ) : batchQuery.isLoading ? (
           <div className="p-6 text-center text-xs text-muted-foreground">Extracting {activeTargets.length} EICs…</div>
+        ) : batchQuery.isError ? (
+          <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
+            {batchErrorMessage}
+          </div>
         ) : overlayRuns.length > 0 ? (
           <>
             <ChromatogramPlot runs={overlayRuns} height={260} channel="tic" />
@@ -586,7 +590,15 @@ function RunDetail() {
           </div>
         ) : eicQuery.isLoading ? (
           <div className="p-6 text-center text-xs text-muted-foreground">Extracting EIC…</div>
-        ) : eicTrace ? (
+        ) : eicQuery.isError ? (
+          <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
+            {eicErrorMessage}
+          </div>
+        ) : eicTraceHasPoints && !eicTraceHasSignal ? (
+          <div className="rounded-md border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
+            No ion signal found in this m/z window. Try a wider ppm tolerance or verify the adduct / ion mode.
+          </div>
+        ) : eicTraceHasPoints ? (
           <>
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-muted-foreground">
