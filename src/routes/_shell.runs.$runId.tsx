@@ -177,6 +177,9 @@ function RunDetail() {
       };
     });
   }, [batchQuery.data, activeTargets]);
+  const overlayHasSignal = overlayRuns.some((r) =>
+    r.trace.tic.some((v) => Number.isFinite(v) && v > 0),
+  );
 
   const matchRows = useMemo(() => {
     if (!batchQuery.data) return [];
@@ -468,6 +471,10 @@ function RunDetail() {
         ) : batchQuery.isError ? (
           <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
             {batchErrorMessage}
+          </div>
+        ) : overlayRuns.length > 0 && !overlayHasSignal ? (
+          <div className="rounded-md border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
+            No Auto-XIC signal found for the selected compounds. Try a wider ppm tolerance, different adduct, or opposite ion mode.
           </div>
         ) : overlayRuns.length > 0 ? (
           <>
