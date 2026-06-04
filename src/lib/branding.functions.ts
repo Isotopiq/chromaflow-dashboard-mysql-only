@@ -1,47 +1,28 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { setUserRoleAdmin } from "./lab-data.server";
-
-const BUCKET = "branding";
-
-function publicUrl(path: string | null | undefined): string | null {
-  if (!path) return null;
-  const { data } = supabaseAdmin.storage.from(BUCKET).getPublicUrl(path);
-  return data.publicUrl ?? null;
-}
+import { requireAuth } from "@/lib/auth-middleware";
+import { withAdmin } from "@/db/index.server";
+import { publicUrl } from "@/lib/storage.server";
 
 // ---- Branding ----
-// Public read (used to render favicon/logo even on auth pages).
+// Public read.
 export const getBranding = createServerFn({ method: "GET" }).handler(async () => {
-  const { data, error } = await supabaseAdmin
-    .from("branding_settings")
-    .select("*")
-    .eq("id", 1)
-    .maybeSingle();
-  if (error && !/relation .* does not exist/i.test(error.message ?? "")) {
-    throw error;
-  }
+  const data = await withAdmin((db) =>
+    db.maybe<any>("select * from public.branding_settings where id = 1"),
+  );
   return {
     appName: data?.app_name ?? null,
     faviconPath: data?.favicon_path ?? null,
     webLogoPath: data?.web_logo_path ?? null,
     pdfLogoPath: data?.pdf_logo_path ?? null,
-    faviconUrl: publicUrl(data?.favicon_path),
-    webLogoUrl: publicUrl(data?.web_logo_path),
-    pdfLogoUrl: publicUrl(data?.pdf_logo_path),
+    faviconUrl: publicUrl("branding", data?.favicon_path),
+    webLogoUrl: publicUrl("branding", data?.web_logo_path),
+    pdfLogoUrl: publicUrl("branding", data?.pdf_logo_path),
   };
 });
 
-async function requireAdmin(supabase: any, userId: string) {
-  const { data } = await supabase
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", userId);
-  if (!(data ?? []).some((r: any) => r.role === "admin")) {
-    throw new Response("Forbidden — admin only", { status: 403 });
-  }
+function requireAdmin(isAdmin: boolean) {
+  if (!isAdmin) throw new Response("Forbidden — admin only", { status: 403 });
 }
 
 const BrandingInput = z.object({
@@ -52,23 +33,34 @@ const BrandingInput = z.object({
 });
 
 export const setBranding = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d) => BrandingInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context as any;
-    await requireAdmin(supabase, userId);
-    const patch: Record<string, unknown> = {
-      updated_at: new Date().toISOString(),
-      updated_by: userId,
-    };
-    if (data.appName !== undefined) patch.app_name = data.appName;
-    if (data.faviconPath !== undefined) patch.favicon_path = data.faviconPath;
-    if (data.webLogoPath !== undefined) patch.web_logo_path = data.webLogoPath;
-    if (data.pdfLogoPath !== undefined) patch.pdf_logo_path = data.pdfLogoPath;
-    const { error } = await supabaseAdmin
-      .from("branding_settings")
-      .upsert({ id: 1, ...patch }, { onConflict: "id" });
-    if (error) throw error;
+    const { userId, isAdmin, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
+    requireAdmin(isAdmin);
+    await db.query(
+      `insert into public.branding_settings
+         (id, app_name, favicon_path, web_logo_path, pdf_logo_path, updated_at, updated_by)
+       values (1, $1, $2, $3, $4, now(), $5)
+       on conflict (id) do update set
+         app_name      = case when $6 then $1 else public.branding_settings.app_name end,
+         favicon_path  = case when $7 then $2 else public.branding_settings.favicon_path end,
+         web_logo_path = case when $8 then $3 else public.branding_settings.web_logo_path end,
+         pdf_logo_path = case when $9 then $4 else public.branding_settings.pdf_logo_path end,
+         updated_at    = now(),
+         updated_by    = $5`,
+      [
+        data.appName ?? null,
+        data.faviconPath ?? null,
+        data.webLogoPath ?? null,
+        data.pdfLogoPath ?? null,
+        userId,
+        data.appName !== undefined,
+        data.faviconPath !== undefined,
+        data.webLogoPath !== undefined,
+        data.pdfLogoPath !== undefined,
+      ],
+    );
     return { ok: true };
   });
 
@@ -80,7 +72,6 @@ const CreateInviteInput = z.object({
 });
 
 function genCode(): string {
-  // 12-char base32-style code, blocked for readability.
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let out = "";
   for (let i = 0; i < 12; i++) {
@@ -91,122 +82,62 @@ function genCode(): string {
 }
 
 export const createInviteCode = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d) => CreateInviteInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context as any;
-    await requireAdmin(supabase, userId);
+    const { userId, isAdmin, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
+    requireAdmin(isAdmin);
     const code = genCode();
     const expires_at = data.expiresInDays
       ? new Date(Date.now() + data.expiresInDays * 86400_000).toISOString()
       : null;
-    const { data: row, error } = await supabaseAdmin
-      .from("invite_codes")
-      .insert({
-        code,
-        role: data.role,
-        note: data.note ?? null,
-        expires_at,
-        created_by: userId,
-      })
-      .select()
-      .single();
-    if (error) throw error;
+    const row = await db.one(
+      `insert into public.invite_codes (code, role, note, expires_at, created_by)
+       values ($1, $2, $3, $4, $5)
+       returning *`,
+      [code, data.role, data.note ?? null, expires_at, userId],
+    );
     return row;
   });
 
 export const listInviteCodes = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
-    const { supabase, userId } = context as any;
-    await requireAdmin(supabase, userId);
-    const { data, error } = await supabaseAdmin
-      .from("invite_codes")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(200);
-    if (error) throw error;
-    return data ?? [];
+    const { isAdmin, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
+    requireAdmin(isAdmin);
+    return db.many(
+      "select * from public.invite_codes order by created_at desc limit 200",
+    );
   });
 
 export const revokeInviteCode = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context as any;
-    await requireAdmin(supabase, userId);
-    const { error } = await supabaseAdmin
-      .from("invite_codes")
-      .update({ revoked_at: new Date().toISOString() })
-      .eq("id", data.id)
-      .is("used_at", null);
-    if (error) throw error;
+    const { isAdmin, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
+    requireAdmin(isAdmin);
+    await db.query(
+      "update public.invite_codes set revoked_at = now() where id = $1 and used_at is null",
+      [data.id],
+    );
     return { ok: true };
   });
 
-// Pre-signup: cheap validity check. No auth required.
+// Pre-signup validation (no auth required).
 export const validateInviteCode = createServerFn({ method: "POST" })
-  .inputValidator((d) =>
-    z.object({ code: z.string().min(4).max(40) }).parse(d),
-  )
+  .inputValidator((d) => z.object({ code: z.string().min(4).max(40) }).parse(d))
   .handler(async ({ data }) => {
     const code = data.code.trim().toUpperCase();
-    const { data: row } = await supabaseAdmin
-      .from("invite_codes")
-      .select("id, role, expires_at, used_at, revoked_at")
-      .eq("code", code)
-      .maybeSingle();
-    if (!row) return { ok: false, reason: "Code not found" };
-    if (row.revoked_at) return { ok: false, reason: "Code has been revoked" };
-    if (row.used_at) return { ok: false, reason: "Code already used" };
+    const row = await withAdmin((db) =>
+      db.maybe<any>(
+        "select id, role, expires_at, used_at, revoked_at from public.invite_codes where code = $1",
+        [code],
+      ),
+    );
+    if (!row) return { ok: false as const, reason: "Code not found" };
+    if (row.revoked_at) return { ok: false as const, reason: "Code has been revoked" };
+    if (row.used_at) return { ok: false as const, reason: "Code already used" };
     if (row.expires_at && new Date(row.expires_at).getTime() < Date.now())
-      return { ok: false, reason: "Code expired" };
-    return { ok: true, role: row.role as "admin" | "developer" | "reviewer" };
-  });
-
-// Post-signup: mark code consumed AND assign role.
-// No auth middleware because the new user may not be confirmed yet.
-// Safe because (a) we re-validate the code, (b) we require a matching
-// auth.users row for the newUserId.
-export const consumeInviteCode = createServerFn({ method: "POST" })
-  .inputValidator((d) =>
-    z
-      .object({
-        code: z.string().min(4).max(40),
-        newUserId: z.string().uuid(),
-      })
-      .parse(d),
-  )
-  .handler(async ({ data }) => {
-    const code = data.code.trim().toUpperCase();
-    const { data: row, error: fetchErr } = await supabaseAdmin
-      .from("invite_codes")
-      .select("*")
-      .eq("code", code)
-      .maybeSingle();
-    if (fetchErr) throw fetchErr;
-    if (!row) throw new Error("Invite code not found");
-    if (row.revoked_at) throw new Error("Invite code has been revoked");
-    if (row.used_at) throw new Error("Invite code already used");
-    if (row.expires_at && new Date(row.expires_at).getTime() < Date.now())
-      throw new Error("Invite code expired");
-
-    // Verify the user actually exists in auth.
-    const { data: userRes, error: userErr } =
-      await supabaseAdmin.auth.admin.getUserById(data.newUserId);
-    if (userErr || !userRes?.user) throw new Error("New user not found");
-
-    // Atomic-ish claim: only succeeds if still unclaimed.
-    const { data: claimed, error: claimErr } = await supabaseAdmin
-      .from("invite_codes")
-      .update({ used_by: data.newUserId, used_at: new Date().toISOString() })
-      .eq("id", row.id)
-      .is("used_at", null)
-      .is("revoked_at", null)
-      .select()
-      .single();
-    if (claimErr || !claimed) throw new Error("Invite code could not be claimed");
-
-    await setUserRoleAdmin(data.newUserId, row.role);
-    return { ok: true, role: row.role };
+      return { ok: false as const, reason: "Code expired" };
+    return { ok: true as const, role: row.role as "admin" | "developer" | "reviewer" };
   });
