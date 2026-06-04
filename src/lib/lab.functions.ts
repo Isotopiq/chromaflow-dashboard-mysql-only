@@ -1,7 +1,14 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { requireAuth } from "@/lib/auth-middleware";
+import { withAdmin } from "@/db/index.server";
+import {
+  createSignedUploadUrl,
+  createSignedDownloadUrl,
+  downloadObject,
+  removeObjects,
+  type BucketName,
+} from "@/lib/storage.server";
 import { mzFromFormula } from "./chem";
 import {
   fetchAllForUser,
@@ -18,12 +25,12 @@ import {
 
 // ---- Bootstrap: load everything for the current user ----
 export const loadAll = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
-    const { supabase, userId } = context as any;
+    const { userId, email, db } = context as any;
     const [data, currentUser] = await Promise.all([
-      fetchAllForUser(supabase),
-      getCurrentUserProfile(supabase, userId),
+      fetchAllForUser(db),
+      getCurrentUserProfile(db, userId, email),
     ]);
     return { ...data, currentUser };
   });
@@ -38,13 +45,11 @@ const MethodInput = z.object({
   mobilePhaseA: z.string().max(500).default(""),
   mobilePhaseB: z.string().max(500).default(""),
   gradient: z
-    .array(
-      z.object({
-        time: z.number().min(0).max(120),
-        pctB: z.number().min(0).max(100),
-        flow: z.number().min(0).max(5),
-      }),
-    )
+    .array(z.object({
+      time: z.number().min(0).max(120),
+      pctB: z.number().min(0).max(100),
+      flow: z.number().min(0).max(5),
+    }))
     .max(50),
   flowRate: z.number().min(0).max(5).default(0.3),
   columnTemp: z.number().min(0).max(120).default(30),
@@ -57,39 +62,41 @@ const MethodInput = z.object({
 });
 
 export const upsertMethod = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d) => MethodInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context as any;
-    const row = {
-      ...(data.id ? { id: data.id } : {}),
-      name: data.name,
-      modality: data.modality,
-      column_id: data.columnId || null,
-      gradient_json: data.gradient,
-      ms_params_json: {
-        mobilePhaseA: data.mobilePhaseA,
-        mobilePhaseB: data.mobilePhaseB,
-        flowRate: data.flowRate,
-        columnTemp: data.columnTemp,
-        injectionVolume: data.injectionVolume,
-        detector: data.detector,
-        msIonization: data.msIonization,
-        msScanRange: data.msScanRange,
-        tags: data.tags,
-      },
-      notes_md: data.notes,
-      status: data.status,
-      created_by: userId,
-      updated_at: new Date().toISOString(),
+    const { userId, db } = context as any;
+    const msParams = {
+      mobilePhaseA: data.mobilePhaseA,
+      mobilePhaseB: data.mobilePhaseB,
+      flowRate: data.flowRate,
+      columnTemp: data.columnTemp,
+      injectionVolume: data.injectionVolume,
+      detector: data.detector,
+      msIonization: data.msIonization,
+      msScanRange: data.msScanRange,
+      tags: data.tags,
     };
-    const { data: saved, error } = await supabase
-      .from("methods")
-      .upsert(row)
-      .select()
-      .single();
-    if (error) throw error;
-    return mapMethod(saved);
+    let row;
+    if (data.id) {
+      row = await db.one(
+        `update public.methods set
+           name=$1, modality=$2, column_id=$3, gradient_json=$4, ms_params_json=$5,
+           notes_md=$6, status=$7, updated_at=now()
+         where id=$8 returning *`,
+        [data.name, data.modality, data.columnId || null, JSON.stringify(data.gradient),
+         JSON.stringify(msParams), data.notes, data.status, data.id],
+      );
+    } else {
+      row = await db.one(
+        `insert into public.methods
+           (name, modality, column_id, gradient_json, ms_params_json, notes_md, status, created_by)
+         values ($1,$2,$3,$4,$5,$6,$7,$8) returning *`,
+        [data.name, data.modality, data.columnId || null, JSON.stringify(data.gradient),
+         JSON.stringify(msParams), data.notes, data.status, userId],
+      );
+    }
+    return mapMethod(row);
   });
 
 // ---- Columns ----
@@ -107,58 +114,50 @@ const ColumnInput = z.object({
 });
 
 export const upsertColumn = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d) => ColumnInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context as any;
-    const row = {
-      ...(data.id ? { id: data.id } : {}),
-      name: data.name,
-      chemistry: data.chemistry,
-      dimensions: data.dimensions,
-      particle_size: data.particleSize,
-      serial: data.serial,
-      rated_injections: data.ratedInjections,
-      used_injections: data.usedInjections,
-      status: data.status,
-      notes_md: data.notes,
-      owner_id: userId,
-      updated_at: new Date().toISOString(),
-    };
-    const { data: saved, error } = await supabase
-      .from("columns")
-      .upsert(row)
-      .select()
-      .single();
-    if (error) throw error;
-    return mapColumn(saved);
+    const { userId, db } = context as any;
+    let row;
+    if (data.id) {
+      row = await db.one(
+        `update public.columns set
+           name=$1, chemistry=$2, dimensions=$3, particle_size=$4, serial=$5,
+           rated_injections=$6, used_injections=$7, status=$8, notes_md=$9, updated_at=now()
+         where id=$10 returning *`,
+        [data.name, data.chemistry, data.dimensions, data.particleSize, data.serial,
+         data.ratedInjections, data.usedInjections, data.status, data.notes, data.id],
+      );
+    } else {
+      row = await db.one(
+        `insert into public.columns
+           (name, chemistry, dimensions, particle_size, serial, rated_injections,
+            used_injections, status, notes_md, owner_id)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning *`,
+        [data.name, data.chemistry, data.dimensions, data.particleSize, data.serial,
+         data.ratedInjections, data.usedInjections, data.status, data.notes, userId],
+      );
+    }
+    return mapColumn(row);
   });
 
 export const deleteColumn = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d) => z.object({ id: z.string() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { userId } = context as any;
-    const [{ data: existing, error: fErr }, { data: roles }, { data: methodRefs }, { data: runRefs }] =
-      await Promise.all([
-        supabaseAdmin.from("columns").select("id, owner_id").eq("id", data.id).maybeSingle(),
-        supabaseAdmin.from("user_roles").select("role").eq("user_id", userId),
-        supabaseAdmin.from("methods").select("id").eq("column_id", data.id).limit(1),
-        supabaseAdmin.from("runs").select("id").eq("column_id", data.id).limit(1),
-      ]);
-    if (fErr) throw fErr;
+    const { userId, isAdmin, db } = context as any;
+    const existing = await db.maybe<any>(
+      "select id, owner_id from public.columns where id = $1", [data.id]);
     if (!existing) return { ok: true, missing: true };
-    const isAdmin = (roles ?? []).some((r: any) => r.role === "admin");
-    if (existing.owner_id && existing.owner_id !== userId && !isAdmin) {
+    if (existing.owner_id && existing.owner_id !== userId && !isAdmin)
       throw new Error("You can only delete columns you own.");
-    }
-    if ((methodRefs ?? []).length > 0 || (runRefs ?? []).length > 0) {
-      throw new Error(
-        "Column is still referenced by methods or runs. Unlink them before deleting.",
-      );
-    }
-    const { error } = await supabaseAdmin.from("columns").delete().eq("id", data.id);
-    if (error) throw error;
+    const refsM = await db.maybe<any>(
+      "select id from public.methods where column_id = $1 limit 1", [data.id]);
+    const refsR = await db.maybe<any>(
+      "select id from public.runs where column_id = $1 limit 1", [data.id]);
+    if (refsM || refsR)
+      throw new Error("Column is still referenced by methods or runs. Unlink them before deleting.");
+    await db.query("delete from public.columns where id = $1", [data.id]);
     return { ok: true };
   });
 
@@ -169,22 +168,21 @@ const BatchInput = z.object({
   project: z.string().max(200).default(""),
 });
 export const upsertBatch = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d) => BatchInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context as any;
-    const { data: saved, error } = await supabase
-      .from("batches")
-      .upsert({
-        ...(data.id ? { id: data.id } : {}),
-        name: data.name,
-        project: data.project,
-        owner_id: userId,
-      })
-      .select()
-      .single();
-    if (error) throw error;
-    return mapBatch(saved, []);
+    const { userId, db } = context as any;
+    let row;
+    if (data.id) {
+      row = await db.one(
+        "update public.batches set name=$1, project=$2 where id=$3 returning *",
+        [data.name, data.project, data.id]);
+    } else {
+      row = await db.one(
+        "insert into public.batches (name, project, owner_id) values ($1,$2,$3) returning *",
+        [data.name, data.project, userId]);
+    }
+    return mapBatch(row, []);
   });
 
 // ---- Analytes ----
@@ -195,107 +193,65 @@ const AnalyteInput = z.object({
   rtExpected: z.number().min(0).max(120),
 });
 export const addAnalyte = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d) => AnalyteInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { userId } = context as any;
+    const { userId, db } = context as any;
     let mz = data.mz ?? null;
     if (mz == null || mz <= 0) {
       const computed = data.formula ? mzFromFormula(data.formula, "[M+H]+") : null;
-      if (computed == null) {
-        throw new Error("Provide a valid molecular formula or a manual m/z.");
-      }
+      if (computed == null) throw new Error("Provide a valid molecular formula or a manual m/z.");
       mz = computed;
     }
-    const { data: saved, error } = await supabaseAdmin
-      .from("analytes")
-      .insert({
-        name: data.name,
-        formula: data.formula,
-        mz,
-        rt_expected: data.rtExpected,
-        library_source: "user",
-        created_by: userId,
-      })
-      .select()
-      .single();
-    if (error) throw error;
-    return mapAnalyte(saved);
+    const row = await db.one(
+      `insert into public.analytes (name, formula, mz, rt_expected, library_source, created_by)
+       values ($1,$2,$3,$4,'user',$5) returning *`,
+      [data.name, data.formula, mz, data.rtExpected, userId],
+    );
+    return mapAnalyte(row);
   });
 
 const UpdateAnalyteInput = AnalyteInput.extend({ id: z.string() });
 export const updateAnalyte = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d) => UpdateAnalyteInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { userId } = context as any;
-    const [{ data: existing, error: fErr }, { data: roles }] = await Promise.all([
-      supabaseAdmin
-        .from("analytes")
-        .select("id, created_by, library_source")
-        .eq("id", data.id)
-        .maybeSingle(),
-      supabaseAdmin.from("user_roles").select("role").eq("user_id", userId),
-    ]);
-    if (fErr) throw fErr;
+    const { userId, isAdmin, db } = context as any;
+    const existing = await db.maybe<any>(
+      "select id, created_by from public.analytes where id = $1", [data.id]);
     if (!existing) throw new Error("Compound not found.");
-    const isAdmin = (roles ?? []).some((r: any) => r.role === "admin");
-    if (existing.created_by && existing.created_by !== userId && !isAdmin) {
+    if (existing.created_by && existing.created_by !== userId && !isAdmin)
       throw new Error("You can only edit compounds you created.");
-    }
     let mz = data.mz ?? null;
     if (mz == null || mz <= 0) {
       const computed = data.formula ? mzFromFormula(data.formula, "[M+H]+") : null;
-      if (computed == null) {
-        throw new Error("Provide a valid molecular formula or a manual m/z.");
-      }
+      if (computed == null) throw new Error("Provide a valid molecular formula or a manual m/z.");
       mz = computed;
     }
-    const { data: saved, error } = await supabaseAdmin
-      .from("analytes")
-      .update({
-        name: data.name,
-        formula: data.formula,
-        mz,
-        rt_expected: data.rtExpected,
-      })
-      .eq("id", data.id)
-      .select()
-      .single();
-    if (error) throw error;
-    return mapAnalyte(saved);
+    const row = await db.one(
+      `update public.analytes set name=$1, formula=$2, mz=$3, rt_expected=$4
+       where id=$5 returning *`,
+      [data.name, data.formula, mz, data.rtExpected, data.id],
+    );
+    return mapAnalyte(row);
   });
 
 export const deleteAnalyte = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d) => z.object({ id: z.string() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { userId } = context as any;
-    const [{ data: existing, error: fErr }, { data: roles }] = await Promise.all([
-      supabaseAdmin
-        .from("analytes")
-        .select("id, created_by, library_source")
-        .eq("id", data.id)
-        .maybeSingle(),
-      supabaseAdmin.from("user_roles").select("role").eq("user_id", userId),
-    ]);
-    if (fErr) throw fErr;
+    const { userId, isAdmin, db } = context as any;
+    const existing = await db.maybe<any>(
+      "select id, created_by from public.analytes where id = $1", [data.id]);
     if (!existing) return { ok: true, missing: true };
-    const isAdmin = (roles ?? []).some((r: any) => r.role === "admin");
-    if (existing.created_by && existing.created_by !== userId && !isAdmin) {
+    if (existing.created_by && existing.created_by !== userId && !isAdmin)
       throw new Error("You can only delete compounds you created.");
-    }
-    const { error: peakErr } = await supabaseAdmin
-      .from("peaks")
-      .update({ analyte_id: null })
-      .eq("analyte_id", data.id);
-    if (peakErr) throw peakErr;
-    const { error } = await supabaseAdmin.from("analytes").delete().eq("id", data.id);
-    if (error) throw error;
+    await db.query("update public.peaks set analyte_id = null where analyte_id = $1", [data.id]);
+    await db.query("delete from public.analytes where id = $1", [data.id]);
     return { ok: true };
   });
 
-// ---- Runs (file already uploaded to storage; persist summary + peaks) ----
+// ---- Runs ----
 const RunInput = z.object({
   name: z.string().min(1).max(300),
   methodId: z.string().optional().nullable(),
@@ -312,96 +268,68 @@ const RunInput = z.object({
     tic: z.array(z.number()).max(8000),
     bpc: z.array(z.number()).max(8000),
   }),
-  peaks: z
-    .array(
-      z.object({
-        rt: z.number(),
-        area: z.number(),
-        height: z.number(),
-        fwhm: z.number(),
-        sn: z.number(),
-        mz: z.number().nullable().optional(),
-        mzLow: z.number().nullable().optional(),
-        mzHigh: z.number().nullable().optional(),
-      }),
-    )
-    .max(1000),
+  peaks: z.array(z.object({
+    rt: z.number(),
+    area: z.number(),
+    height: z.number(),
+    fwhm: z.number(),
+    sn: z.number(),
+    mz: z.number().nullable().optional(),
+    mzLow: z.number().nullable().optional(),
+    mzHigh: z.number().nullable().optional(),
+  })).max(1000),
 });
 
-// Look up an existing run by its raw file_path. Used by the upload UI to
-// recover from a dropped client connection where the insert already
-// succeeded on the server.
 export const findRunByFilePath = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d) => z.object({ filePath: z.string().min(1).max(500) }).parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context as any;
-    const { data: run } = await supabase
-      .from("runs")
-      .select("*")
-      .eq("file_path", data.filePath)
-      .eq("uploaded_by", userId)
-      .order("acquired_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const { userId, db } = context as any;
+    const run = await db.maybe<any>(
+      `select * from public.runs
+       where file_path=$1 and uploaded_by=$2
+       order by acquired_at desc limit 1`,
+      [data.filePath, userId],
+    );
     if (!run) return { run: null };
-    const { data: peakRows } = await supabase
-      .from("peaks")
-      .select("*")
-      .eq("run_id", run.id);
-    return { run: mapRun(run, (peakRows ?? []).map(mapPeak).sort((a: any, b: any) => a.rt - b.rt)) };
+    const peakRows = await db.many<any>(
+      "select * from public.peaks where run_id=$1", [run.id]);
+    return { run: mapRun(run, peakRows.map(mapPeak).sort((a: any, b: any) => a.rt - b.rt)) };
   });
 
 export const createRun = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d) => RunInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context as any;
-    const { data: run, error } = await supabase
-      .from("runs")
-      .insert({
-        method_id: data.methodId || null,
-        column_id: data.columnId || null,
-        batch_id: data.batchId || null,
-        file_path: data.filePath,
-        file_format: data.fileFormat,
-        scans_blob_path: data.scansBlobPath || null,
-        ms_level: data.msLevel,
-        parsed_status: "parsed",
-        summary_json: {
-          name: data.name,
-          fileSize: data.fileSize,
-          ionMode: data.ionMode,
-          trace: data.trace,
-        },
-        uploaded_by: userId,
-      })
-      .select()
-      .single();
-    if (error) throw error;
-
-    let peaks: any[] = [];
-    if (data.peaks.length > 0) {
-      const { data: inserted, error: pe } = await supabase
-        .from("peaks")
-        .insert(
-          data.peaks.map((p) => ({
-            run_id: run.id,
-            rt: p.rt,
-            area: p.area,
-            height: p.height,
-            fwhm: p.fwhm,
-            sn: p.sn,
-            mz: p.mz ?? null,
-            mz_low: p.mzLow ?? null,
-            mz_high: p.mzHigh ?? null,
-          })),
-        )
-        .select();
-      if (pe) throw pe;
-      peaks = inserted ?? [];
+    const { userId, db } = context as any;
+    const summary = {
+      name: data.name,
+      fileSize: data.fileSize,
+      ionMode: data.ionMode,
+      trace: data.trace,
+    };
+    const run = await db.one<any>(
+      `insert into public.runs
+        (method_id, column_id, batch_id, file_path, file_format, scans_blob_path,
+         ms_level, parsed_status, summary_json, uploaded_by)
+       values ($1,$2,$3,$4,$5,$6,$7,'parsed',$8,$9) returning *`,
+      [
+        data.methodId || null, data.columnId || null, data.batchId || null,
+        data.filePath, data.fileFormat, data.scansBlobPath || null, data.msLevel,
+        JSON.stringify(summary), userId,
+      ],
+    );
+    let peakRows: any[] = [];
+    for (const p of data.peaks) {
+      const r = await db.one<any>(
+        `insert into public.peaks (run_id, rt, area, height, fwhm, sn, mz, mz_low, mz_high)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning *`,
+        [run.id, p.rt, p.area, p.height, p.fwhm, p.sn,
+         p.mz ?? null, p.mzLow ?? null, p.mzHigh ?? null],
+      );
+      peakRows.push(r);
     }
-    return mapRun(run, peaks.map(mapPeak));
+    return mapRun(run, peakRows.map(mapPeak));
   });
 
 const AnnotateInput = z.object({
@@ -411,173 +339,107 @@ const AnnotateInput = z.object({
   label: z.string().max(200).optional(),
 });
 export const annotatePeak = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d) => AnnotateInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context as any;
-    const { error } = await supabase
-      .from("peaks")
-      .update({
-        analyte_id: data.analyteId ?? null,
-        annotated_by: userId,
-        annotation_source: "manual",
-        confidence: 1,
-      })
-      .eq("id", data.peakId);
-    if (error) throw error;
-
+    const { userId, db } = context as any;
+    await db.query(
+      `update public.peaks set
+         analyte_id=$1, annotated_by=$2, annotation_source='manual', confidence=1
+       where id=$3`,
+      [data.analyteId ?? null, userId, data.peakId],
+    );
     if (data.label) {
-      await supabase.from("annotations").insert({
-        run_id: data.runId,
-        peak_id: data.peakId,
-        label: data.label,
-        author_id: userId,
-      });
+      await db.query(
+        "insert into public.annotations (run_id, peak_id, label, author_id) values ($1,$2,$3,$4)",
+        [data.runId, data.peakId, data.label, userId],
+      );
     }
     return { ok: true };
   });
 
-// ---- Clear analyte assignments on one or many peaks ----
 const UnassignInput = z.object({
   runId: z.string(),
   peakIds: z.array(z.string()).min(1).max(500),
 });
 export const unassignPeaks = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d) => UnassignInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase } = context as any;
-    const { error } = await supabase
-      .from("peaks")
-      .update({
-        analyte_id: null,
-        analyte_name: null,
-        annotated_by: null,
-        annotation_source: null,
-        confidence: null,
-      })
-      .in("id", data.peakIds);
-    if (error) throw error;
+    const { db } = context as any;
+    await db.query(
+      `update public.peaks set
+         analyte_id=null, analyte_name=null, annotated_by=null,
+         annotation_source=null, confidence=null
+       where id = any($1::uuid[])`,
+      [data.peakIds],
+    );
     return { ok: true, count: data.peakIds.length };
   });
 
-// ---- EIC: extract on the server from the persisted scans blob ----
+// ---- EIC ----
 const EICInput = z.object({
   runId: z.string(),
   mz: z.number().min(0).max(10000),
   ppm: z.number().min(1).max(200).default(10),
 });
 export const getRunEIC = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d) => EICInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase } = context as any;
-    const { data: run, error } = await supabase
-      .from("runs")
-      .select("scans_blob_path")
-      .eq("id", data.runId)
-      .single();
-    if (error) throw error;
+    const { db } = context as any;
+    const run = await db.maybe<any>(
+      "select scans_blob_path from public.runs where id=$1", [data.runId]);
     if (!run?.scans_blob_path) {
       return { x: [] as number[], y: [] as number[], mz: data.mz, ppm: data.ppm, mzLow: 0, mzHigh: 0 };
     }
-    const { data: blob, error: dlErr } = await supabase.storage
-      .from("raw-runs")
-      .download(run.scans_blob_path);
-    if (dlErr) throw dlErr;
-    const buf = new Uint8Array(await blob.arrayBuffer());
+    const buf = await downloadObject("raw-runs", run.scans_blob_path);
     const { extractEICFromBlob } = await import("./eic");
-    const trace = extractEICFromBlob(buf, data.mz, data.ppm);
-    return trace;
+    return extractEICFromBlob(buf, data.mz, data.ppm);
   });
 
-// ---- Batch EIC: extract many m/z from a single scans-blob download ----
 const EICBatchInput = z.object({
   runId: z.string(),
   ppm: z.number().min(1).max(200).default(10),
-  targets: z
-    .array(z.object({ id: z.string().max(80), mz: z.number().min(0).max(10000) }))
-    .min(1)
-    .max(50),
+  targets: z.array(z.object({ id: z.string().max(80), mz: z.number().min(0).max(10000) })).min(1).max(50),
 });
 export const getRunEICBatch = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d) => EICBatchInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase } = context as any;
-    const { data: run, error } = await supabase
-      .from("runs")
-      .select("scans_blob_path")
-      .eq("id", data.runId)
-      .single();
-    if (error) throw error;
-    if (!run?.scans_blob_path) {
-      return { x: [] as number[], traces: [] as Array<any> };
-    }
-    const { data: blob, error: dlErr } = await supabase.storage
-      .from("raw-runs")
-      .download(run.scans_blob_path);
-    if (dlErr) throw dlErr;
-    const buf = new Uint8Array(await blob.arrayBuffer());
+    const { db } = context as any;
+    const run = await db.maybe<any>(
+      "select scans_blob_path from public.runs where id=$1", [data.runId]);
+    if (!run?.scans_blob_path) return { x: [] as number[], traces: [] as Array<any> };
+    const buf = await downloadObject("raw-runs", run.scans_blob_path);
     const { unpackScans, extractEIC } = await import("./eic");
     const scans = unpackScans(buf);
     const x = scans.map((s) => s.rt);
     const traces = data.targets.map((t) => {
       const tr = extractEIC(scans, t.mz, data.ppm);
-      const y = tr.y;
-      const xs = tr.x;
-      let peakIdx = -1;
-      let peakInt = 0;
-      for (let i = 0; i < y.length; i++) {
-        if (y[i] > peakInt) {
-          peakInt = y[i];
-          peakIdx = i;
-        }
-      }
-      // FWHM bounds
-      let fwhm = 0;
-      let area = 0;
-      let sn = 0;
+      const y = tr.y; const xs = tr.x;
+      let peakIdx = -1; let peakInt = 0;
+      for (let i = 0; i < y.length; i++) { if (y[i] > peakInt) { peakInt = y[i]; peakIdx = i; } }
+      let fwhm = 0, area = 0, sn = 0;
       if (peakIdx >= 0 && peakInt > 0) {
         const half = peakInt / 2;
-        let l = peakIdx;
-        while (l > 0 && y[l] > half) l--;
-        let r = peakIdx;
-        while (r < y.length - 1 && y[r] > half) r++;
+        let l = peakIdx; while (l > 0 && y[l] > half) l--;
+        let r = peakIdx; while (r < y.length - 1 && y[r] > half) r++;
         fwhm = Math.max(0, xs[r] - xs[l]);
-        // Area bounds at 5% of apex (trapezoidal)
         const cut = peakInt * 0.05;
-        let al = peakIdx;
-        while (al > 0 && y[al] > cut) al--;
-        let ar = peakIdx;
-        while (ar < y.length - 1 && y[ar] > cut) ar++;
-        for (let i = al; i < ar; i++) {
-          area += ((y[i] + y[i + 1]) / 2) * (xs[i + 1] - xs[i]);
-        }
-        // S/N: apex / median of points outside the peak window
+        let al = peakIdx; while (al > 0 && y[al] > cut) al--;
+        let ar = peakIdx; while (ar < y.length - 1 && y[ar] > cut) ar++;
+        for (let i = al; i < ar; i++) area += ((y[i] + y[i + 1]) / 2) * (xs[i + 1] - xs[i]);
         const noise: number[] = [];
-        for (let i = 0; i < y.length; i++) {
-          if (i < al || i > ar) noise.push(y[i]);
-        }
+        for (let i = 0; i < y.length; i++) if (i < al || i > ar) noise.push(y[i]);
         let med = 0;
-        if (noise.length > 0) {
-          noise.sort((a, b) => a - b);
-          med = noise[Math.floor(noise.length / 2)];
-        }
+        if (noise.length > 0) { noise.sort((a, b) => a - b); med = noise[Math.floor(noise.length / 2)]; }
         sn = peakInt / Math.max(1, med);
       }
       return {
-        id: t.id,
-        mz: t.mz,
-        y,
-        mzLow: tr.mzLow,
-        mzHigh: tr.mzHigh,
+        id: t.id, mz: t.mz, y, mzLow: tr.mzLow, mzHigh: tr.mzHigh,
         peakRt: peakIdx >= 0 ? xs[peakIdx] : null,
-        peakIntensity: peakInt,
-        area,
-        height: peakInt,
-        fwhm,
-        sn,
+        peakIntensity: peakInt, area, height: peakInt, fwhm, sn,
       };
     });
     return { x, traces };
@@ -585,16 +447,11 @@ export const getRunEICBatch = createServerFn({ method: "POST" })
 
 // ---- Admin ----
 export const listAdminUsers = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
-    const { supabase, userId } = context as any;
-    const { data: roles } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", userId);
-    const isAdmin = (roles ?? []).some((r: any) => r.role === "admin");
+    const { isAdmin } = context as any;
     if (!isAdmin) throw new Response("Forbidden", { status: 403 });
-    return await listAllUsersAdmin();
+    return listAllUsersAdmin();
   });
 
 const SetRoleInput = z.object({
@@ -602,43 +459,40 @@ const SetRoleInput = z.object({
   role: z.enum(["admin", "developer", "reviewer"]),
 });
 export const setUserRole = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d) => SetRoleInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context as any;
-    const { data: roles } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", userId);
-    const isAdmin = (roles ?? []).some((r: any) => r.role === "admin");
+    const { isAdmin } = context as any;
     if (!isAdmin) throw new Response("Forbidden", { status: 403 });
     await setUserRoleAdmin(data.userId, data.role);
     return { ok: true };
   });
 
-// ---- Storage signed-upload for raw / scans / report files ----
+// ---- Storage signed-upload ----
 const UploadUrlInput = z.object({
   filename: z.string().min(1).max(300),
   bucket: z.enum(["raw-runs", "reports", "branding", "avatars"]).default("raw-runs"),
   suffix: z.string().max(40).optional(),
+  contentType: z.string().max(120).optional(),
 });
 
 export const createUploadUrl = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d) => UploadUrlInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context as any;
+    const { userId } = context as any;
     const safe = data.filename.replace(/[^a-zA-Z0-9._-]/g, "_");
     const stamp = Date.now();
     const path = `${userId}/${stamp}-${safe}${data.suffix ?? ""}`;
-    const { data: up, error } = await supabase.storage
-      .from(data.bucket)
-      .createSignedUploadUrl(path);
-    if (error) throw error;
-    return { path, token: up.token, signedUrl: up.signedUrl, bucket: data.bucket };
+    const { url } = await createSignedUploadUrl(
+      data.bucket as BucketName, path,
+      data.contentType ?? "application/octet-stream",
+    );
+    // `token` retained for client-side API compatibility (unused with raw PUT).
+    return { path, token: "", signedUrl: url, bucket: data.bucket };
   });
 
-// ---- Reports (record metadata; PDF rendered + uploaded client-side) ----
+// ---- Reports ----
 const ReportInput = z.object({
   title: z.string().min(1).max(200),
   template: z.enum(["run", "batch", "method"]),
@@ -647,100 +501,48 @@ const ReportInput = z.object({
   storagePath: z.string().min(1).max(500),
 });
 export const createReport = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d) => ReportInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context as any;
-    const row = {
-      title: data.title,
-      template: data.template,
-      run_ids: data.runIds,
-      batch_id: data.batchId ?? null,
-      storage_path: data.storagePath,
-      created_by: userId,
-    };
-    const insert = async (payload: Record<string, unknown>) =>
-      await supabase.from("reports").insert(payload).select().single();
-    const attempts = [
-      row,
-      (({ run_ids: _runIds, batch_id: _batchId, ...rest }) => rest)(row),
-      (({ run_ids: _runIds, batch_id: _batchId, storage_path: _storagePath, ...rest }) => rest)(row),
-      (({ run_ids: _runIds, batch_id: _batchId, storage_path: _storagePath, template: _template, ...rest }) => rest)(row),
-    ];
-    let lastError: any = null;
-    for (const payload of attempts) {
-      const { data: saved, error } = await insert(payload);
-      if (!error) {
-        return {
-          ...saved,
-          storage_path: (saved as any).storage_path ?? data.storagePath,
-          metadataComplete: "storage_path" in (saved ?? {}),
-        };
-      }
-      lastError = error;
-      if (!/schema cache|column/i.test(error.message ?? "")) break;
-    }
-    return {
-      id: null,
-      title: data.title,
-      template: data.template,
-      storage_path: data.storagePath,
-      created_at: new Date().toISOString(),
-      metadataComplete: false,
-      metadataError: lastError?.message ?? "Report metadata could not be saved.",
-    };
+    const { userId, db } = context as any;
+    const saved = await db.one<any>(
+      `insert into public.reports (title, template, run_ids, batch_id, storage_path, created_by)
+       values ($1,$2,$3::uuid[],$4,$5,$6) returning *`,
+      [data.title, data.template, data.runIds, data.batchId ?? null, data.storagePath, userId],
+    );
+    return { ...saved, metadataComplete: true };
   });
 
 export const listReports = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
-    const { supabase } = context as any;
-    const { data, error } = await supabase
-      .from("reports")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (error) throw error;
-    return data ?? [];
+    const { db } = context as any;
+    return db.many("select * from public.reports order by created_at desc");
   });
 
 export const getReportSignedUrl = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase } = context as any;
-    const { data: row, error } = await supabase
-      .from("reports")
-      .select("*")
-      .eq("id", data.id)
-      .single();
-    if (error) throw error;
-    if (!row?.storage_path) throw new Error("This report has no stored PDF path. Regenerate it after the reports migration is applied.");
-    const { data: signed, error: se } = await supabase.storage
-      .from("reports")
-      .createSignedUrl(row.storage_path, 60 * 10);
-    if (se) throw se;
-    return { url: signed.signedUrl };
+    const { db } = context as any;
+    const row = await db.one<any>(
+      "select storage_path from public.reports where id=$1", [data.id]);
+    if (!row?.storage_path) throw new Error("This report has no stored PDF path.");
+    const url = await createSignedDownloadUrl("reports", row.storage_path, 60 * 10);
+    return { url };
   });
 
 export const deleteReport = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase } = context as any;
-    const { data: row } = await supabase
-      .from("reports")
-      .select("storage_path")
-      .eq("id", data.id)
-      .maybeSingle();
-    if (row?.storage_path) {
-      await supabase.storage.from("reports").remove([row.storage_path]);
-    }
-    const { error } = await supabase.from("reports").delete().eq("id", data.id);
-    if (error) throw error;
+    const { db } = context as any;
+    const row = await db.maybe<any>(
+      "select storage_path from public.reports where id=$1", [data.id]);
+    if (row?.storage_path) await removeObjects("reports", [row.storage_path]);
+    await db.query("delete from public.reports where id=$1", [data.id]);
     return { ok: true };
   });
-
-
 
 // ---- Sharing links ----
 const ShareInput = z.object({
@@ -749,80 +551,54 @@ const ShareInput = z.object({
   expiresInHours: z.number().int().min(1).max(24 * 365).default(168),
 });
 export const createShareLink = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d) => ShareInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context as any;
+    const { userId, db } = context as any;
     const token = crypto.randomUUID().replace(/-/g, "");
     const expires = new Date(Date.now() + data.expiresInHours * 3_600_000).toISOString();
-    const { data: row, error } = await supabase
-      .from("shared_links")
-      .insert({
-        token,
-        resource_kind: data.resourceKind,
-        resource_id: data.resourceId,
-        expires_at: expires,
-        created_by: userId,
-      })
-      .select()
-      .single();
-    if (error) throw error;
+    const row = await db.one<any>(
+      `insert into public.shared_links (token, resource_kind, resource_id, expires_at, created_by)
+       values ($1,$2,$3,$4,$5) returning *`,
+      [token, data.resourceKind, data.resourceId, expires, userId],
+    );
     return { token: row.token, expiresAt: row.expires_at };
   });
 
-// ---- Public share resource (no auth; uses admin client; expiry-checked) ----
+// Public share (no auth). Uses admin bypass.
 export const getSharedResource = createServerFn({ method: "POST" })
   .inputValidator((d) => z.object({ token: z.string().min(8).max(80) }).parse(d))
   .handler(async ({ data }) => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: link, error } = await supabaseAdmin
-      .from("shared_links")
-      .select("*")
-      .eq("token", data.token)
-      .maybeSingle();
-    if (error) throw error;
-    if (!link) throw new Error("Link not found");
-    if (link.expires_at && new Date(link.expires_at).getTime() < Date.now()) {
-      throw new Error("Link has expired");
-    }
+    return withAdmin(async (db) => {
+      const link = await db.maybe<any>(
+        "select * from public.shared_links where token=$1", [data.token]);
+      if (!link) throw new Error("Link not found");
+      if (link.expires_at && new Date(link.expires_at).getTime() < Date.now())
+        throw new Error("Link has expired");
 
-    if (link.resource_kind === "report") {
-      const { data: report, error: re } = await supabaseAdmin
-        .from("reports")
-        .select("id, title, template, storage_path, created_at")
-        .eq("id", link.resource_id)
-        .maybeSingle();
-      if (re) throw re;
-      if (!report) throw new Error("Report not found");
-      const { data: signed, error: se } = await supabaseAdmin.storage
-        .from("reports")
-        .createSignedUrl(report.storage_path, 60 * 10);
-      if (se) throw se;
+      if (link.resource_kind === "report") {
+        const report = await db.maybe<any>(
+          "select id, title, template, storage_path, created_at from public.reports where id=$1",
+          [link.resource_id]);
+        if (!report) throw new Error("Report not found");
+        const url = await createSignedDownloadUrl("reports", report.storage_path, 60 * 10);
+        return {
+          kind: "report" as const,
+          title: report.title, template: report.template,
+          createdAt: report.created_at, url,
+        };
+      }
+
+      const run = await db.maybe<any>(
+        "select * from public.runs where id=$1", [link.resource_id]);
+      if (!run) throw new Error("Run not found");
+      const peaks = await db.many<any>(
+        "select * from public.peaks where run_id=$1", [run.id]);
       return {
-        kind: "report" as const,
-        title: report.title,
-        template: report.template,
-        createdAt: report.created_at,
-        url: signed.signedUrl,
+        kind: "run" as const,
+        run: mapRun(run, peaks.map(mapPeak).sort((a: any, b: any) => a.rt - b.rt)),
       };
-    }
-
-    // run
-    const { data: run, error: rErr } = await supabaseAdmin
-      .from("runs")
-      .select("*")
-      .eq("id", link.resource_id)
-      .maybeSingle();
-    if (rErr) throw rErr;
-    if (!run) throw new Error("Run not found");
-    const { data: peaks } = await supabaseAdmin
-      .from("peaks")
-      .select("*")
-      .eq("run_id", run.id);
-    return {
-      kind: "run" as const,
-      run: mapRun(run, (peaks ?? []).map(mapPeak).sort((a, b) => a.rt - b.rt)),
-    };
+    });
   });
 
 // ---- Audit log (admin) ----
@@ -835,31 +611,24 @@ const AuditFilters = z.object({
   limit: z.number().int().min(1).max(200).default(200),
 });
 export const listAuditEvents = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d) => AuditFilters.parse(d ?? {}))
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context as any;
-    const { data: roles } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", userId);
-    const isAdmin = (roles ?? []).some((r: any) => r.role === "admin");
+    const { isAdmin, db } = context as any;
     if (!isAdmin) throw new Response("Forbidden", { status: 403 });
-
-    let q = supabase
-      .from("audit_events")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(data.limit);
-    if (data.table) q = q.eq("table_name", data.table);
-    if (data.action) q = q.eq("action", data.action);
-    if (data.actorId) q = q.eq("actor_id", data.actorId);
-    if (data.since) q = q.gte("created_at", data.since);
-    if (data.until) q = q.lte("created_at", data.until);
-
-    const { data: rows, error } = await q;
-    if (error) throw error;
-    return rows ?? [];
+    const wh: string[] = [];
+    const params: any[] = [];
+    const push = (sql: string, v: any) => { params.push(v); wh.push(sql.replace("?", `$${params.length}`)); };
+    if (data.table) push("table_name = ?", data.table);
+    if (data.action) push("action = ?", data.action);
+    if (data.actorId) push("actor_id = ?", data.actorId);
+    if (data.since) push("created_at >= ?", data.since);
+    if (data.until) push("created_at <= ?", data.until);
+    params.push(data.limit);
+    const sql = `select * from public.audit_events
+                 ${wh.length ? "where " + wh.join(" and ") : ""}
+                 order by created_at desc limit $${params.length}`;
+    return db.many(sql, params);
   });
 
 // ---- Auto-annotate batch ----
@@ -869,53 +638,44 @@ const AutoAnnotateInput = z.object({
   ppmTol: z.number().min(0).max(200).default(10),
 });
 export const autoAnnotateBatch = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d) => AutoAnnotateInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context as any;
-    const [{ data: runs }, { data: analytes }] = await Promise.all([
-      supabase.from("runs").select("id").eq("batch_id", data.batchId),
-      supabase.from("analytes").select("id, name, mz, rt_expected"),
-    ]);
-    if (!runs?.length) return { annotated: 0, scanned: 0 };
-    const runIds = runs.map((r: any) => r.id);
-    const { data: peaks } = await supabase
-      .from("peaks")
-      .select("id, rt, mz, run_id")
-      .in("run_id", runIds);
-
+    const { userId, db } = context as any;
+    const runs = await db.many<any>(
+      "select id from public.runs where batch_id=$1", [data.batchId]);
+    if (runs.length === 0) return { annotated: 0, scanned: 0 };
+    const analytes = await db.many<any>(
+      "select id, name, mz, rt_expected from public.analytes");
+    const runIds = runs.map((r) => r.id);
+    const peaks = await db.many<any>(
+      "select id, rt, mz, run_id from public.peaks where run_id = any($1::uuid[])",
+      [runIds]);
     let annotated = 0;
-    for (const p of peaks ?? []) {
-      let bestScore = Infinity;
-      let bestA: any = null;
-      for (const a of analytes ?? []) {
+    for (const p of peaks) {
+      let bestScore = Infinity; let bestA: any = null;
+      for (const a of analytes) {
         const dRt = Math.abs(p.rt - Number(a.rt_expected));
         if (dRt > data.rtTolMin) continue;
-        const dPpm = p.mz != null ? Math.abs((Number(p.mz) - Number(a.mz)) / Number(a.mz)) * 1e6 : 999;
+        const dPpm = p.mz != null
+          ? Math.abs((Number(p.mz) - Number(a.mz)) / Number(a.mz)) * 1e6 : 999;
         if (dPpm > data.ppmTol) continue;
         const score = dRt * 10 + dPpm;
-        if (score < bestScore) {
-          bestScore = score;
-          bestA = a;
-        }
+        if (score < bestScore) { bestScore = score; bestA = a; }
       }
       if (bestA) {
-        await supabase
-          .from("peaks")
-          .update({
-            analyte_id: bestA.id,
-            annotated_by: userId,
-            annotation_source: "auto",
-            confidence: Math.max(0.5, 1 - bestScore / 50),
-          })
-          .eq("id", p.id);
+        await db.query(
+          `update public.peaks set
+             analyte_id=$1, annotated_by=$2, annotation_source='auto', confidence=$3
+           where id=$4`,
+          [bestA.id, userId, Math.max(0.5, 1 - bestScore / 50), p.id]);
         annotated++;
       }
     }
-    return { annotated, scanned: peaks?.length ?? 0 };
+    return { annotated, scanned: peaks.length };
   });
 
-// ---- Manual peak integration ----
+// ---- Manual peak ----
 const ManualPeakInput = z.object({
   runId: z.string().uuid(),
   rt: z.number(),
@@ -932,120 +692,75 @@ const ManualPeakInput = z.object({
   analyteName: z.string().max(200).nullable().optional(),
 });
 export const addManualPeak = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d) => ManualPeakInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context as any;
-    const { data: run, error: rErr } = await supabase
-      .from("runs")
-      .select("id, uploaded_by")
-      .eq("id", data.runId)
-      .maybeSingle();
-    if (rErr) throw rErr;
+    const { userId, db } = context as any;
+    const run = await db.maybe<any>(
+      "select id, uploaded_by from public.runs where id=$1", [data.runId]);
     if (!run) throw new Error("Run not found");
-    if (run.uploaded_by && run.uploaded_by !== userId) {
+    if (run.uploaded_by && run.uploaded_by !== userId)
       throw new Error("You don't have permission to add peaks to this run.");
-    }
     const hasAnalyte = !!(data.analyteId || data.analyteName);
-    const { data: row, error } = await supabase
-      .from("peaks")
-      .insert({
-        run_id: data.runId,
-        rt: data.rt,
-        area: data.area,
-        height: data.height,
-        fwhm: data.fwhm,
-        sn: data.sn,
-        mz: data.mz ?? null,
-        mz_low: data.mzLow ?? null,
-        mz_high: data.mzHigh ?? null,
-        analyte_id: data.analyteId ?? null,
-        analyte_name: data.analyteName ?? null,
-        annotated_by: hasAnalyte ? userId : null,
-        annotation_source: hasAnalyte ? "manual" : null,
-        confidence: hasAnalyte ? 1 : null,
-        manual: true,
-      })
-      .select()
-      .single();
-    if (error) throw error;
+    const row = await db.one<any>(
+      `insert into public.peaks (
+         run_id, rt, area, height, fwhm, sn, mz, mz_low, mz_high,
+         analyte_id, analyte_name, annotated_by, annotation_source, confidence, manual
+       ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,true) returning *`,
+      [
+        data.runId, data.rt, data.area, data.height, data.fwhm, data.sn,
+        data.mz ?? null, data.mzLow ?? null, data.mzHigh ?? null,
+        data.analyteId ?? null, data.analyteName ?? null,
+        hasAnalyte ? userId : null,
+        hasAnalyte ? "manual" : null,
+        hasAnalyte ? 1 : null,
+      ],
+    );
     return { peak: mapPeak(row) };
   });
 
-// ---- Delete a run (and its storage objects + child rows) ----
-async function deleteRunInternal(supabase: any, userId: string, runId: string) {
-  const { data: run, error: fetchErr } = await supabase
-    .from("runs")
-    .select("id, uploaded_by, file_path, scans_blob_path")
-    .eq("id", runId)
-    .maybeSingle();
-  if (fetchErr) throw fetchErr;
+// ---- Delete run ----
+async function deleteRunInternal(db: any, userId: string, runId: string) {
+  const run = await db.maybe<any>(
+    "select id, uploaded_by, file_path, scans_blob_path from public.runs where id=$1",
+    [runId]);
   if (!run) return { ok: true, missing: true };
-  if (run.uploaded_by && run.uploaded_by !== userId) {
+  if (run.uploaded_by && run.uploaded_by !== userId)
     throw new Error("You don't have permission to delete this run.");
-  }
-
   const paths = [run.file_path, run.scans_blob_path].filter(
-    (p): p is string => typeof p === "string" && p.length > 0,
-  );
-  if (paths.length > 0) {
-    // Best-effort: ignore missing-file errors so deletion still proceeds.
-    await supabase.storage.from("raw-runs").remove(paths).catch(() => undefined);
-  }
-
-  // Remove children explicitly in case FKs aren't cascading.
-  await supabase.from("peaks").delete().eq("run_id", runId);
-  const { error: delErr } = await supabase.from("runs").delete().eq("id", runId);
-  if (delErr) throw delErr;
+    (p): p is string => typeof p === "string" && p.length > 0);
+  if (paths.length > 0) await removeObjects("raw-runs", paths);
+  await db.query("delete from public.peaks where run_id=$1", [runId]);
+  await db.query("delete from public.runs where id=$1", [runId]);
   return { ok: true };
 }
 
 export const deleteRun = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d) => z.object({ runId: z.string() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context as any;
-    return deleteRunInternal(supabase, userId, data.runId);
+    const { userId, db } = context as any;
+    return deleteRunInternal(db, userId, data.runId);
   });
 
 export const deleteBatch = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d) =>
-    z.object({ batchId: z.string(), deleteRuns: z.boolean().default(false) }).parse(d),
-  )
+  .middleware([requireAuth])
+  .inputValidator((d) => z.object({ batchId: z.string(), deleteRuns: z.boolean().default(false) }).parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context as any;
-    const { data: batch, error: bErr } = await supabase
-      .from("batches")
-      .select("id, owner_id")
-      .eq("id", data.batchId)
-      .maybeSingle();
-    if (bErr) throw bErr;
+    const { userId, db } = context as any;
+    const batch = await db.maybe<any>(
+      "select id, owner_id from public.batches where id=$1", [data.batchId]);
     if (!batch) return { ok: true, missing: true };
-    if (batch.owner_id && batch.owner_id !== userId) {
+    if (batch.owner_id && batch.owner_id !== userId)
       throw new Error("You don't have permission to delete this batch.");
-    }
-
     if (data.deleteRuns) {
-      const { data: runs } = await supabase
-        .from("runs")
-        .select("id")
-        .eq("batch_id", data.batchId);
-      for (const r of runs ?? []) {
-        await deleteRunInternal(supabase, userId, r.id);
-      }
+      const runs = await db.many<any>(
+        "select id from public.runs where batch_id=$1", [data.batchId]);
+      for (const r of runs) await deleteRunInternal(db, userId, r.id);
     } else {
-      await supabase
-        .from("runs")
-        .update({ batch_id: null })
-        .eq("batch_id", data.batchId);
+      await db.query(
+        "update public.runs set batch_id=null where batch_id=$1", [data.batchId]);
     }
-
-    const { error: delErr } = await supabase
-      .from("batches")
-      .delete()
-      .eq("id", data.batchId);
-    if (delErr) throw delErr;
+    await db.query("delete from public.batches where id=$1", [data.batchId]);
     return { ok: true };
   });
-
