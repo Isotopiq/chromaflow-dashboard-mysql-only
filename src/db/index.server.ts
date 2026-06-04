@@ -25,19 +25,22 @@ export const pool: Pool =
   }));
 
 export type Db = {
-  query: <T = any>(sql: string, params?: any[]) => Promise<QueryResult<T>>;
-  many: <T = any>(sql: string, params?: any[]) => Promise<T[]>;
-  maybe: <T = any>(sql: string, params?: any[]) => Promise<T | null>;
-  one: <T = any>(sql: string, params?: any[]) => Promise<T>;
+  query: <T extends Record<string, any> = any>(sql: string, params?: any[]) => Promise<QueryResult<T>>;
+  many: <T extends Record<string, any> = any>(sql: string, params?: any[]) => Promise<T[]>;
+  maybe: <T extends Record<string, any> = any>(sql: string, params?: any[]) => Promise<T | null>;
+  one: <T extends Record<string, any> = any>(sql: string, params?: any[]) => Promise<T>;
 };
 
 function wrap(c: PoolClient): Db {
   return {
-    query: (sql, params) => c.query(sql, params),
-    many: async (sql, params) => (await c.query(sql, params)).rows,
-    maybe: async (sql, params) => (await c.query(sql, params)).rows[0] ?? null,
-    one: async (sql, params) => {
-      const r = await c.query(sql, params);
+    query: <T extends Record<string, any> = any>(sql: string, params?: any[]) =>
+      c.query<T>(sql, params),
+    many: async <T extends Record<string, any> = any>(sql: string, params?: any[]) =>
+      (await c.query<T>(sql, params)).rows,
+    maybe: async <T extends Record<string, any> = any>(sql: string, params?: any[]) =>
+      ((await c.query<T>(sql, params)).rows[0] ?? null) as T | null,
+    one: async <T extends Record<string, any> = any>(sql: string, params?: any[]) => {
+      const r = await c.query<T>(sql, params);
       if (r.rows.length === 0) throw new Error("Expected exactly one row");
       return r.rows[0];
     },
