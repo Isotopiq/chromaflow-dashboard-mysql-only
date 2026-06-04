@@ -1,9 +1,16 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Peak } from "@/lib/lab-types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Trash2 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -27,6 +34,18 @@ export function PeakTable({
   onUnassign?: (peakIds: string[]) => void | Promise<void>;
 }) {
   const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [pageSize, setPageSize] = useState<number>(25);
+  const [page, setPage] = useState<number>(1);
+
+  const totalPages = Math.max(1, Math.ceil(peaks.length / pageSize));
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
+  const pagedPeaks = useMemo(
+    () => peaks.slice((page - 1) * pageSize, page * pageSize),
+    [peaks, page, pageSize],
+  );
 
   const assignedIds = useMemo(
     () => peaks.filter((p) => p.analyteName).map((p) => p.id),
@@ -111,7 +130,7 @@ export function PeakTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {peaks.map((p) => {
+            {pagedPeaks.map((p) => {
               const isAssigned = !!p.analyteName;
               return (
                 <TableRow
@@ -185,6 +204,59 @@ export function PeakTable({
           </TableBody>
         </Table>
       </div>
+      {peaks.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 px-1 pt-1 text-[11px] text-muted-foreground">
+          <div className="flex items-center gap-2">
+            <span>Rows per page</span>
+            <Select
+              value={String(pageSize)}
+              onValueChange={(v) => {
+                setPageSize(Number(v));
+                setPage(1);
+              }}
+            >
+              <SelectTrigger className="h-7 w-[72px] text-[11px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {[10, 25, 50, 100].map((n) => (
+                  <SelectItem key={n} value={String(n)} className="text-[11px]">
+                    {n}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <span>
+              {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, peaks.length)} of {peaks.length}
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <Button
+              size="icon"
+              variant="outline"
+              className="h-7 w-7"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              aria-label="Previous page"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </Button>
+            <span className="px-1 font-mono">
+              {page} / {totalPages}
+            </span>
+            <Button
+              size="icon"
+              variant="outline"
+              className="h-7 w-7"
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              aria-label="Next page"
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
