@@ -48,5 +48,5 @@ export async function sendEmail(opts: {
 }
 
 export function appUrl(): string {
-  return (process.env.APP_URL ?? "http://localhost:5273").replace(/\/+$/, "");
+  return (process.env.APP_URL ?? "http://localhost:29473").replace(/\/+$/, "");
 }
