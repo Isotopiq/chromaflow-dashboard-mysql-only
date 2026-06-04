@@ -20,7 +20,9 @@ FROM oven/bun:1.3.3-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
-    PORT=29473
+    PORT=29473 \
+    NITRO_HOST=0.0.0.0 \
+    NITRO_PORT=29473
 # Nitro emits a fully self-contained Node SSR bundle under dist/.
 COPY --from=builder /app/dist ./dist
 EXPOSE 29473
