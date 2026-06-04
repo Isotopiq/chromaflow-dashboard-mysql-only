@@ -7,7 +7,6 @@ services:
       context: .
       dockerfile: Dockerfile
     image: chroma-lab:latest
-    container_name: chroma-lab
     restart: unless-stopped
     ports:
       - "29473:29473"
