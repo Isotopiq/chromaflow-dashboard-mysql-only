@@ -56,14 +56,12 @@ function Dashboard() {
         <KpiCard
           label="Validated methods"
           value={`${validated} / ${methods.length}`}
-          delta="+1 this month"
           icon={FlaskConical}
           tone="ok"
         />
         <KpiCard
           label="Runs (last 14d)"
           value={String(runs.length)}
-          delta="2 awaiting review"
           icon={Activity}
         />
         <KpiCard
