@@ -1,30 +1,24 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
-
-function avatarPublicUrl(path: string | null | undefined): string | null {
-  if (!path) return null;
-  const { data } = supabaseAdmin.storage.from("avatars").getPublicUrl(path);
-  return data.publicUrl ?? null;
-}
+import { requireAuth } from "@/lib/auth-middleware";
+import { withAdmin } from "@/db/index.server";
+import { publicUrl } from "@/lib/storage.server";
+import { updateEmail, updatePassword } from "@/lib/auth/users.server";
 
 export const getMyAccount = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
-    const { supabase, userId } = context as any;
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("id, display_name, avatar_url")
-      .eq("id", userId)
-      .maybeSingle();
-    const { data: userRes } = await supabaseAdmin.auth.admin.getUserById(userId);
+    const { userId, email, db } = context as any;
+    const profile = await db.maybe(
+      "select id, display_name, avatar_url from public.profiles where id = $1",
+      [userId],
+    );
     return {
       id: userId,
-      email: userRes?.user?.email ?? "",
+      email,
       displayName: profile?.display_name ?? "",
       avatarPath: profile?.avatar_url ?? null,
-      avatarUrl: avatarPublicUrl(profile?.avatar_url),
+      avatarUrl: publicUrl("avatars", profile?.avatar_url),
     };
   });
 
@@ -34,45 +28,48 @@ const ProfileInput = z.object({
 });
 
 export const updateMyProfile = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d) => ProfileInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { userId } = context as any;
-    const patch: Record<string, unknown> = { id: userId };
-    if (data.displayName !== undefined) patch.display_name = data.displayName;
-    if (data.avatarPath !== undefined) patch.avatar_url = data.avatarPath;
-    const { error } = await supabaseAdmin
-      .from("profiles")
-      .upsert(patch, { onConflict: "id" });
-    if (error) throw error;
+    const { userId, db } = context as any;
+    // Ensure profile exists, then patch fields
+    await db.query(
+      `insert into public.profiles (id, display_name, avatar_url)
+       values ($1, $2, $3)
+       on conflict (id) do update set
+         display_name = coalesce($2, public.profiles.display_name),
+         avatar_url   = case when $4 then $3 else public.profiles.avatar_url end,
+         updated_at   = now()`,
+      [
+        userId,
+        data.displayName ?? null,
+        data.avatarPath ?? null,
+        data.avatarPath !== undefined,
+      ],
+    );
     return { ok: true };
   });
 
 const EmailInput = z.object({ email: z.string().email().max(254) });
 
 export const updateMyEmail = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d) => EmailInput.parse(d))
   .handler(async ({ data, context }) => {
     const { userId } = context as any;
-    // Admin update: takes effect immediately (no confirmation email round-trip).
-    const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, {
-      email: data.email,
-    });
-    if (error) throw error;
+    await updateEmail(userId, data.email);
     return { ok: true };
   });
 
 const PasswordInput = z.object({ password: z.string().min(8).max(200) });
 
 export const updateMyPassword = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d) => PasswordInput.parse(d))
   .handler(async ({ data, context }) => {
     const { userId } = context as any;
-    const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, {
-      password: data.password,
-    });
-    if (error) throw error;
+    await updatePassword(userId, data.password);
+    // Touch withAdmin only if we want to bypass anything — not needed here.
+    void withAdmin;
     return { ok: true };
   });

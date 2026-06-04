@@ -1,17 +1,10 @@
-// Server-only helpers: DB row mappers + queries.
-// Lives in a *.server.ts file so it never leaks into the client bundle.
-import { supabaseAdmin, createUserClient } from "@/integrations/supabase/client.server";
+// Server-only helpers: DB row mappers + queries (pg-based, no Supabase).
+import type { Db } from "@/db/index.server";
+import { withAdmin } from "@/db/index.server";
+import { publicUrl as storagePublicUrl } from "@/lib/storage.server";
 import type {
-  Method,
-  Run,
-  Column,
-  Batch,
-  Analyte,
-  Peak,
-  User,
+  Method, Run, Column, Batch, Analyte, Peak, User,
 } from "@/lib/lab-types";
-
-export type SupabaseUserClient = ReturnType<typeof createUserClient>;
 
 // ---------- Mappers ----------
 export function mapColumn(r: any): Column {
@@ -126,9 +119,7 @@ export function mapAnalyte(r: any): Analyte {
 export function mapUser(profile: any, role: string): User {
   const name = profile.display_name ?? "user";
   const avatarPath = profile.avatar_url ?? null;
-  const avatarUrl = avatarPath
-    ? supabaseAdmin.storage.from("avatars").getPublicUrl(avatarPath).data.publicUrl ?? null
-    : null;
+  const avatarUrl = avatarPath ? storagePublicUrl("avatars", avatarPath) : null;
   return {
     id: profile.id,
     name,
@@ -145,105 +136,90 @@ export function mapUser(profile: any, role: string): User {
 }
 
 // ---------- Bulk fetchers ----------
-export async function fetchAllForUser(supabase: SupabaseUserClient) {
+export async function fetchAllForUser(db: Db) {
   const [columns, methods, runs, peaks, batches, analytes] = await Promise.all([
-    supabase.from("columns").select("*").order("created_at", { ascending: false }),
-    supabase.from("methods").select("*").order("updated_at", { ascending: false }),
-    supabase.from("runs").select("*").order("acquired_at", { ascending: false }),
-    supabase.from("peaks").select("*"),
-    supabase.from("batches").select("*").order("started_at", { ascending: false }),
-    supabase.from("analytes").select("*").order("name"),
+    db.many("select * from public.columns order by created_at desc"),
+    db.many("select * from public.methods order by updated_at desc"),
+    db.many("select * from public.runs order by acquired_at desc"),
+    db.many("select * from public.peaks"),
+    db.many("select * from public.batches order by started_at desc"),
+    db.many("select * from public.analytes order by name"),
   ]);
 
-  if (columns.error) throw columns.error;
-  if (methods.error) throw methods.error;
-  if (runs.error) throw runs.error;
-  if (peaks.error) throw peaks.error;
-  if (batches.error) throw batches.error;
-  if (analytes.error) throw analytes.error;
-
-  const peakRows = peaks.data ?? [];
   const peaksByRun = new Map<string, Peak[]>();
-  for (const p of peakRows) {
+  for (const p of peaks) {
     const key = p.run_id;
     if (!peaksByRun.has(key)) peaksByRun.set(key, []);
     peaksByRun.get(key)!.push(mapPeak(p));
   }
 
-  const runRows = runs.data ?? [];
-  const runsMapped = runRows.map((r: any) =>
+  const runsMapped = runs.map((r: any) =>
     mapRun(r, (peaksByRun.get(r.id) ?? []).sort((a, b) => a.rt - b.rt)),
   );
 
   const runsByBatch = new Map<string, string[]>();
-  for (const r of runRows) {
+  for (const r of runs) {
     if (!r.batch_id) continue;
     if (!runsByBatch.has(r.batch_id)) runsByBatch.set(r.batch_id, []);
     runsByBatch.get(r.batch_id)!.push(r.id);
   }
 
   return {
-    columns: (columns.data ?? []).map(mapColumn),
-    methods: (methods.data ?? []).map(mapMethod),
+    columns: columns.map(mapColumn),
+    methods: methods.map(mapMethod),
     runs: runsMapped,
-    batches: (batches.data ?? []).map((b: any) => mapBatch(b, runsByBatch.get(b.id) ?? [])),
-    analytes: (analytes.data ?? []).map(mapAnalyte),
+    batches: batches.map((b: any) => mapBatch(b, runsByBatch.get(b.id) ?? [])),
+    analytes: analytes.map(mapAnalyte),
   };
 }
 
-export async function getCurrentUserProfile(
-  supabase: SupabaseUserClient,
-  userId: string,
-) {
-  const { data: profile, error } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", userId)
-    .single();
-  if (error) throw error;
-
-  const { data: roles } = await supabase
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", userId);
-
+export async function getCurrentUserProfile(db: Db, userId: string, email: string) {
+  const profile = await db.maybe<any>(
+    "select id, display_name, avatar_url from public.profiles where id = $1",
+    [userId],
+  );
+  // Ensure a profile row exists.
+  if (!profile) {
+    await db.query("select public.ensure_profile($1, $2)", [userId, email.split("@")[0]]);
+  }
+  const roles = await db.many<{ role: string }>(
+    "select role from public.user_roles where user_id = $1",
+    [userId],
+  );
   const role =
-    roles?.find((r: any) => r.role === "admin")?.role ??
-    roles?.[0]?.role ??
-    "developer";
-
-  return mapUser({ ...profile, email: undefined }, role);
+    roles.find((r) => r.role === "admin")?.role ?? roles[0]?.role ?? "developer";
+  return mapUser({ ...(profile ?? { id: userId }), email }, role);
 }
 
-// ---------- Admin (service role) ----------
+// ---------- Admin ----------
 export async function listAllUsersAdmin(): Promise<User[]> {
-  const [{ data: profiles }, { data: roles }, { data: authUsers }] = await Promise.all([
-    supabaseAdmin.from("profiles").select("*"),
-    supabaseAdmin.from("user_roles").select("user_id, role"),
-    supabaseAdmin.auth.admin.listUsers(),
-  ]);
-
-  const emailById = new Map<string, string>();
-  for (const u of authUsers?.users ?? []) {
-    if (u.id && u.email) emailById.set(u.id, u.email);
-  }
-  const roleById = new Map<string, string>();
-  for (const r of roles ?? []) {
-    // prefer admin if user has multiple
-    const existing = roleById.get(r.user_id);
-    if (existing === "admin") continue;
-    roleById.set(r.user_id, r.role);
-  }
-  return (profiles ?? []).map((p: any) =>
-    mapUser({ ...p, email: emailById.get(p.id) ?? "" }, roleById.get(p.id) ?? "developer"),
-  );
+  return withAdmin(async (db) => {
+    const rows = await db.many<any>(`
+      select u.id, u.email, p.display_name, p.avatar_url,
+             coalesce((
+               select string_agg(role::text, ',') from public.user_roles where user_id = u.id
+             ), '') as roles
+        from public.app_users u
+        left join public.profiles p on p.id = u.id
+        order by u.created_at desc
+    `);
+    return rows.map((r) => {
+      const rolesArr = (r.roles ?? "").split(",").filter(Boolean);
+      const role = rolesArr.includes("admin") ? "admin" : rolesArr[0] ?? "developer";
+      return mapUser(
+        { id: r.id, email: r.email, display_name: r.display_name, avatar_url: r.avatar_url },
+        role,
+      );
+    });
+  });
 }
 
 export async function setUserRoleAdmin(userId: string, role: User["role"]) {
-  // Replace roles for this user
-  await supabaseAdmin.from("user_roles").delete().eq("user_id", userId);
-  const { error } = await supabaseAdmin
-    .from("user_roles")
-    .insert({ user_id: userId, role });
-  if (error) throw error;
+  await withAdmin(async (db) => {
+    await db.query("delete from public.user_roles where user_id = $1", [userId]);
+    await db.query(
+      "insert into public.user_roles (user_id, role) values ($1, $2)",
+      [userId, role],
+    );
+  });
 }
