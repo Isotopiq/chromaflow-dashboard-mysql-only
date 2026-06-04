@@ -34,6 +34,18 @@ export function PeakTable({
   onUnassign?: (peakIds: string[]) => void | Promise<void>;
 }) {
   const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [pageSize, setPageSize] = useState<number>(25);
+  const [page, setPage] = useState<number>(1);
+
+  const totalPages = Math.max(1, Math.ceil(peaks.length / pageSize));
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
+  const pagedPeaks = useMemo(
+    () => peaks.slice((page - 1) * pageSize, page * pageSize),
+    [peaks, page, pageSize],
+  );
 
   const assignedIds = useMemo(
     () => peaks.filter((p) => p.analyteName).map((p) => p.id),
