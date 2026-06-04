@@ -391,11 +391,18 @@ export const getRunEIC = createServerFn({ method: "POST" })
     const run = await db.maybe<any>(
       "select scans_blob_path from public.runs where id=$1", [data.runId]);
     if (!run?.scans_blob_path) {
-      return { x: [] as number[], y: [] as number[], mz: data.mz, ppm: data.ppm, mzLow: 0, mzHigh: 0 };
+      throw new Error("EIC unavailable: this run has no saved scan data. Re-upload the raw file to enable EIC extraction.");
     }
     const buf = await downloadObject("raw-runs", run.scans_blob_path);
+    if (buf.byteLength === 0) {
+      throw new Error("EIC unavailable: the saved scan data is empty. Re-upload the raw file and try again.");
+    }
     const { extractEICFromBlob } = await import("./eic");
-    return extractEICFromBlob(buf, data.mz, data.ppm);
+    const trace = extractEICFromBlob(buf, data.mz, data.ppm);
+    if (trace.x.length === 0) {
+      throw new Error("EIC unavailable: no MS1 scans were found in the saved scan data.");
+    }
+    return trace;
   });
 
 const EICBatchInput = z.object({
@@ -410,10 +417,18 @@ export const getRunEICBatch = createServerFn({ method: "POST" })
     const { db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
     const run = await db.maybe<any>(
       "select scans_blob_path from public.runs where id=$1", [data.runId]);
-    if (!run?.scans_blob_path) return { x: [] as number[], traces: [] as Array<any> };
+    if (!run?.scans_blob_path) {
+      throw new Error("Auto-XIC unavailable: this run has no saved scan data. Re-upload the raw file to enable XIC extraction.");
+    }
     const buf = await downloadObject("raw-runs", run.scans_blob_path);
+    if (buf.byteLength === 0) {
+      throw new Error("Auto-XIC unavailable: the saved scan data is empty. Re-upload the raw file and try again.");
+    }
     const { unpackScans, extractEIC } = await import("./eic");
     const scans = unpackScans(buf);
+    if (scans.length === 0) {
+      throw new Error("Auto-XIC unavailable: no MS1 scans were found in the saved scan data.");
+    }
     const x = scans.map((s) => s.rt);
     const traces = data.targets.map((t) => {
       const tr = extractEIC(scans, t.mz, data.ppm);
