@@ -14,6 +14,8 @@ services:
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: "29473"
+      NITRO_HOST: 0.0.0.0
+      NITRO_PORT: "29473"
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-all}
 
       # ---- Core app ----
