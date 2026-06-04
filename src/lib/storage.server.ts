@@ -89,8 +89,31 @@ export async function downloadObject(b: BucketName, path: string): Promise<Uint8
     Bucket: BUCKET,
     Key: objectKey(b, path),
   }));
-  const body = out.Body as ReadableStream<Uint8Array> | undefined;
+  const body = out.Body as any;
   if (!body) return new Uint8Array();
+  if (body instanceof Uint8Array) return body;
+  if (typeof body.transformToByteArray === "function") {
+    return body.transformToByteArray();
+  }
+  if (typeof body.arrayBuffer === "function") {
+    return new Uint8Array(await body.arrayBuffer());
+  }
+  if (typeof body[Symbol.asyncIterator] === "function") {
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    for await (const chunk of body as AsyncIterable<Uint8Array | string>) {
+      const bytes = typeof chunk === "string" ? new TextEncoder().encode(chunk) : new Uint8Array(chunk);
+      chunks.push(bytes);
+      total += bytes.byteLength;
+    }
+    const result = new Uint8Array(total);
+    let off = 0;
+    for (const c of chunks) { result.set(c, off); off += c.byteLength; }
+    return result;
+  }
+  if (typeof body.getReader !== "function") {
+    throw new Error("Storage download returned an unsupported response body.");
+  }
   const reader = body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;

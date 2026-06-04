@@ -99,11 +99,9 @@ function RunDetail() {
       : null;
 
   const fetchEIC = useServerFn(getRunEIC);
-  // Skip fetching when we already have this trace from the batch query (analyte click).
-  const hasBatchTrace = !!selectedTargetId;
   const eicQuery = useQuery({
     queryKey: ["eic", run.id, eicMz, ppm],
-    enabled: !hasBatchTrace && eicMz != null && Number.isFinite(eicMz) && !!run.scansBlobPath,
+    enabled: eicMz != null && Number.isFinite(eicMz) && !!run.scansBlobPath,
     queryFn: () => fetchEIC({ data: { runId: run.id, mz: eicMz!, ppm } }),
     staleTime: 60_000,
   });
@@ -179,6 +177,9 @@ function RunDetail() {
       };
     });
   }, [batchQuery.data, activeTargets]);
+  const overlayHasSignal = overlayRuns.some((r) =>
+    r.trace.tic.some((v) => Number.isFinite(v) && v > 0),
+  );
 
   const matchRows = useMemo(() => {
     if (!batchQuery.data) return [];
@@ -194,7 +195,7 @@ function RunDetail() {
   const eicTrace = useMemo(() => {
     if (selectedTargetId && batchQuery.data) {
       const tr = batchQuery.data.traces.find((t) => t.id === selectedTargetId);
-      if (tr) {
+      if (tr && batchQuery.data.x.length > 0) {
         return {
           id: `eic-${tr.id}`,
           name: selectedTargetName
@@ -211,6 +212,10 @@ function RunDetail() {
       trace: { x: eicQuery.data.x, tic: eicQuery.data.y, bpc: eicQuery.data.y },
     };
   }, [eicQuery.data, eicMz, ppm, selectedTargetId, selectedTargetName, batchQuery.data]);
+  const eicTraceHasPoints = !!eicTrace && eicTrace.trace.x.length > 0;
+  const eicTraceHasSignal = !!eicTrace && eicTrace.trace.tic.some((v) => Number.isFinite(v) && v > 0);
+  const eicErrorMessage = eicQuery.error instanceof Error ? eicQuery.error.message : "Failed to extract EIC.";
+  const batchErrorMessage = batchQuery.error instanceof Error ? batchQuery.error.message : "Failed to extract Auto-XIC traces.";
 
   // Synthesized peaks from auto-XIC when the run has no detected peaks of its own.
   const derivedPeaks = useMemo(() => {
@@ -463,6 +468,14 @@ function RunDetail() {
           </div>
         ) : batchQuery.isLoading ? (
           <div className="p-6 text-center text-xs text-muted-foreground">Extracting {activeTargets.length} EICs…</div>
+        ) : batchQuery.isError ? (
+          <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
+            {batchErrorMessage}
+          </div>
+        ) : overlayRuns.length > 0 && !overlayHasSignal ? (
+          <div className="rounded-md border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
+            No Auto-XIC signal found for the selected compounds. Try a wider ppm tolerance, different adduct, or opposite ion mode.
+          </div>
         ) : overlayRuns.length > 0 ? (
           <>
             <ChromatogramPlot runs={overlayRuns} height={260} channel="tic" />
@@ -582,9 +595,17 @@ function RunDetail() {
               ? `Selected peak at RT ${selected.rt.toFixed(2)} min has no associated m/z. Enter a custom m/z above to extract its ion chromatogram, or pick a compound from the library section above.`
               : "Select a peak from the table below to extract its ion chromatogram."}
           </div>
-        ) : eicQuery.isLoading ? (
+        ) : eicQuery.isLoading && !eicTraceHasPoints ? (
           <div className="p-6 text-center text-xs text-muted-foreground">Extracting EIC…</div>
-        ) : eicTrace ? (
+        ) : eicQuery.isError && !eicTraceHasPoints ? (
+          <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
+            {eicErrorMessage}
+          </div>
+        ) : eicTraceHasPoints && !eicTraceHasSignal ? (
+          <div className="rounded-md border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
+            No ion signal found in this m/z window. Try a wider ppm tolerance or verify the adduct / ion mode.
+          </div>
+        ) : eicTraceHasPoints ? (
           <>
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-muted-foreground">
