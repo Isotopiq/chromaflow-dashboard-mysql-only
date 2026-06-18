@@ -1,7 +1,7 @@
 // Server-only helpers: DB row mappers + queries (pg-based, no Supabase).
 import type { Db } from "@/db/index.server";
 import { withAdmin } from "@/db/index.server";
-import { publicUrl as storagePublicUrl } from "@/lib/storage.server";
+import { createSignedDownloadUrl } from "@/lib/storage.server";
 import type {
   Method, Run, Column, Batch, Analyte, Peak, User,
 } from "@/lib/lab-types";
