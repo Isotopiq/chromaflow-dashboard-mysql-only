@@ -13,17 +13,33 @@ export const getBranding = createServerFn({ method: "GET" }).handler(async () =>
   const faviconUrlExplicit = (data?.favicon_url as string | null) ?? null;
   const webLogoUrlExplicit = (data?.web_logo_url as string | null) ?? null;
   const pdfLogoUrlExplicit = (data?.pdf_logo_url as string | null) ?? null;
+  const webLogoLightUrlExplicit = (data?.web_logo_light_url as string | null) ?? null;
+  const webLogoDarkUrlExplicit = (data?.web_logo_dark_url as string | null) ?? null;
+  const webLogoUrl =
+    webLogoUrlExplicit || publicUrl("branding", data?.web_logo_path);
+  const webLogoLightUrl =
+    webLogoLightUrlExplicit || publicUrl("branding", data?.web_logo_light_path);
+  const webLogoDarkUrl =
+    webLogoDarkUrlExplicit || publicUrl("branding", data?.web_logo_dark_path);
   return {
     appName: data?.app_name ?? null,
     faviconPath: data?.favicon_path ?? null,
     webLogoPath: data?.web_logo_path ?? null,
     pdfLogoPath: data?.pdf_logo_path ?? null,
+    webLogoLightPath: data?.web_logo_light_path ?? null,
+    webLogoDarkPath: data?.web_logo_dark_path ?? null,
     faviconUrlExplicit,
     webLogoUrlExplicit,
     pdfLogoUrlExplicit,
+    webLogoLightUrlExplicit,
+    webLogoDarkUrlExplicit,
     faviconUrl: faviconUrlExplicit || publicUrl("branding", data?.favicon_path),
-    webLogoUrl: webLogoUrlExplicit || publicUrl("branding", data?.web_logo_path),
+    webLogoUrl,
     pdfLogoUrl: pdfLogoUrlExplicit || publicUrl("branding", data?.pdf_logo_path),
+    // Theme-aware web logos. Fall back to the themeless logo when only one
+    // variant is configured.
+    webLogoLightUrl: webLogoLightUrl || webLogoUrl,
+    webLogoDarkUrl: webLogoDarkUrl || webLogoUrl,
   };
 });
 
@@ -45,9 +61,13 @@ const BrandingInput = z.object({
   faviconPath: z.string().max(500).nullable().optional(),
   webLogoPath: z.string().max(500).nullable().optional(),
   pdfLogoPath: z.string().max(500).nullable().optional(),
+  webLogoLightPath: z.string().max(500).nullable().optional(),
+  webLogoDarkPath: z.string().max(500).nullable().optional(),
   faviconUrl: UrlOrEmpty,
   webLogoUrl: UrlOrEmpty,
   pdfLogoUrl: UrlOrEmpty,
+  webLogoLightUrl: UrlOrEmpty,
+  webLogoDarkUrl: UrlOrEmpty,
 });
 
 export const setBranding = createServerFn({ method: "POST" })
@@ -61,21 +81,30 @@ export const setBranding = createServerFn({ method: "POST" })
     const faviconUrl = norm(data.faviconUrl ?? undefined);
     const webLogoUrl = norm(data.webLogoUrl ?? undefined);
     const pdfLogoUrl = norm(data.pdfLogoUrl ?? undefined);
+    const webLogoLightUrl = norm(data.webLogoLightUrl ?? undefined);
+    const webLogoDarkUrl = norm(data.webLogoDarkUrl ?? undefined);
     await db.query(
       `insert into public.branding_settings
          (id, app_name, favicon_path, web_logo_path, pdf_logo_path,
-          favicon_url, web_logo_url, pdf_logo_url, updated_at, updated_by)
-       values (1, $1, $2, $3, $4, $5, $6, $7, now(), $8)
+          favicon_url, web_logo_url, pdf_logo_url,
+          web_logo_light_path, web_logo_dark_path,
+          web_logo_light_url,  web_logo_dark_url,
+          updated_at, updated_by)
+       values (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now(), $12)
        on conflict (id) do update set
-         app_name      = case when $9  then $1 else public.branding_settings.app_name end,
-         favicon_path  = case when $10 then $2 else public.branding_settings.favicon_path end,
-         web_logo_path = case when $11 then $3 else public.branding_settings.web_logo_path end,
-         pdf_logo_path = case when $12 then $4 else public.branding_settings.pdf_logo_path end,
-         favicon_url   = case when $13 then $5 else public.branding_settings.favicon_url end,
-         web_logo_url  = case when $14 then $6 else public.branding_settings.web_logo_url end,
-         pdf_logo_url  = case when $15 then $7 else public.branding_settings.pdf_logo_url end,
-         updated_at    = now(),
-         updated_by    = $8`,
+         app_name             = case when $13 then $1  else public.branding_settings.app_name end,
+         favicon_path         = case when $14 then $2  else public.branding_settings.favicon_path end,
+         web_logo_path        = case when $15 then $3  else public.branding_settings.web_logo_path end,
+         pdf_logo_path        = case when $16 then $4  else public.branding_settings.pdf_logo_path end,
+         favicon_url          = case when $17 then $5  else public.branding_settings.favicon_url end,
+         web_logo_url         = case when $18 then $6  else public.branding_settings.web_logo_url end,
+         pdf_logo_url         = case when $19 then $7  else public.branding_settings.pdf_logo_url end,
+         web_logo_light_path  = case when $20 then $8  else public.branding_settings.web_logo_light_path end,
+         web_logo_dark_path   = case when $21 then $9  else public.branding_settings.web_logo_dark_path end,
+         web_logo_light_url   = case when $22 then $10 else public.branding_settings.web_logo_light_url end,
+         web_logo_dark_url    = case when $23 then $11 else public.branding_settings.web_logo_dark_url end,
+         updated_at           = now(),
+         updated_by           = $12`,
       [
         data.appName ?? null,
         data.faviconPath ?? null,
@@ -84,6 +113,10 @@ export const setBranding = createServerFn({ method: "POST" })
         faviconUrl ?? null,
         webLogoUrl ?? null,
         pdfLogoUrl ?? null,
+        data.webLogoLightPath ?? null,
+        data.webLogoDarkPath ?? null,
+        webLogoLightUrl ?? null,
+        webLogoDarkUrl ?? null,
         userId,
         data.appName !== undefined,
         data.faviconPath !== undefined,
@@ -92,6 +125,10 @@ export const setBranding = createServerFn({ method: "POST" })
         data.faviconUrl !== undefined,
         data.webLogoUrl !== undefined,
         data.pdfLogoUrl !== undefined,
+        data.webLogoLightPath !== undefined,
+        data.webLogoDarkPath !== undefined,
+        data.webLogoLightUrl !== undefined,
+        data.webLogoDarkUrl !== undefined,
       ],
     );
     return { ok: true };
