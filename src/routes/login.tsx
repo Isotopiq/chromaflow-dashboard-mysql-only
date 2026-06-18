@@ -46,14 +46,13 @@ function LoginPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <Card className="w-full max-w-sm border-border bg-card p-6">
-        <div className="mb-6 flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <FlaskConical className="h-4 w-4" />
-          </div>
-          <div className="leading-tight">
-            <div className="font-mono text-sm font-semibold">CHROMA.LAB</div>
-            <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Sign in</div>
-          </div>
+        <div className="mb-6 flex flex-col items-center gap-2">
+          <img
+            src={logoAsset.url}
+            alt="Isotopiq"
+            className="h-10 w-auto object-contain"
+          />
+          <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Sign in</div>
         </div>
         <form onSubmit={submit} className="flex flex-col gap-3">
           <div className="flex flex-col gap-1.5">
