@@ -5,8 +5,8 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { FlaskConical } from "lucide-react";
 import { toast } from "sonner";
+import logoAsset from "@/assets/Isotopiq-Logo.png.asset.json";
 
 export const Route = createFileRoute("/login")({ component: LoginPage });
 
