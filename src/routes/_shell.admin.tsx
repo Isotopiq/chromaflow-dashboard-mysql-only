@@ -589,11 +589,20 @@ function BrandingTab() {
   const [appName, setAppName] = useState("");
   const [savingName, setSavingName] = useState(false);
 
-  const upload = async (
-    file: File,
-    field: "faviconPath" | "webLogoPath" | "pdfLogoPath",
-    label: string,
-  ) => {
+  type PathField =
+    | "faviconPath"
+    | "webLogoPath"
+    | "pdfLogoPath"
+    | "webLogoLightPath"
+    | "webLogoDarkPath";
+  type UrlField =
+    | "faviconUrl"
+    | "webLogoUrl"
+    | "pdfLogoUrl"
+    | "webLogoLightUrl"
+    | "webLogoDarkUrl";
+
+  const upload = async (file: File, field: PathField, label: string) => {
     try {
       const up = await uploadFn({
         data: { filename: file.name, bucket: "branding" },
@@ -613,10 +622,7 @@ function BrandingTab() {
     }
   };
 
-  const clearAsset = async (
-    field: "faviconPath" | "webLogoPath" | "pdfLogoPath",
-    label: string,
-  ) => {
+  const clearAsset = async (field: PathField, label: string) => {
     try {
       await setBrandingFn({ data: { [field]: null } as any });
       toast.success(`${label} removed`);
@@ -627,11 +633,7 @@ function BrandingTab() {
     }
   };
 
-  const saveUrl = async (
-    field: "faviconUrl" | "webLogoUrl" | "pdfLogoUrl",
-    value: string,
-    label: string,
-  ) => {
+  const saveUrl = async (field: UrlField, value: string, label: string) => {
     try {
       await setBrandingFn({ data: { [field]: value.trim() || null } as any });
       toast.success(`${label} URL ${value.trim() ? "updated" : "cleared"}`);
@@ -641,6 +643,7 @@ function BrandingTab() {
       toast.error(e?.message ?? "Failed");
     }
   };
+
 
 
   const saveAppName = async () => {
