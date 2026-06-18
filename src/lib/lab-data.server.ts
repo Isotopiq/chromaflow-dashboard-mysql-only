@@ -210,14 +210,14 @@ export async function listAllUsersAdmin(): Promise<User[]> {
         left join public.profiles p on p.id = u.id
         order by u.created_at desc
     `);
-    return rows.map((r) => {
+    return Promise.all(rows.map((r) => {
       const rolesArr = (r.roles ?? "").split(",").filter(Boolean);
       const role = rolesArr.includes("admin") ? "admin" : rolesArr[0] ?? "developer";
       return mapUser(
         { id: r.id, email: r.email, display_name: r.display_name, avatar_url: r.avatar_url },
         role,
       );
-    });
+    }));
   });
 }
 
