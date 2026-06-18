@@ -82,6 +82,10 @@ export function AppSidebar() {
   const currentUser = useLab((s) => s.currentUser);
   const isAdmin = currentUser?.role === "admin";
   const { data: branding } = useBranding();
+  const { theme } = useTheme();
+  const themedLogo =
+    theme === "light" ? branding?.webLogoLightUrl : branding?.webLogoDarkUrl;
+  const logoSrc = themedLogo || branding?.webLogoUrl || logoAsset.url;
   const appName = branding?.appName?.trim() || "CHROMA.LAB";
 
   const isActive = (url: string) =>
