@@ -102,7 +102,7 @@ export function AppSidebar() {
             alt={appName}
             className="h-8 w-auto shrink-0 object-contain"
           />
-          {!collapsed && (
+          {!collapsed && logoSrc === logoAsset.url && (
             <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
               Method Dev Platform
             </span>
