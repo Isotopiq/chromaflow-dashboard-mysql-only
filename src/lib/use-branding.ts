@@ -11,6 +11,9 @@ export type Branding = {
   faviconPath: string | null;
   webLogoPath: string | null;
   pdfLogoPath: string | null;
+  faviconUrlExplicit: string | null;
+  webLogoUrlExplicit: string | null;
+  pdfLogoUrlExplicit: string | null;
 };
 
 export function useBranding() {
