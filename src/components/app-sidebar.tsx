@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/sidebar";
 import { useLab } from "@/lib/store";
 import { useBranding } from "@/lib/use-branding";
+import { useTheme } from "@/components/theme-provider";
 
 
 const groups: Array<{
