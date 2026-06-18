@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import logoAsset from "@/assets/Isotopiq-Logo.png.asset.json";
 import { useBranding } from "@/lib/use-branding";
+import { useTheme } from "@/components/theme-provider";
 
 export const Route = createFileRoute("/login")({ component: LoginPage });
 
