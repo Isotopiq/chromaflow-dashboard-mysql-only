@@ -1,7 +1,7 @@
 // Server-only helpers: DB row mappers + queries (pg-based, no Supabase).
 import type { Db } from "@/db/index.server";
 import { withAdmin } from "@/db/index.server";
-import { publicUrl as storagePublicUrl } from "@/lib/storage.server";
+import { createSignedDownloadUrl } from "@/lib/storage.server";
 import type {
   Method, Run, Column, Batch, Analyte, Peak, User,
 } from "@/lib/lab-types";
@@ -116,10 +116,17 @@ export function mapAnalyte(r: any): Analyte {
   };
 }
 
-export function mapUser(profile: any, role: string): User {
+export async function mapUser(profile: any, role: string): Promise<User> {
   const name = profile.display_name ?? "user";
   const avatarPath = profile.avatar_url ?? null;
-  const avatarUrl = avatarPath ? storagePublicUrl("avatars", avatarPath) : null;
+  let avatarUrl: string | null = null;
+  if (avatarPath) {
+    try {
+      avatarUrl = await createSignedDownloadUrl("avatars", avatarPath, 60 * 60);
+    } catch {
+      avatarUrl = null;
+    }
+  }
   return {
     id: profile.id,
     name,
@@ -203,14 +210,14 @@ export async function listAllUsersAdmin(): Promise<User[]> {
         left join public.profiles p on p.id = u.id
         order by u.created_at desc
     `);
-    return rows.map((r) => {
+    return Promise.all(rows.map((r) => {
       const rolesArr = (r.roles ?? "").split(",").filter(Boolean);
       const role = rolesArr.includes("admin") ? "admin" : rolesArr[0] ?? "developer";
       return mapUser(
         { id: r.id, email: r.email, display_name: r.display_name, avatar_url: r.avatar_url },
         role,
       );
-    });
+    }));
   });
 }
 
