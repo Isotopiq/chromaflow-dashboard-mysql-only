@@ -50,8 +50,8 @@ function LoginPage() {
       <Card className="w-full max-w-sm border-border bg-card p-6">
         <div className="mb-6 flex flex-col items-center gap-2">
           <img
-            src={logoAsset.url}
-            alt="Isotopiq"
+            src={branding?.webLogoUrl || logoAsset.url}
+            alt={branding?.appName || "Isotopiq"}
             className="h-10 w-auto object-contain"
           />
           <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Sign in</div>
