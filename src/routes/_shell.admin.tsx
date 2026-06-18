@@ -627,6 +627,22 @@ function BrandingTab() {
     }
   };
 
+  const saveUrl = async (
+    field: "faviconUrl" | "webLogoUrl" | "pdfLogoUrl",
+    value: string,
+    label: string,
+  ) => {
+    try {
+      await setBrandingFn({ data: { [field]: value.trim() || null } as any });
+      toast.success(`${label} URL ${value.trim() ? "updated" : "cleared"}`);
+      qc.invalidateQueries({ queryKey: ["branding"] });
+      refetch();
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed");
+    }
+  };
+
+
   const saveAppName = async () => {
     setSavingName(true);
     try {
