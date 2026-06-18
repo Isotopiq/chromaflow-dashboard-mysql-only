@@ -1,7 +1,6 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard,
-  FlaskConical,
   Columns3,
   FileBarChart,
   Layers,
@@ -12,6 +11,7 @@ import {
   Activity,
   UserCog,
 } from "lucide-react";
+import logoAsset from "@/assets/Isotopiq-Logo.png.asset.json";
 import {
   Sidebar,
   SidebarContent,
