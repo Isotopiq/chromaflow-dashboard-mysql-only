@@ -680,41 +680,46 @@ function BrandingTab() {
           label="Favicon"
           hint="PNG/SVG, ~32×32. Shown in browser tabs."
           url={branding?.faviconUrl ?? null}
+          urlExplicit={branding?.faviconUrlExplicit ?? null}
           accept="image/png,image/svg+xml,image/x-icon,image/vnd.microsoft.icon"
           onUpload={(f) => upload(f, "faviconPath", "Favicon")}
           onClear={() => clearAsset("faviconPath", "Favicon")}
+          onSaveUrl={(v) => saveUrl("faviconUrl", v, "Favicon")}
         />
         <BrandingAsset
           label="Web logo"
-          hint="Shown in the app sidebar."
+          hint="Shown in the app sidebar and login page."
           url={branding?.webLogoUrl ?? null}
+          urlExplicit={branding?.webLogoUrlExplicit ?? null}
           accept="image/*"
           onUpload={(f) => upload(f, "webLogoPath", "Web logo")}
           onClear={() => clearAsset("webLogoPath", "Web logo")}
+          onSaveUrl={(v) => saveUrl("webLogoUrl", v, "Web logo")}
         />
         <BrandingAsset
           label="PDF logo"
           hint="Printed in the top right of generated PDF reports."
           url={branding?.pdfLogoUrl ?? null}
+          urlExplicit={branding?.pdfLogoUrlExplicit ?? null}
           accept="image/png,image/jpeg,image/svg+xml"
           onUpload={(f) => upload(f, "pdfLogoPath", "PDF logo")}
           onClear={() => clearAsset("pdfLogoPath", "PDF logo")}
+          onSaveUrl={(v) => saveUrl("pdfLogoUrl", v, "PDF logo")}
         />
       </div>
 
       <Card className="flex items-start gap-3 border-primary/30 bg-primary/5 p-3 text-xs">
         <Shield className="h-4 w-4 text-primary" />
         <div>
-          <div className="font-medium">Heads up</div>
+          <div className="font-medium">Tip</div>
           <p className="mt-0.5 text-muted-foreground">
-            Branding requires the Phase 4 SQL migration (
-            <span className="font-mono">chroma_lab_phase4_migration.sql</span>) which
-            creates the <span className="font-mono">branding_settings</span> and{" "}
-            <span className="font-mono">invite_codes</span> tables plus the public{" "}
-            <span className="font-mono">branding</span> storage bucket.
+            You can either upload a file or paste a direct image URL. When both
+            are set, the URL takes precedence. Leave the URL field empty and
+            click Save to fall back to the uploaded file.
           </p>
         </div>
       </Card>
+
     </div>
   );
 }
