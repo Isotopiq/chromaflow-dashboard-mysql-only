@@ -623,27 +623,70 @@ const AuditFilters = z.object({
   actorId: z.string().uuid().optional(),
   since: z.string().optional(),
   until: z.string().optional(),
-  limit: z.number().int().min(1).max(200).default(200),
+  limit: z.number().int().min(1).max(200).default(50),
+  offset: z.number().int().min(0).default(0),
 });
+function buildAuditWhere(data: z.infer<typeof AuditFilters>) {
+  const wh: string[] = [];
+  const params: any[] = [];
+  const push = (sql: string, v: any) => { params.push(v); wh.push(sql.replace("?", `$${params.length}`)); };
+  if (data.table) push("table_name = ?", data.table);
+  if (data.action) push("action = ?", data.action);
+  if (data.actorId) push("actor_id = ?", data.actorId);
+  if (data.since) push("created_at >= ?", data.since);
+  if (data.until) push("created_at <= ?", data.until);
+  return { wh, params };
+}
 export const listAuditEvents = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => AuditFilters.parse(d ?? {}))
   .handler(async ({ data, context }) => {
     const { isAdmin, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
     if (!isAdmin) throw new Response("Forbidden", { status: 403 });
-    const wh: string[] = [];
-    const params: any[] = [];
-    const push = (sql: string, v: any) => { params.push(v); wh.push(sql.replace("?", `$${params.length}`)); };
-    if (data.table) push("table_name = ?", data.table);
-    if (data.action) push("action = ?", data.action);
-    if (data.actorId) push("actor_id = ?", data.actorId);
-    if (data.since) push("created_at >= ?", data.since);
-    if (data.until) push("created_at <= ?", data.until);
-    params.push(data.limit);
-    const sql = `select * from public.audit_events
-                 ${wh.length ? "where " + wh.join(" and ") : ""}
-                 order by created_at desc limit $${params.length}`;
-    return db.many(sql, params);
+    const { wh, params } = buildAuditWhere(data);
+    const whereSql = wh.length ? "where " + wh.join(" and ") : "";
+    const countRow = await db.maybe<{ count: string }>(
+      `select count(*)::text as count from public.audit_events ${whereSql}`,
+      params,
+    );
+    const total = Number(countRow?.count ?? 0);
+    const listParams = [...params, data.limit, data.offset];
+    const rows = await db.many(
+      `select * from public.audit_events ${whereSql}
+       order by created_at desc
+       limit $${listParams.length - 1} offset $${listParams.length}`,
+      listParams,
+    );
+    return { rows, total };
+  });
+
+const DeleteAuditInput = z.object({
+  ids: z.array(z.string().uuid()).min(1).max(500),
+});
+export const deleteAuditEvents = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) => DeleteAuditInput.parse(d))
+  .handler(async ({ data, context }) => {
+    const { isAdmin } = context as { isAdmin: boolean };
+    if (!isAdmin) throw new Response("Forbidden", { status: 403 });
+    return withAdmin(async (db) => {
+      const res = await db.query(
+        "delete from public.audit_events where id = any($1::uuid[])",
+        [data.ids],
+      );
+      return { deleted: res.rowCount ?? 0 };
+    });
+  });
+
+export const resetAuditEvents = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .handler(async ({ context }) => {
+    const { isAdmin } = context as { isAdmin: boolean };
+    if (!isAdmin) throw new Response("Forbidden", { status: 403 });
+    return withAdmin(async (db) => {
+      const res = await db.query("delete from public.audit_events");
+      return { deleted: res.rowCount ?? 0 };
+    });
   });
 
 // ---- Auto-annotate batch ----
