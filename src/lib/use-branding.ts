@@ -8,12 +8,18 @@ export type Branding = {
   faviconUrl: string | null;
   webLogoUrl: string | null;
   pdfLogoUrl: string | null;
+  webLogoLightUrl: string | null;
+  webLogoDarkUrl: string | null;
   faviconPath: string | null;
   webLogoPath: string | null;
   pdfLogoPath: string | null;
+  webLogoLightPath: string | null;
+  webLogoDarkPath: string | null;
   faviconUrlExplicit: string | null;
   webLogoUrlExplicit: string | null;
   pdfLogoUrlExplicit: string | null;
+  webLogoLightUrlExplicit: string | null;
+  webLogoDarkUrlExplicit: string | null;
 };
 
 export function useBranding() {

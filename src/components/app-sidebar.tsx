@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/sidebar";
 import { useLab } from "@/lib/store";
 import { useBranding } from "@/lib/use-branding";
+import { useTheme } from "@/components/theme-provider";
 
 
 const groups: Array<{
@@ -81,6 +82,10 @@ export function AppSidebar() {
   const currentUser = useLab((s) => s.currentUser);
   const isAdmin = currentUser?.role === "admin";
   const { data: branding } = useBranding();
+  const { theme } = useTheme();
+  const themedLogo =
+    theme === "light" ? branding?.webLogoLightUrl : branding?.webLogoDarkUrl;
+  const logoSrc = themedLogo || branding?.webLogoUrl || logoAsset.url;
   const appName = branding?.appName?.trim() || "CHROMA.LAB";
 
   const isActive = (url: string) =>
@@ -93,7 +98,7 @@ export function AppSidebar() {
       <SidebarHeader className="border-b border-sidebar-border px-3 py-3">
         <Link to="/" className="flex items-center gap-2">
           <img
-            src={branding?.webLogoUrl || logoAsset.url}
+            src={logoSrc}
             alt={appName}
             className="h-8 w-auto shrink-0 object-contain"
           />

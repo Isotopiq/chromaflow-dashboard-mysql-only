@@ -364,21 +364,29 @@ create trigger trg_audit_annotations after insert or update or delete on public.
 -- 6. Branding + invite codes
 -- =====================================================================
 create table if not exists public.branding_settings (
-  id            int primary key default 1,
-  favicon_path  text,
-  web_logo_path text,
-  pdf_logo_path text,
-  favicon_url   text,
-  web_logo_url  text,
-  pdf_logo_url  text,
-  app_name      text,
-  updated_at    timestamptz not null default now(),
-  updated_by    uuid references public.app_users(id) on delete set null,
+  id                   int primary key default 1,
+  favicon_path         text,
+  web_logo_path        text,
+  pdf_logo_path        text,
+  favicon_url          text,
+  web_logo_url         text,
+  pdf_logo_url         text,
+  web_logo_light_path  text,
+  web_logo_light_url   text,
+  web_logo_dark_path   text,
+  web_logo_dark_url    text,
+  app_name             text,
+  updated_at           timestamptz not null default now(),
+  updated_by           uuid references public.app_users(id) on delete set null,
   constraint branding_singleton check (id = 1)
 );
-alter table public.branding_settings add column if not exists favicon_url  text;
-alter table public.branding_settings add column if not exists web_logo_url text;
-alter table public.branding_settings add column if not exists pdf_logo_url text;
+alter table public.branding_settings add column if not exists favicon_url         text;
+alter table public.branding_settings add column if not exists web_logo_url        text;
+alter table public.branding_settings add column if not exists pdf_logo_url        text;
+alter table public.branding_settings add column if not exists web_logo_light_path text;
+alter table public.branding_settings add column if not exists web_logo_light_url  text;
+alter table public.branding_settings add column if not exists web_logo_dark_path  text;
+alter table public.branding_settings add column if not exists web_logo_dark_url   text;
 insert into public.branding_settings (id) values (1) on conflict (id) do nothing;
 alter table public.branding_settings enable row level security;
 drop policy if exists "branding: read all"   on public.branding_settings;

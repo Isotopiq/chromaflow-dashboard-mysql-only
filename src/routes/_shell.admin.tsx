@@ -589,11 +589,20 @@ function BrandingTab() {
   const [appName, setAppName] = useState("");
   const [savingName, setSavingName] = useState(false);
 
-  const upload = async (
-    file: File,
-    field: "faviconPath" | "webLogoPath" | "pdfLogoPath",
-    label: string,
-  ) => {
+  type PathField =
+    | "faviconPath"
+    | "webLogoPath"
+    | "pdfLogoPath"
+    | "webLogoLightPath"
+    | "webLogoDarkPath";
+  type UrlField =
+    | "faviconUrl"
+    | "webLogoUrl"
+    | "pdfLogoUrl"
+    | "webLogoLightUrl"
+    | "webLogoDarkUrl";
+
+  const upload = async (file: File, field: PathField, label: string) => {
     try {
       const up = await uploadFn({
         data: { filename: file.name, bucket: "branding" },
@@ -613,10 +622,7 @@ function BrandingTab() {
     }
   };
 
-  const clearAsset = async (
-    field: "faviconPath" | "webLogoPath" | "pdfLogoPath",
-    label: string,
-  ) => {
+  const clearAsset = async (field: PathField, label: string) => {
     try {
       await setBrandingFn({ data: { [field]: null } as any });
       toast.success(`${label} removed`);
@@ -627,11 +633,7 @@ function BrandingTab() {
     }
   };
 
-  const saveUrl = async (
-    field: "faviconUrl" | "webLogoUrl" | "pdfLogoUrl",
-    value: string,
-    label: string,
-  ) => {
+  const saveUrl = async (field: UrlField, value: string, label: string) => {
     try {
       await setBrandingFn({ data: { [field]: value.trim() || null } as any });
       toast.success(`${label} URL ${value.trim() ? "updated" : "cleared"}`);
@@ -641,6 +643,7 @@ function BrandingTab() {
       toast.error(e?.message ?? "Failed");
     }
   };
+
 
 
   const saveAppName = async () => {
@@ -687,8 +690,8 @@ function BrandingTab() {
           onSaveUrl={(v) => saveUrl("faviconUrl", v, "Favicon")}
         />
         <BrandingAsset
-          label="Web logo"
-          hint="Shown in the app sidebar and login page."
+          label="Web logo (fallback)"
+          hint="Used when no theme-specific logo is set."
           url={branding?.webLogoUrl ?? null}
           urlExplicit={branding?.webLogoUrlExplicit ?? null}
           accept="image/*"
@@ -707,6 +710,35 @@ function BrandingTab() {
           onSaveUrl={(v) => saveUrl("pdfLogoUrl", v, "PDF logo")}
         />
       </div>
+
+      <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+        Theme-specific web logos
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <BrandingAsset
+          label="Web logo — light theme"
+          hint="Shown in the sidebar and login when the app is in light mode."
+          url={branding?.webLogoLightUrl ?? null}
+          urlExplicit={branding?.webLogoLightUrlExplicit ?? null}
+          accept="image/*"
+          previewBg="light"
+          onUpload={(f) => upload(f, "webLogoLightPath", "Light logo")}
+          onClear={() => clearAsset("webLogoLightPath", "Light logo")}
+          onSaveUrl={(v) => saveUrl("webLogoLightUrl", v, "Light logo")}
+        />
+        <BrandingAsset
+          label="Web logo — dark theme"
+          hint="Shown in the sidebar and login when the app is in dark mode."
+          url={branding?.webLogoDarkUrl ?? null}
+          urlExplicit={branding?.webLogoDarkUrlExplicit ?? null}
+          accept="image/*"
+          previewBg="dark"
+          onUpload={(f) => upload(f, "webLogoDarkPath", "Dark logo")}
+          onClear={() => clearAsset("webLogoDarkPath", "Dark logo")}
+          onSaveUrl={(v) => saveUrl("webLogoDarkUrl", v, "Dark logo")}
+        />
+      </div>
+
 
       <Card className="flex items-start gap-3 border-primary/30 bg-primary/5 p-3 text-xs">
         <Shield className="h-4 w-4 text-primary" />
@@ -730,6 +762,7 @@ function BrandingAsset({
   url,
   urlExplicit,
   accept,
+  previewBg,
   onUpload,
   onClear,
   onSaveUrl,
@@ -739,6 +772,7 @@ function BrandingAsset({
   url: string | null;
   urlExplicit: string | null;
   accept: string;
+  previewBg?: "light" | "dark";
   onUpload: (f: File) => void;
   onClear: () => void;
   onSaveUrl: (v: string) => void;
@@ -751,13 +785,19 @@ function BrandingAsset({
     lastExplicit.current = urlExplicit;
     if ((urlExplicit ?? "") !== urlDraft) setUrlDraft(urlExplicit ?? "");
   }
+  const previewClass =
+    previewBg === "light"
+      ? "bg-white"
+      : previewBg === "dark"
+        ? "bg-neutral-900"
+        : "bg-muted/20";
   return (
     <Card className="border-border bg-card p-4">
       <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
         {label}
       </div>
       <p className="mt-0.5 text-[10px] text-muted-foreground">{hint}</p>
-      <div className="mt-3 flex h-24 items-center justify-center rounded-md border border-dashed border-border bg-muted/20">
+      <div className={`mt-3 flex h-24 items-center justify-center rounded-md border border-dashed border-border ${previewClass}`}>
         {url ? (
           <img
             src={url}
