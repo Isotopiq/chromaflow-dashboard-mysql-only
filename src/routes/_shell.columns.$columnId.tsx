@@ -244,8 +244,8 @@ function ColumnDetail({ col }: { col: Column }) {
                 <AlertDialogHeader>
                   <AlertDialogTitle>Delete this column?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    This permanently removes "{col.name}" from your library. This action cannot
-                    be undone.
+                    This permanently removes "{col.name}" from your library. This action cannot be
+                    undone.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
