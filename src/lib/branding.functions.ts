@@ -2,7 +2,20 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireAuth } from "@/lib/auth-middleware";
 import { withAdmin } from "@/db/index.server";
-import { publicUrl } from "@/lib/storage.server";
+import { publicUrl, createSignedDownloadUrl } from "@/lib/storage.server";
+
+async function resolveBrandingUrl(
+  path: string | null | undefined,
+): Promise<string | null> {
+  if (!path) return null;
+  // Try a signed download URL first — works for private S3/R2 buckets.
+  try {
+    return await createSignedDownloadUrl("branding", path, 60 * 60 * 24);
+  } catch {
+    // Fall back to a constructed public URL if signing fails (e.g. no creds).
+    return publicUrl("branding", path);
+  }
+}
 
 // ---- Branding ----
 // Public read.
