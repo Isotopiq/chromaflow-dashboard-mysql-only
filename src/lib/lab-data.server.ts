@@ -116,10 +116,17 @@ export function mapAnalyte(r: any): Analyte {
   };
 }
 
-export function mapUser(profile: any, role: string): User {
+export async function mapUser(profile: any, role: string): Promise<User> {
   const name = profile.display_name ?? "user";
   const avatarPath = profile.avatar_url ?? null;
-  const avatarUrl = avatarPath ? storagePublicUrl("avatars", avatarPath) : null;
+  let avatarUrl: string | null = null;
+  if (avatarPath) {
+    try {
+      avatarUrl = await createSignedDownloadUrl("avatars", avatarPath, 60 * 60);
+    } catch {
+      avatarUrl = null;
+    }
+  }
   return {
     id: profile.id,
     name,
