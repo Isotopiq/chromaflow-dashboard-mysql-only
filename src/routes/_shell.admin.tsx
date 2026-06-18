@@ -36,6 +36,8 @@ import {
   listAdminUsers,
   setUserRole,
   listAuditEvents,
+  deleteAuditEvents,
+  resetAuditEvents,
   createUploadUrl,
 } from "@/lib/lab.functions";
 import {
@@ -44,6 +46,18 @@ import {
   listInviteCodes,
   revokeInviteCode,
 } from "@/lib/branding.functions";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { useBranding } from "@/lib/use-branding";
 import { toast } from "sonner";
 
