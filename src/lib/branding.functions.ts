@@ -10,14 +10,20 @@ export const getBranding = createServerFn({ method: "GET" }).handler(async () =>
   const data = await withAdmin((db) =>
     db.maybe<any>("select * from public.branding_settings where id = 1"),
   );
+  const faviconUrlExplicit = (data?.favicon_url as string | null) ?? null;
+  const webLogoUrlExplicit = (data?.web_logo_url as string | null) ?? null;
+  const pdfLogoUrlExplicit = (data?.pdf_logo_url as string | null) ?? null;
   return {
     appName: data?.app_name ?? null,
     faviconPath: data?.favicon_path ?? null,
     webLogoPath: data?.web_logo_path ?? null,
     pdfLogoPath: data?.pdf_logo_path ?? null,
-    faviconUrl: publicUrl("branding", data?.favicon_path),
-    webLogoUrl: publicUrl("branding", data?.web_logo_path),
-    pdfLogoUrl: publicUrl("branding", data?.pdf_logo_path),
+    faviconUrlExplicit,
+    webLogoUrlExplicit,
+    pdfLogoUrlExplicit,
+    faviconUrl: faviconUrlExplicit || publicUrl("branding", data?.favicon_path),
+    webLogoUrl: webLogoUrlExplicit || publicUrl("branding", data?.web_logo_path),
+    pdfLogoUrl: pdfLogoUrlExplicit || publicUrl("branding", data?.pdf_logo_path),
   };
 });
 
@@ -25,11 +31,23 @@ function requireAdmin(isAdmin: boolean) {
   if (!isAdmin) throw new Response("Forbidden — admin only", { status: 403 });
 }
 
+const UrlOrEmpty = z
+  .string()
+  .trim()
+  .max(2000)
+  .url("Must be a valid URL")
+  .or(z.literal(""))
+  .nullable()
+  .optional();
+
 const BrandingInput = z.object({
   appName: z.string().max(60).nullable().optional(),
   faviconPath: z.string().max(500).nullable().optional(),
   webLogoPath: z.string().max(500).nullable().optional(),
   pdfLogoPath: z.string().max(500).nullable().optional(),
+  faviconUrl: UrlOrEmpty,
+  webLogoUrl: UrlOrEmpty,
+  pdfLogoUrl: UrlOrEmpty,
 });
 
 export const setBranding = createServerFn({ method: "POST" })
@@ -38,27 +56,42 @@ export const setBranding = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { userId, isAdmin, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
     requireAdmin(isAdmin);
+    const norm = (v: string | null | undefined) =>
+      v === undefined ? undefined : v === "" ? null : v;
+    const faviconUrl = norm(data.faviconUrl ?? undefined);
+    const webLogoUrl = norm(data.webLogoUrl ?? undefined);
+    const pdfLogoUrl = norm(data.pdfLogoUrl ?? undefined);
     await db.query(
       `insert into public.branding_settings
-         (id, app_name, favicon_path, web_logo_path, pdf_logo_path, updated_at, updated_by)
-       values (1, $1, $2, $3, $4, now(), $5)
+         (id, app_name, favicon_path, web_logo_path, pdf_logo_path,
+          favicon_url, web_logo_url, pdf_logo_url, updated_at, updated_by)
+       values (1, $1, $2, $3, $4, $5, $6, $7, now(), $8)
        on conflict (id) do update set
-         app_name      = case when $6 then $1 else public.branding_settings.app_name end,
-         favicon_path  = case when $7 then $2 else public.branding_settings.favicon_path end,
-         web_logo_path = case when $8 then $3 else public.branding_settings.web_logo_path end,
-         pdf_logo_path = case when $9 then $4 else public.branding_settings.pdf_logo_path end,
+         app_name      = case when $9  then $1 else public.branding_settings.app_name end,
+         favicon_path  = case when $10 then $2 else public.branding_settings.favicon_path end,
+         web_logo_path = case when $11 then $3 else public.branding_settings.web_logo_path end,
+         pdf_logo_path = case when $12 then $4 else public.branding_settings.pdf_logo_path end,
+         favicon_url   = case when $13 then $5 else public.branding_settings.favicon_url end,
+         web_logo_url  = case when $14 then $6 else public.branding_settings.web_logo_url end,
+         pdf_logo_url  = case when $15 then $7 else public.branding_settings.pdf_logo_url end,
          updated_at    = now(),
-         updated_by    = $5`,
+         updated_by    = $8`,
       [
         data.appName ?? null,
         data.faviconPath ?? null,
         data.webLogoPath ?? null,
         data.pdfLogoPath ?? null,
+        faviconUrl ?? null,
+        webLogoUrl ?? null,
+        pdfLogoUrl ?? null,
         userId,
         data.appName !== undefined,
         data.faviconPath !== undefined,
         data.webLogoPath !== undefined,
         data.pdfLogoPath !== undefined,
+        data.faviconUrl !== undefined,
+        data.webLogoUrl !== undefined,
+        data.pdfLogoUrl !== undefined,
       ],
     );
     return { ok: true };
