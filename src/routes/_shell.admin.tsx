@@ -36,6 +36,8 @@ import {
   listAdminUsers,
   setUserRole,
   listAuditEvents,
+  deleteAuditEvents,
+  resetAuditEvents,
   createUploadUrl,
 } from "@/lib/lab.functions";
 import {
@@ -44,6 +46,18 @@ import {
   listInviteCodes,
   revokeInviteCode,
 } from "@/lib/branding.functions";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { useBranding } from "@/lib/use-branding";
 import { toast } from "sonner";
 
@@ -194,6 +208,9 @@ const ACTIONS = ["", "insert", "update", "delete"] as const;
 function AuditTab() {
   const usersList = useServerFn(listAdminUsers);
   const list = useServerFn(listAuditEvents);
+  const deleteFn = useServerFn(deleteAuditEvents);
+  const resetFn = useServerFn(resetAuditEvents);
+  const qc = useQueryClient();
 
   const { data: users } = useQuery({
     queryKey: ["admin-users"],
@@ -205,9 +222,14 @@ function AuditTab() {
   const [actorId, setActorId] = useState<string>("");
   const [since, setSince] = useState<string>("");
   const [until, setUntil] = useState<string>("");
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(50);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  const filters = { table, action, actorId, since, until, page, pageSize };
 
   const { data, isLoading, error, refetch, isFetching } = useQuery({
-    queryKey: ["audit", { table, action, actorId, since, until }],
+    queryKey: ["audit", filters],
     queryFn: () =>
       list({
         data: {
@@ -216,12 +238,61 @@ function AuditTab() {
           actorId: actorId || undefined,
           since: since ? new Date(since).toISOString() : undefined,
           until: until ? new Date(until).toISOString() : undefined,
-          limit: 200,
+          limit: pageSize,
+          offset: page * pageSize,
         },
       }),
   });
 
+  const rows: any[] = Array.isArray(data) ? data : (data?.rows ?? []);
+  const total: number = Array.isArray(data) ? rows.length : (data?.total ?? 0);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
   const userById = new Map((users ?? []).map((u) => [u.id, u]));
+
+  const resetFilters = () => {
+    setPage(0);
+    setSelected(new Set());
+  };
+
+  const toggleOne = (id: string, checked: boolean) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id); else next.delete(id);
+      return next;
+    });
+  };
+  const allSelected = rows.length > 0 && rows.every((r) => selected.has(r.id));
+  const someSelected = rows.some((r) => selected.has(r.id));
+  const toggleAll = (checked: boolean) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (checked) rows.forEach((r) => next.add(r.id));
+      else rows.forEach((r) => next.delete(r.id));
+      return next;
+    });
+  };
+
+  const deleteMut = useMutation({
+    mutationFn: (ids: string[]) => deleteFn({ data: { ids } }),
+    onSuccess: (r) => {
+      toast.success(`Deleted ${r.deleted} audit event${r.deleted === 1 ? "" : "s"}`);
+      setSelected(new Set());
+      qc.invalidateQueries({ queryKey: ["audit"] });
+    },
+    onError: (e: any) => toast.error(e?.message ?? "Failed to delete"),
+  });
+
+  const resetMut = useMutation({
+    mutationFn: () => resetFn(),
+    onSuccess: (r) => {
+      toast.success(`Cleared ${r.deleted} audit event${r.deleted === 1 ? "" : "s"}`);
+      setSelected(new Set());
+      setPage(0);
+      qc.invalidateQueries({ queryKey: ["audit"] });
+    },
+    onError: (e: any) => toast.error(e?.message ?? "Failed to reset"),
+  });
 
   return (
     <div className="flex flex-col gap-4">
@@ -234,7 +305,7 @@ function AuditTab() {
 
       <Card className="flex flex-wrap items-end gap-3 border-border bg-card p-4">
         <Field label="Table">
-          <Select value={table} onValueChange={(v) => setTable(v === "all" ? "" : v)}>
+          <Select value={table} onValueChange={(v) => { setTable(v === "all" ? "" : v); resetFilters(); }}>
             <SelectTrigger className="h-8 w-36 text-xs">
               <SelectValue placeholder="All tables" />
             </SelectTrigger>
@@ -249,7 +320,7 @@ function AuditTab() {
           </Select>
         </Field>
         <Field label="Action">
-          <Select value={action} onValueChange={(v) => setAction(v === "all" ? "" : v)}>
+          <Select value={action} onValueChange={(v) => { setAction(v === "all" ? "" : v); resetFilters(); }}>
             <SelectTrigger className="h-8 w-32 text-xs">
               <SelectValue placeholder="All actions" />
             </SelectTrigger>
@@ -264,7 +335,7 @@ function AuditTab() {
           </Select>
         </Field>
         <Field label="Actor">
-          <Select value={actorId} onValueChange={(v) => setActorId(v === "all" ? "" : v)}>
+          <Select value={actorId} onValueChange={(v) => { setActorId(v === "all" ? "" : v); resetFilters(); }}>
             <SelectTrigger className="h-8 w-48 text-xs">
               <SelectValue placeholder="All users" />
             </SelectTrigger>
@@ -282,7 +353,7 @@ function AuditTab() {
           <Input
             type="datetime-local"
             value={since}
-            onChange={(e) => setSince(e.target.value)}
+            onChange={(e) => { setSince(e.target.value); resetFilters(); }}
             className="h-8 w-48 text-xs"
           />
         </Field>
@@ -290,7 +361,7 @@ function AuditTab() {
           <Input
             type="datetime-local"
             value={until}
-            onChange={(e) => setUntil(e.target.value)}
+            onChange={(e) => { setUntil(e.target.value); resetFilters(); }}
             className="h-8 w-48 text-xs"
           />
         </Field>
@@ -304,10 +375,81 @@ function AuditTab() {
         </Button>
       </Card>
 
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="text-xs text-muted-foreground">
+          {selected.size > 0
+            ? `${selected.size} selected`
+            : `${total.toLocaleString()} event${total === 1 ? "" : "s"}`}
+        </div>
+        <div className="flex items-center gap-2">
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-destructive hover:text-destructive"
+                disabled={selected.size === 0 || deleteMut.isPending}
+              >
+                <Trash2 className="mr-1 h-3.5 w-3.5" />
+                Delete selected
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete selected audit events?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will permanently delete {selected.size} audit event
+                  {selected.size === 1 ? "" : "s"}. This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => deleteMut.mutate(Array.from(selected))}
+                >
+                  Delete
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button size="sm" variant="destructive" disabled={resetMut.isPending}>
+                <Trash2 className="mr-1 h-3.5 w-3.5" />
+                Reset all
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Reset entire audit log?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This permanently deletes every audit event across the system.
+                  This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={() => resetMut.mutate()}>
+                  Reset everything
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      </div>
+
       <Card className="border-border bg-card p-0">
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/30 hover:bg-muted/30">
+              <TableHead className="w-8">
+                <Checkbox
+                  checked={allSelected ? true : someSelected ? "indeterminate" : false}
+                  onCheckedChange={(c) => toggleAll(c === true)}
+                  aria-label="Select all on page"
+                />
+              </TableHead>
               <TableHead className="text-[10px] uppercase tracking-wider">When</TableHead>
               <TableHead className="text-[10px] uppercase tracking-wider">Actor</TableHead>
               <TableHead className="text-[10px] uppercase tracking-wider">Table</TableHead>
@@ -319,19 +461,19 @@ function AuditTab() {
           <TableBody>
             {isLoading && (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-xs text-muted-foreground">
+                <TableCell colSpan={7} className="text-center text-xs text-muted-foreground">
                   Loading…
                 </TableCell>
               </TableRow>
             )}
-            {!isLoading && (data ?? []).length === 0 && (
+            {!isLoading && rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-xs text-muted-foreground">
+                <TableCell colSpan={7} className="text-center text-xs text-muted-foreground">
                   No events found.
                 </TableCell>
               </TableRow>
             )}
-            {(data ?? []).map((e: any) => (
+            {rows.map((e: any) => (
               <AuditRow
                 key={e.id}
                 row={e}
@@ -341,16 +483,68 @@ function AuditTab() {
                       `${String(e.actor_id).slice(0, 8)}…`
                     : "system"
                 }
+                selected={selected.has(e.id)}
+                onSelectChange={(c) => toggleOne(e.id, c)}
               />
             ))}
           </TableBody>
         </Table>
       </Card>
+
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span>Rows per page</span>
+          <Select
+            value={String(pageSize)}
+            onValueChange={(v) => { setPageSize(Number(v)); setPage(0); }}
+          >
+            <SelectTrigger className="h-8 w-20 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {[25, 50, 100, 200].map((n) => (
+                <SelectItem key={n} value={String(n)} className="text-xs">{n}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          <span>
+            Page {page + 1} of {totalPages}
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setPage((p) => Math.max(0, p - 1))}
+            disabled={page === 0 || isFetching}
+          >
+            Previous
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+            disabled={page >= totalPages - 1 || isFetching}
+          >
+            Next
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
 
-function AuditRow({ row, actorEmail }: { row: any; actorEmail: string }) {
+function AuditRow({
+  row,
+  actorEmail,
+  selected,
+  onSelectChange,
+}: {
+  row: any;
+  actorEmail: string;
+  selected: boolean;
+  onSelectChange: (checked: boolean) => void;
+}) {
   const [open, setOpen] = useState(false);
   const actionColor =
     row.action === "delete"
@@ -359,7 +553,14 @@ function AuditRow({ row, actorEmail }: { row: any; actorEmail: string }) {
         ? "text-[color:var(--peak-annotated)]"
         : "text-primary";
   return (
-    <TableRow className="text-xs align-top">
+    <TableRow className="text-xs align-top" data-state={selected ? "selected" : undefined}>
+      <TableCell className="w-8">
+        <Checkbox
+          checked={selected}
+          onCheckedChange={(c) => onSelectChange(c === true)}
+          aria-label="Select row"
+        />
+      </TableCell>
       <TableCell className="font-mono text-[10px] text-muted-foreground">
         {new Date(row.created_at).toLocaleString()}
       </TableCell>
@@ -395,6 +596,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     </div>
   );
 }
+
 
 // ============================================================
 // Invite codes
