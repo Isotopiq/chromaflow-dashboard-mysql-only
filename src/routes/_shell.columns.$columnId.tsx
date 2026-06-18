@@ -59,11 +59,18 @@ export const Route = createFileRoute("/_shell/columns/$columnId")({
 function ColumnDetail() {
   const { columnId } = Route.useParams();
   const navigate = useNavigate();
-  const { columns, methods, runs, upsertColumnLocal, removeColumnLocal } = useLab();
+  const { columns, methods, runs, hydrated, upsertColumnLocal, removeColumnLocal } = useLab();
   const upsertFn = useServerFn(upsertColumn);
   const deleteFn = useServerFn(deleteColumn);
   const col = columns.find((c) => c.id === columnId);
-  if (!col) throw notFound();
+  if (!col) {
+    if (!hydrated) {
+      return (
+        <div className="p-6 text-xs text-muted-foreground">Loading column…</div>
+      );
+    }
+    throw notFound();
+  }
 
   const linkedMethods = methods.filter((m) => m.columnId === col.id);
   const linkedRuns = runs.filter((r) => r.columnId === col.id);
