@@ -762,6 +762,7 @@ function BrandingAsset({
   url,
   urlExplicit,
   accept,
+  previewBg,
   onUpload,
   onClear,
   onSaveUrl,
@@ -771,6 +772,7 @@ function BrandingAsset({
   url: string | null;
   urlExplicit: string | null;
   accept: string;
+  previewBg?: "light" | "dark";
   onUpload: (f: File) => void;
   onClear: () => void;
   onSaveUrl: (v: string) => void;
@@ -783,13 +785,19 @@ function BrandingAsset({
     lastExplicit.current = urlExplicit;
     if ((urlExplicit ?? "") !== urlDraft) setUrlDraft(urlExplicit ?? "");
   }
+  const previewClass =
+    previewBg === "light"
+      ? "bg-white"
+      : previewBg === "dark"
+        ? "bg-neutral-900"
+        : "bg-muted/20";
   return (
     <Card className="border-border bg-card p-4">
       <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
         {label}
       </div>
       <p className="mt-0.5 text-[10px] text-muted-foreground">{hint}</p>
-      <div className="mt-3 flex h-24 items-center justify-center rounded-md border border-dashed border-border bg-muted/20">
+      <div className={`mt-3 flex h-24 items-center justify-center rounded-md border border-dashed border-border ${previewClass}`}>
         {url ? (
           <img
             src={url}
