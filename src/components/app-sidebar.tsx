@@ -98,7 +98,7 @@ export function AppSidebar() {
       <SidebarHeader className="border-b border-sidebar-border px-3 py-3">
         <Link to="/" className="flex items-center gap-2">
           <img
-            src={branding?.webLogoUrl || logoAsset.url}
+            src={logoSrc}
             alt={appName}
             className="h-8 w-auto shrink-0 object-contain"
           />
