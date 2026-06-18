@@ -1,7 +1,8 @@
-import { createFileRoute, Link, notFound, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useLab } from "@/lib/store";
+import type { Column } from "@/lib/lab-types";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
@@ -62,14 +63,71 @@ function ColumnDetailGate() {
   const col = columns.find((c) => c.id === columnId);
   if (!col) {
     if (!hydrated) {
-      return <div className="p-6 text-xs text-muted-foreground">Loading column…</div>;
+      return <ColumnRouteState title="Loading column…" />;
     }
-    throw notFound();
+    return (
+      <ColumnRouteState
+        title="Column not found"
+        description="This column is no longer in the library or you may not have access to it."
+      />
+    );
   }
-  return <ColumnDetail col={col} />;
+  return <ColumnDetail col={normalizeColumn(col)} />;
 }
 
-function ColumnDetail({ col }: { col: import("@/lib/lab-types").Column }) {
+function ColumnRouteState({ title, description }: { title: string; description?: string }) {
+  return (
+    <div className="flex flex-col gap-3 p-6">
+      <Link
+        to="/columns"
+        className="inline-flex w-fit items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+      >
+        <ArrowLeft className="h-3 w-3" /> All columns
+      </Link>
+      <Card className="border-border bg-card p-6">
+        <div className="text-sm font-medium">{title}</div>
+        {description && <p className="mt-1 text-xs text-muted-foreground">{description}</p>}
+      </Card>
+    </div>
+  );
+}
+
+function normalizeColumn(col: Column): Column {
+  const ratedInjections = positiveNumber(col.ratedInjections, 1000);
+  const status: Column["status"] = ["healthy", "warn", "expired"].includes(col.status)
+    ? col.status
+    : "healthy";
+
+  return {
+    ...col,
+    name: col.name || "Untitled column",
+    chemistry: col.chemistry ?? "",
+    dimensions: col.dimensions ?? "",
+    particleSize: col.particleSize ?? "",
+    serial: col.serial ?? "",
+    ratedInjections,
+    injectionsUsed: Math.max(0, finiteNumber(col.injectionsUsed, 0)),
+    installedAt: col.installedAt || "—",
+    status,
+    pressureTrend: Array.isArray(col.pressureTrend)
+      ? col.pressureTrend.map((p) => finiteNumber(p, 0))
+      : [],
+    notes: col.notes ?? "",
+    manufacturer: col.manufacturer ?? "",
+  };
+}
+
+function finiteNumber(value: unknown, fallback: number) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function positiveNumber(value: unknown, fallback: number) {
+  const n = finiteNumber(value, fallback);
+  return n > 0 ? n : fallback;
+}
+
+function ColumnDetail({ col }: { col: Column }) {
   const navigate = useNavigate();
   const { methods, runs, upsertColumnLocal, removeColumnLocal } = useLab();
   const upsertFn = useServerFn(upsertColumn);
