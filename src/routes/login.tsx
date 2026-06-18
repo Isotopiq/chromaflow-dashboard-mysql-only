@@ -7,12 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import logoAsset from "@/assets/Isotopiq-Logo.png.asset.json";
+import { useBranding } from "@/lib/use-branding";
 
 export const Route = createFileRoute("/login")({ component: LoginPage });
 
 function LoginPage() {
   const { user, loading, refresh } = useAuth();
   const nav = useNavigate();
+  const { data: branding } = useBranding();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -48,8 +50,8 @@ function LoginPage() {
       <Card className="w-full max-w-sm border-border bg-card p-6">
         <div className="mb-6 flex flex-col items-center gap-2">
           <img
-            src={logoAsset.url}
-            alt="Isotopiq"
+            src={branding?.webLogoUrl || logoAsset.url}
+            alt={branding?.appName || "Isotopiq"}
             className="h-10 w-auto object-contain"
           />
           <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Sign in</div>

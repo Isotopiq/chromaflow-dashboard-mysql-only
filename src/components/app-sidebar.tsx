@@ -93,8 +93,8 @@ export function AppSidebar() {
       <SidebarHeader className="border-b border-sidebar-border px-3 py-3">
         <Link to="/" className="flex items-center gap-2">
           <img
-            src={logoAsset.url}
-            alt="Isotopiq"
+            src={branding?.webLogoUrl || logoAsset.url}
+            alt={appName}
             className="h-8 w-auto shrink-0 object-contain"
           />
           {!collapsed && (
