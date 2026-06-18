@@ -50,20 +50,30 @@ import {
 } from "@/components/column-form-dialog";
 
 export const Route = createFileRoute("/_shell/columns/$columnId")({
-  component: ColumnDetail,
+  component: ColumnDetailGate,
   notFoundComponent: () => (
     <div className="p-6 text-sm text-muted-foreground">Column not found.</div>
   ),
 });
 
-function ColumnDetail() {
+function ColumnDetailGate() {
   const { columnId } = Route.useParams();
+  const { columns, hydrated } = useLab();
+  const col = columns.find((c) => c.id === columnId);
+  if (!col) {
+    if (!hydrated) {
+      return <div className="p-6 text-xs text-muted-foreground">Loading column…</div>;
+    }
+    throw notFound();
+  }
+  return <ColumnDetail col={col} />;
+}
+
+function ColumnDetail({ col }: { col: import("@/lib/lab-types").Column }) {
   const navigate = useNavigate();
-  const { columns, methods, runs, upsertColumnLocal, removeColumnLocal } = useLab();
+  const { methods, runs, upsertColumnLocal, removeColumnLocal } = useLab();
   const upsertFn = useServerFn(upsertColumn);
   const deleteFn = useServerFn(deleteColumn);
-  const col = columns.find((c) => c.id === columnId);
-  if (!col) throw notFound();
 
   const linkedMethods = methods.filter((m) => m.columnId === col.id);
   const linkedRuns = runs.filter((r) => r.columnId === col.id);
