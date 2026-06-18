@@ -16,6 +16,10 @@ function LoginPage() {
   const { user, loading, refresh } = useAuth();
   const nav = useNavigate();
   const { data: branding } = useBranding();
+  const { theme } = useTheme();
+  const themedLogo =
+    theme === "light" ? branding?.webLogoLightUrl : branding?.webLogoDarkUrl;
+  const logoSrc = themedLogo || branding?.webLogoUrl || logoAsset.url;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
