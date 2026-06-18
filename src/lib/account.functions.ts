@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireAuth } from "@/lib/auth-middleware";
 import { withAdmin } from "@/db/index.server";
-import { publicUrl } from "@/lib/storage.server";
+import { createSignedDownloadUrl } from "@/lib/storage.server";
 import { updateEmail, updatePassword } from "@/lib/auth/users.server";
 
 export const getMyAccount = createServerFn({ method: "GET" })
