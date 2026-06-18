@@ -728,18 +728,29 @@ function BrandingAsset({
   label,
   hint,
   url,
+  urlExplicit,
   accept,
   onUpload,
   onClear,
+  onSaveUrl,
 }: {
   label: string;
   hint: string;
   url: string | null;
+  urlExplicit: string | null;
   accept: string;
   onUpload: (f: File) => void;
   onClear: () => void;
+  onSaveUrl: (v: string) => void;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const [urlDraft, setUrlDraft] = useState(urlExplicit ?? "");
+  // Sync local draft when the server value changes (e.g. after save).
+  const lastExplicit = useRef<string | null>(urlExplicit);
+  if (lastExplicit.current !== urlExplicit) {
+    lastExplicit.current = urlExplicit;
+    if ((urlExplicit ?? "") !== urlDraft) setUrlDraft(urlExplicit ?? "");
+  }
   return (
     <Card className="border-border bg-card p-4">
       <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
@@ -788,7 +799,33 @@ function BrandingAsset({
           </Button>
         )}
       </div>
+      <div className="mt-3">
+        <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+          Or use image URL
+        </div>
+        <div className="mt-1 flex gap-2">
+          <Input
+            value={urlDraft}
+            onChange={(e) => setUrlDraft(e.target.value)}
+            placeholder="https://example.com/logo.png"
+            className="h-8 text-xs"
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => onSaveUrl(urlDraft)}
+          >
+            Save
+          </Button>
+        </div>
+        {urlExplicit && (
+          <p className="mt-1 text-[10px] text-muted-foreground">
+            URL overrides the uploaded file.
+          </p>
+        )}
+      </div>
     </Card>
   );
 }
+
 
