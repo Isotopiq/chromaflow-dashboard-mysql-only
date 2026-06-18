@@ -368,11 +368,17 @@ create table if not exists public.branding_settings (
   favicon_path  text,
   web_logo_path text,
   pdf_logo_path text,
+  favicon_url   text,
+  web_logo_url  text,
+  pdf_logo_url  text,
   app_name      text,
   updated_at    timestamptz not null default now(),
   updated_by    uuid references public.app_users(id) on delete set null,
   constraint branding_singleton check (id = 1)
 );
+alter table public.branding_settings add column if not exists favicon_url  text;
+alter table public.branding_settings add column if not exists web_logo_url text;
+alter table public.branding_settings add column if not exists pdf_logo_url text;
 insert into public.branding_settings (id) values (1) on conflict (id) do nothing;
 alter table public.branding_settings enable row level security;
 drop policy if exists "branding: read all"   on public.branding_settings;
