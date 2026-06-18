@@ -16,11 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -45,10 +41,7 @@ import {
   Tooltip,
 } from "recharts";
 import { upsertColumn, deleteColumn } from "@/lib/lab.functions";
-import {
-  ColumnFormDialog,
-  type ColumnFormValues,
-} from "@/components/column-form-dialog";
+import { ColumnFormDialog, type ColumnFormValues } from "@/components/column-form-dialog";
 
 export const Route = createFileRoute("/_shell/columns/$columnId")({
   component: ColumnDetailGate,
@@ -127,6 +120,10 @@ function positiveNumber(value: unknown, fallback: number) {
   return n > 0 ? n : fallback;
 }
 
+function errorMessage(err: unknown, fallback: string) {
+  return err instanceof Error ? err.message : fallback;
+}
+
 function ColumnDetail({ col }: { col: Column }) {
   const navigate = useNavigate();
   const { methods, runs, upsertColumnLocal, removeColumnLocal } = useLab();
@@ -148,12 +145,12 @@ function ColumnDetail({ col }: { col: Column }) {
 
   const handleEdit = async (values: ColumnFormValues) => {
     try {
-      const saved = await upsertFn({ data: values as any });
+      const saved = await upsertFn({ data: values });
       upsertColumnLocal(saved);
       toast.success("Column updated");
       setEditOpen(false);
-    } catch (err: any) {
-      toast.error(err?.message ?? "Failed to update column");
+    } catch (err: unknown) {
+      toast.error(errorMessage(err, "Failed to update column"));
     }
   };
 
@@ -186,15 +183,15 @@ function ColumnDetail({ col }: { col: Column }) {
           usedInjections: Math.max(0, col.injectionsUsed + bump),
           status: maintStatus,
           notes,
-        } as any,
+        },
       });
       upsertColumnLocal(saved);
       toast.success("Maintenance logged");
       setMaintOpen(false);
       setBump(0);
       setMaintNote("");
-    } catch (err: any) {
-      toast.error(err?.message ?? "Failed to log maintenance");
+    } catch (err: unknown) {
+      toast.error(errorMessage(err, "Failed to log maintenance"));
     }
   };
 
@@ -204,8 +201,8 @@ function ColumnDetail({ col }: { col: Column }) {
       removeColumnLocal(col.id);
       toast.success("Column deleted");
       navigate({ to: "/columns" });
-    } catch (err: any) {
-      toast.error(err?.message ?? "Failed to delete column");
+    } catch (err: unknown) {
+      toast.error(errorMessage(err, "Failed to delete column"));
     }
   };
 
