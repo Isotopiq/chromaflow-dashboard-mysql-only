@@ -690,8 +690,8 @@ function BrandingTab() {
           onSaveUrl={(v) => saveUrl("faviconUrl", v, "Favicon")}
         />
         <BrandingAsset
-          label="Web logo"
-          hint="Shown in the app sidebar and login page."
+          label="Web logo (fallback)"
+          hint="Used when no theme-specific logo is set."
           url={branding?.webLogoUrl ?? null}
           urlExplicit={branding?.webLogoUrlExplicit ?? null}
           accept="image/*"
@@ -710,6 +710,35 @@ function BrandingTab() {
           onSaveUrl={(v) => saveUrl("pdfLogoUrl", v, "PDF logo")}
         />
       </div>
+
+      <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+        Theme-specific web logos
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <BrandingAsset
+          label="Web logo — light theme"
+          hint="Shown in the sidebar and login when the app is in light mode."
+          url={branding?.webLogoLightUrl ?? null}
+          urlExplicit={branding?.webLogoLightUrlExplicit ?? null}
+          accept="image/*"
+          previewBg="light"
+          onUpload={(f) => upload(f, "webLogoLightPath", "Light logo")}
+          onClear={() => clearAsset("webLogoLightPath", "Light logo")}
+          onSaveUrl={(v) => saveUrl("webLogoLightUrl", v, "Light logo")}
+        />
+        <BrandingAsset
+          label="Web logo — dark theme"
+          hint="Shown in the sidebar and login when the app is in dark mode."
+          url={branding?.webLogoDarkUrl ?? null}
+          urlExplicit={branding?.webLogoDarkUrlExplicit ?? null}
+          accept="image/*"
+          previewBg="dark"
+          onUpload={(f) => upload(f, "webLogoDarkPath", "Dark logo")}
+          onClear={() => clearAsset("webLogoDarkPath", "Dark logo")}
+          onSaveUrl={(v) => saveUrl("webLogoDarkUrl", v, "Dark logo")}
+        />
+      </div>
+
 
       <Card className="flex items-start gap-3 border-primary/30 bg-primary/5 p-3 text-xs">
         <Shield className="h-4 w-4 text-primary" />
