@@ -2,7 +2,20 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireAuth } from "@/lib/auth-middleware";
 import { withAdmin } from "@/db/index.server";
-import { publicUrl } from "@/lib/storage.server";
+import { publicUrl, createSignedDownloadUrl } from "@/lib/storage.server";
+
+async function resolveBrandingUrl(
+  path: string | null | undefined,
+): Promise<string | null> {
+  if (!path) return null;
+  // Try a signed download URL first — works for private S3/R2 buckets.
+  try {
+    return await createSignedDownloadUrl("branding", path, 60 * 60 * 24);
+  } catch {
+    // Fall back to a constructed public URL if signing fails (e.g. no creds).
+    return publicUrl("branding", path);
+  }
+}
 
 // ---- Branding ----
 // Public read.
@@ -15,12 +28,17 @@ export const getBranding = createServerFn({ method: "GET" }).handler(async () =>
   const pdfLogoUrlExplicit = (data?.pdf_logo_url as string | null) ?? null;
   const webLogoLightUrlExplicit = (data?.web_logo_light_url as string | null) ?? null;
   const webLogoDarkUrlExplicit = (data?.web_logo_dark_url as string | null) ?? null;
-  const webLogoUrl =
-    webLogoUrlExplicit || publicUrl("branding", data?.web_logo_path);
-  const webLogoLightUrl =
-    webLogoLightUrlExplicit || publicUrl("branding", data?.web_logo_light_path);
-  const webLogoDarkUrl =
-    webLogoDarkUrlExplicit || publicUrl("branding", data?.web_logo_dark_path);
+  const [webLogoUrlSigned, webLogoLightUrlSigned, webLogoDarkUrlSigned, pdfLogoUrlSigned, faviconUrlSigned] =
+    await Promise.all([
+      resolveBrandingUrl(data?.web_logo_path),
+      resolveBrandingUrl(data?.web_logo_light_path),
+      resolveBrandingUrl(data?.web_logo_dark_path),
+      resolveBrandingUrl(data?.pdf_logo_path),
+      resolveBrandingUrl(data?.favicon_path),
+    ]);
+  const webLogoUrl = webLogoUrlExplicit || webLogoUrlSigned;
+  const webLogoLightUrl = webLogoLightUrlExplicit || webLogoLightUrlSigned;
+  const webLogoDarkUrl = webLogoDarkUrlExplicit || webLogoDarkUrlSigned;
   return {
     appName: data?.app_name ?? null,
     faviconPath: data?.favicon_path ?? null,
@@ -33,9 +51,9 @@ export const getBranding = createServerFn({ method: "GET" }).handler(async () =>
     pdfLogoUrlExplicit,
     webLogoLightUrlExplicit,
     webLogoDarkUrlExplicit,
-    faviconUrl: faviconUrlExplicit || publicUrl("branding", data?.favicon_path),
+    faviconUrl: faviconUrlExplicit || faviconUrlSigned,
     webLogoUrl,
-    pdfLogoUrl: pdfLogoUrlExplicit || publicUrl("branding", data?.pdf_logo_path),
+    pdfLogoUrl: pdfLogoUrlExplicit || pdfLogoUrlSigned,
     // Theme-aware web logos. Fall back to the themeless logo when only one
     // variant is configured.
     webLogoLightUrl: webLogoLightUrl || webLogoUrl,
