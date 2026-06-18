@@ -13,12 +13,21 @@ export const getMyAccount = createServerFn({ method: "GET" })
       "select id, display_name, avatar_url from public.profiles where id = $1",
       [userId],
     );
+    const avatarPath = profile?.avatar_url ?? null;
+    let avatarUrl: string | null = null;
+    if (avatarPath) {
+      try {
+        avatarUrl = await createSignedDownloadUrl("avatars", avatarPath, 60 * 60);
+      } catch {
+        avatarUrl = null;
+      }
+    }
     return {
       id: userId,
       email,
       displayName: profile?.display_name ?? "",
-      avatarPath: profile?.avatar_url ?? null,
-      avatarUrl: publicUrl("avatars", profile?.avatar_url),
+      avatarPath,
+      avatarUrl,
     };
   });
 
