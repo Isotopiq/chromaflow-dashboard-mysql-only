@@ -254,7 +254,12 @@ function Reports() {
           )}
           {method && !methodRun && (
             <div className="text-[10px] text-[color:var(--status-warn)]">
-              No run is linked to this method — chromatogram & peaks will be omitted.
+              No run selected — pick one in the sidebar or chromatogram & peaks will be omitted.
+            </div>
+          )}
+          {method && methodRun && methodRun.methodId !== method.id && (
+            <div className="text-[10px] text-muted-foreground">
+              Using a run not linked to this method.
             </div>
           )}
         </div>
@@ -269,7 +274,11 @@ function Reports() {
             {methods.map((m) => (
               <button
                 key={m.id}
-                onClick={() => setMethodId(m.id)}
+                onClick={() => {
+                  setMethodId(m.id);
+                  setRunId("");
+                }}
+
                 className={`w-full rounded-md px-2 py-1.5 text-left text-xs ${
                   methodId === m.id ? "bg-primary/15 text-primary" : "hover:bg-accent/30"
                 }`}
