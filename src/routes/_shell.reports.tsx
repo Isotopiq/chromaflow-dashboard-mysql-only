@@ -44,6 +44,7 @@ function Reports() {
   const { runs, methods, analytes, columns } = useLab();
   const { data: branding } = useBranding();
   const [methodId, setMethodId] = useState(methods[0]?.id ?? "");
+  const [runId, setRunId] = useState<string>("");
 
   const [sections, setSections] = useState({
     method: true,
@@ -95,9 +96,20 @@ function Reports() {
   const printRef = useRef<HTMLDivElement | null>(null);
 
   const method = methods.find((m) => m.id === methodId);
-  const methodRun = runs.find((r) => r.methodId === methodId);
+  const linkedRuns = useMemo(
+    () => runs.filter((r) => r.methodId === methodId),
+    [runs, methodId],
+  );
+  const otherRuns = useMemo(
+    () => runs.filter((r) => r.methodId !== methodId),
+    [runs, methodId],
+  );
+  const effectiveRunId =
+    runId || linkedRuns[0]?.id || "";
+  const methodRun = runs.find((r) => r.id === effectiveRunId);
   const column = columns.find((c) => c.id === method?.columnId);
   const effectiveTitle = reportTitle.trim() || method?.name || "Method Report";
+
 
   const uploadFn = useServerFn(createUploadUrl);
   const createReportFn = useServerFn(createReport);
