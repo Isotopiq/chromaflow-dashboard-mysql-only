@@ -105,11 +105,7 @@ function MethodsList() {
               const col = columns.find((c) => c.id === m.columnId);
               const runCount = runs.filter((r) => r.methodId === m.id).length;
               return (
-                <TableRow
-                  key={m.id}
-                  className="cursor-pointer text-xs"
-                  onClick={() => (window.location.href = `/methods/${m.id}`)}
-                >
+                <TableRow key={m.id} className="text-xs">
                   <TableCell>
                     <Link
                       to="/methods/$methodId"
