@@ -1,4 +1,4 @@
-import { createFileRoute, Link, notFound } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useLab } from "@/lib/store";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -14,21 +14,49 @@ import {
 import { ChromatogramPlot } from "@/components/chromatogram-plot";
 import { StatusDot } from "@/components/status-dot";
 import { ArrowLeft, GitBranch, Edit3 } from "lucide-react";
+import type { Method } from "@/lib/lab-types";
 
 export const Route = createFileRoute("/_shell/methods/$methodId")({
-  component: MethodDetail,
+  component: MethodDetailGate,
   notFoundComponent: () => (
     <div className="p-6 text-sm text-muted-foreground">Method not found.</div>
   ),
 });
 
-function MethodDetail() {
+function MethodDetailGate() {
   const { methodId } = Route.useParams();
-  const { methods, columns, runs } = useLab();
+  const { methods, hydrated } = useLab();
   const method = methods.find((m) => m.id === methodId);
-  if (!method) throw notFound();
+  if (!method) {
+    return (
+      <div className="flex flex-col gap-3 p-6">
+        <Link
+          to="/methods"
+          className="inline-flex w-fit items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="h-3 w-3" /> All methods
+        </Link>
+        <Card className="border-border bg-card p-6">
+          <div className="text-sm font-medium">
+            {hydrated ? "Method not found" : "Loading method…"}
+          </div>
+          {hydrated && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              This method is no longer available or you may not have access to it.
+            </p>
+          )}
+        </Card>
+      </div>
+    );
+  }
+  return <MethodDetail method={method} />;
+}
+
+function MethodDetail({ method }: { method: Method }) {
+  const { columns, runs } = useLab();
   const column = columns.find((c) => c.id === method.columnId);
   const methodRuns = runs.filter((r) => r.methodId === method.id);
+
 
   return (
     <div className="flex flex-col gap-6 p-6">
