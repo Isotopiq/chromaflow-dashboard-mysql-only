@@ -287,6 +287,69 @@ function Reports() {
               </button>
             ))}
           </div>
+
+          <div className="mt-5 flex items-center justify-between text-[10px] uppercase tracking-widest text-muted-foreground">
+            <span>Run</span>
+            <span className="font-mono normal-case tracking-normal text-muted-foreground">
+              {linkedRuns.length + otherRuns.length} total
+            </span>
+          </div>
+          {runs.length === 0 ? (
+            <div className="mt-2 rounded-md border border-border bg-muted/30 p-2 text-[10px] text-muted-foreground">
+              No runs available. Upload or create a run first.
+            </div>
+          ) : (
+            <ScrollArea className="mt-2 h-56 rounded-md border border-border">
+              <div className="space-y-0.5 p-1">
+                {linkedRuns.length > 0 && (
+                  <div className="px-2 py-1 text-[9px] uppercase tracking-widest text-muted-foreground">
+                    Linked to this method
+                  </div>
+                )}
+                {linkedRuns.map((r) => (
+                  <button
+                    key={r.id}
+                    onClick={() => setRunId(r.id)}
+                    className={`flex w-full items-center justify-between gap-2 rounded-md px-2 py-1 text-left text-xs ${
+                      effectiveRunId === r.id
+                        ? "bg-primary/15 text-primary"
+                        : "hover:bg-accent/30"
+                    }`}
+                  >
+                    <span className="min-w-0 flex-1 truncate font-mono">{r.name}</span>
+                    <span className="shrink-0 text-[9px] text-muted-foreground">
+                      {r.peaks.length}p
+                    </span>
+                  </button>
+                ))}
+                {otherRuns.length > 0 && (
+                  <div className="mt-1 px-2 py-1 text-[9px] uppercase tracking-widest text-muted-foreground">
+                    Other runs
+                  </div>
+                )}
+                {otherRuns.map((r) => {
+                  const otherMethod = methods.find((m) => m.id === r.methodId);
+                  return (
+                    <button
+                      key={r.id}
+                      onClick={() => setRunId(r.id)}
+                      className={`flex w-full items-center justify-between gap-2 rounded-md px-2 py-1 text-left text-xs ${
+                        effectiveRunId === r.id
+                          ? "bg-primary/15 text-primary"
+                          : "hover:bg-accent/30"
+                      }`}
+                    >
+                      <span className="min-w-0 flex-1 truncate font-mono">{r.name}</span>
+                      <span className="shrink-0 truncate text-[9px] text-muted-foreground">
+                        {otherMethod?.name ?? "—"}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </ScrollArea>
+          )}
+
           <div className="mt-5 text-[10px] uppercase tracking-widest text-muted-foreground">
             Header & footer
           </div>
