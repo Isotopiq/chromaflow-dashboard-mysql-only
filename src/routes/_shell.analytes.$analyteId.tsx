@@ -12,6 +12,7 @@ import { AnalyteComparePanel } from "@/components/analyte-compare-panel";
 import { ChromatogramPlot } from "@/components/chromatogram-plot";
 import { monoisotopicMass, mzFromFormula } from "@/lib/chem";
 import { ago } from "@/lib/time";
+import type { Run, Column as LabColumn, Method } from "@/lib/lab-types";
 
 export const Route = createFileRoute("/_shell/analytes/$analyteId")({
   component: AnalyteDetail,
