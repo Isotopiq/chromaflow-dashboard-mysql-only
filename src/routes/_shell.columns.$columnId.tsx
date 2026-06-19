@@ -62,13 +62,22 @@ function ColumnDetailGate() {
       <ColumnRouteState
         title="Column not found"
         description="This column is no longer in the library or you may not have access to it."
+        diagnostics={{ columnId, total: columns.length, ids: columns.map((c) => c.id) }}
       />
     );
   }
   return <ColumnDetail col={normalizeColumn(col)} />;
 }
 
-function ColumnRouteState({ title, description }: { title: string; description?: string }) {
+function ColumnRouteState({
+  title,
+  description,
+  diagnostics,
+}: {
+  title: string;
+  description?: string;
+  diagnostics?: { columnId: string; total: number; ids: string[] };
+}) {
   return (
     <div className="flex flex-col gap-3 p-6">
       <Link
@@ -80,6 +89,28 @@ function ColumnRouteState({ title, description }: { title: string; description?:
       <Card className="border-border bg-card p-6">
         <div className="text-sm font-medium">{title}</div>
         {description && <p className="mt-1 text-xs text-muted-foreground">{description}</p>}
+        {diagnostics && (
+          <div className="mt-4 space-y-1 rounded-md border border-dashed border-border bg-surface-elevated p-3 font-mono text-[11px] text-muted-foreground">
+            <div>
+              <span className="text-foreground">URL columnId:</span> {diagnostics.columnId}
+            </div>
+            <div>
+              <span className="text-foreground">Columns loaded:</span> {diagnostics.total}
+            </div>
+            {diagnostics.total > 0 && (
+              <div className="break-all">
+                <span className="text-foreground">First IDs:</span>{" "}
+                {diagnostics.ids.slice(0, 5).join(", ")}
+                {diagnostics.ids.length > 5 ? "…" : ""}
+              </div>
+            )}
+            {diagnostics.total === 0 && (
+              <div className="text-[color:var(--destructive)]">
+                Bootstrap returned 0 columns — likely an RLS or grant issue. Check the SQL queries in the plan.
+              </div>
+            )}
+          </div>
+        )}
       </Card>
     </div>
   );
