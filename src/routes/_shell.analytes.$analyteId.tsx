@@ -119,7 +119,6 @@ function AnalyteDetail() {
   );
 }
 
-import type { Run, Column as LabColumn, Method } from "@/lib/lab-types";
 type RunLite = Run;
 type ColumnLite = LabColumn;
 type MethodLite = Method;
