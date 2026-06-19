@@ -343,11 +343,22 @@ export const annotatePeak = createServerFn({ method: "POST" })
   .inputValidator((d) => AnnotateInput.parse(d))
   .handler(async ({ data, context }) => {
     const { userId, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
+    // Resolve a display label so it survives reloads: explicit label > analyte name.
+    let label = data.label ?? null;
+    if (!label && data.analyteId) {
+      const a = await db.maybe<{ name: string }>(
+        "select name from public.analytes where id=$1", [data.analyteId]);
+      label = a?.name ?? null;
+    }
     await db.query(
       `update public.peaks set
-         analyte_id=$1, annotated_by=$2, annotation_source='manual', confidence=1
-       where id=$3`,
-      [data.analyteId ?? null, userId, data.peakId],
+         analyte_id   = $1,
+         analyte_name = coalesce($2, analyte_name),
+         annotated_by = $3,
+         annotation_source = 'manual',
+         confidence = 1
+       where id = $4`,
+      [data.analyteId ?? null, label, userId, data.peakId],
     );
     if (data.label) {
       await db.query(
@@ -355,7 +366,7 @@ export const annotatePeak = createServerFn({ method: "POST" })
         [data.runId, data.peakId, data.label, userId],
       );
     }
-    return { ok: true };
+    return { ok: true, analyteName: label };
   });
 
 const UnassignInput = z.object({
