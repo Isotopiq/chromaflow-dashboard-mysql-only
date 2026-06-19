@@ -118,9 +118,10 @@ function AnalyteDetail() {
   );
 }
 
-type RunLite = ReturnType<typeof useLab>["runs"][number];
-type ColumnLite = ReturnType<typeof useLab>["columns"][number];
-type MethodLite = ReturnType<typeof useLab>["methods"][number];
+import type { Run, Column as LabColumn, Method } from "@/lib/lab-types";
+type RunLite = Run;
+type ColumnLite = LabColumn;
+type MethodLite = Method;
 
 function AllRunsXICGrid({
   analyteName,
