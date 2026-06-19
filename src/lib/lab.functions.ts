@@ -161,6 +161,16 @@ export const deleteColumn = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const getColumnById = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) => z.object({ id: z.string() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { db } = context as { db: import("@/db/index.server").Db };
+    const row = await db.maybe<any>(
+      "select * from public.columns where id = $1", [data.id]);
+    return row ? mapColumn(row) : null;
+  });
+
 // ---- Batches ----
 const BatchInput = z.object({
   id: z.string().optional(),
