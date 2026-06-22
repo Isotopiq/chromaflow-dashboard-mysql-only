@@ -176,6 +176,8 @@ const BatchInput = z.object({
   id: z.string().optional(),
   name: z.string().min(1).max(200),
   project: z.string().max(200).default(""),
+  status: z.enum(["in_progress", "review", "complete"]).optional(),
+  notes: z.string().max(20000).optional(),
 });
 export const upsertBatch = createServerFn({ method: "POST" })
   .middleware([requireAuth])
@@ -185,14 +187,67 @@ export const upsertBatch = createServerFn({ method: "POST" })
     let row;
     if (data.id) {
       row = await db.one(
-        "update public.batches set name=$1, project=$2 where id=$3 returning *",
-        [data.name, data.project, data.id]);
+        `update public.batches
+            set name=$1, project=$2,
+                status=coalesce($3, status),
+                notes=coalesce($4, notes)
+          where id=$5 returning *`,
+        [data.name, data.project, data.status ?? null, data.notes ?? null, data.id]);
     } else {
       row = await db.one(
-        "insert into public.batches (name, project, owner_id) values ($1,$2,$3) returning *",
-        [data.name, data.project, userId]);
+        `insert into public.batches (name, project, owner_id, status, notes)
+         values ($1,$2,$3,coalesce($4,'in_progress'),coalesce($5,''))
+         returning *`,
+        [data.name, data.project, userId, data.status ?? null, data.notes ?? null]);
     }
-    return mapBatch(row, []);
+    const runs = await db.many<{ id: string }>(
+      "select id from public.runs where batch_id=$1", [row.id]);
+    return mapBatch(row, runs.map((r) => r.id));
+  });
+
+export const updateBatchNotes = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) => z.object({ batchId: z.string(), notes: z.string().max(20000) }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { userId, db } = context as { userId: string; db: import("@/db/index.server").Db };
+    const b = await db.maybe<any>("select owner_id from public.batches where id=$1", [data.batchId]);
+    if (!b) throw new Error("Batch not found");
+    if (b.owner_id && b.owner_id !== userId) throw new Error("Not your batch.");
+    await db.query("update public.batches set notes=$1 where id=$2", [data.notes, data.batchId]);
+    return { ok: true };
+  });
+
+export const updateRunNotes = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) => z.object({ runId: z.string(), notes: z.string().max(20000) }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { userId, db } = context as { userId: string; db: import("@/db/index.server").Db };
+    const r = await db.maybe<any>("select uploaded_by from public.runs where id=$1", [data.runId]);
+    if (!r) throw new Error("Run not found");
+    if (r.uploaded_by && r.uploaded_by !== userId) throw new Error("Not your run.");
+    await db.query("update public.runs set notes=$1 where id=$2", [data.notes, data.runId]);
+    return { ok: true };
+  });
+
+export const updatePeakNotes = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) => z.object({ peakId: z.string(), notes: z.string().max(20000) }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { db } = context as { db: import("@/db/index.server").Db };
+    await db.query("update public.peaks set notes=$1 where id=$2", [data.notes, data.peakId]);
+    return { ok: true };
+  });
+
+export const setRunBatch = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) => z.object({ runId: z.string(), batchId: z.string().nullable() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { userId, db } = context as { userId: string; db: import("@/db/index.server").Db };
+    const r = await db.maybe<any>("select uploaded_by from public.runs where id=$1", [data.runId]);
+    if (!r) throw new Error("Run not found");
+    if (r.uploaded_by && r.uploaded_by !== userId) throw new Error("Not your run.");
+    await db.query("update public.runs set batch_id=$1 where id=$2", [data.batchId, data.runId]);
+    return { ok: true };
   });
 
 // ---- Analytes ----
