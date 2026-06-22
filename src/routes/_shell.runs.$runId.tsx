@@ -702,23 +702,36 @@ function RunDetail() {
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="border-border bg-card p-0 lg:col-span-2">
-          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
             <div>
               <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Peak table</div>
               <h2 className="text-sm font-semibold">
                 {usingDerivedPeaks
-                  ? "Detected peaks (from Auto-XIC) — click any row to extract its EIC"
-                  : "Detected peaks — click any row to extract its EIC"}
+                  ? "Library candidates (from Auto-XIC) — click any row to extract its EIC"
+                  : "Detected peaks (validated) — click any row to extract its EIC"}
               </h2>
             </div>
-            {usingDerivedPeaks && (
-              <Badge variant="outline" className="text-[10px]">derived</Badge>
-            )}
+            <div className="flex items-center gap-1 rounded-md border border-border bg-muted/30 p-0.5">
+              <button
+                onClick={() => setPeakTab("detected")}
+                className={`rounded px-2 py-1 text-[10px] uppercase tracking-wider ${peakTab === "detected" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"}`}
+              >
+                Detected ({run.peaks.length})
+              </button>
+              <button
+                onClick={() => setPeakTab("library")}
+                className={`rounded px-2 py-1 text-[10px] uppercase tracking-wider ${peakTab === "library" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"}`}
+              >
+                Library ({derivedPeaks.length})
+              </button>
+            </div>
           </div>
           <div className="p-3">
             {peaksForTable.length === 0 ? (
               <div className="rounded-md border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
-                No peaks detected on the raw run, and no Auto-XIC matches yet. Pick analytes above to extract candidate peaks.
+                {peakTab === "detected"
+                  ? "No peaks detected on the raw run. Switch to Library to extract analyte-targeted candidates."
+                  : "No Auto-XIC matches yet. Pick analytes above to extract candidate peaks."}
               </div>
             ) : (
               <PeakTable
