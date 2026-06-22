@@ -40,6 +40,10 @@ type State = {
   addPeakLocal: (runId: string, peak: Peak) => void;
   removeRunLocal: (id: string) => void;
   removeBatchLocal: (id: string) => void;
+  updateBatchNotesLocal: (batchId: string, notes: string) => void;
+  updateRunNotesLocal: (runId: string, notes: string) => void;
+  updatePeakNotesLocal: (runId: string, peakId: string, notes: string) => void;
+  setRunBatchLocal: (runId: string, batchId: string | null) => void;
 };
 
 export const useLab = create<State>((set) => ({
@@ -140,6 +144,26 @@ export const useLab = create<State>((set) => ({
     set((s) => ({
       batches: s.batches.filter((b) => b.id !== id),
       runs: s.runs.map((r) => (r.batchId === id ? { ...r, batchId: undefined } : r)),
+    })),
+  updateBatchNotesLocal: (batchId, notes) =>
+    set((s) => ({
+      batches: s.batches.map((b) => (b.id === batchId ? { ...b, notes } : b)),
+    })),
+  updateRunNotesLocal: (runId, notes) =>
+    set((s) => ({
+      runs: s.runs.map((r) => (r.id === runId ? { ...r, notes } : r)),
+    })),
+  updatePeakNotesLocal: (runId, peakId, notes) =>
+    set((s) => ({
+      runs: s.runs.map((r) =>
+        r.id === runId
+          ? { ...r, peaks: r.peaks.map((p) => (p.id === peakId ? { ...p, notes } : p)) }
+          : r,
+      ),
+    })),
+  setRunBatchLocal: (runId, batchId) =>
+    set((s) => ({
+      runs: s.runs.map((r) => (r.id === runId ? { ...r, batchId: batchId ?? undefined } : r)),
     })),
 }));
 

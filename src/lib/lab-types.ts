@@ -16,6 +16,8 @@ export type Peak = {
   r2?: number;
   /** Asymmetry factor at 10% height (1.0 = symmetric, >1 = tailing). */
   asymmetry?: number;
+  /** Free-text reviewer notes saved server-side. */
+  notes?: string;
 };
 
 export type Run = {
@@ -34,6 +36,7 @@ export type Run = {
   ionMode: "positive" | "negative";
   scansBlobPath?: string | null;
   msLevel?: number;
+  notes?: string;
 };
 
 export type GradientStep = { time: number; pctB: number; flow: number };
@@ -97,6 +100,7 @@ export type Batch = {
   runIds: string[];
   status: "in_progress" | "complete" | "review";
   owner: string;
+  notes?: string;
 };
 
 export type User = {

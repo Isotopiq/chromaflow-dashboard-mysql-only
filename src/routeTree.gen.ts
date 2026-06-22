@@ -36,6 +36,7 @@ import { Route as ShellMethodsNewRouteImport } from './routes/_shell.methods.new
 import { Route as ShellMethodsCompareRouteImport } from './routes/_shell.methods.compare'
 import { Route as ShellMethodsMethodIdRouteImport } from './routes/_shell.methods.$methodId'
 import { Route as ShellColumnsColumnIdRouteImport } from './routes/_shell.columns.$columnId'
+import { Route as ShellBatchesBatchIdRouteImport } from './routes/_shell.batches.$batchId'
 import { Route as ShellAnalytesAnalyteIdRouteImport } from './routes/_shell.analytes.$analyteId'
 
 const SignupRoute = SignupRouteImport.update({
@@ -172,6 +173,11 @@ const ShellColumnsColumnIdRoute = ShellColumnsColumnIdRouteImport.update({
   path: '/columns/$columnId',
   getParentRoute: () => ShellRoute,
 } as any)
+const ShellBatchesBatchIdRoute = ShellBatchesBatchIdRouteImport.update({
+  id: '/$batchId',
+  path: '/$batchId',
+  getParentRoute: () => ShellBatchesRoute,
+} as any)
 const ShellAnalytesAnalyteIdRoute = ShellAnalytesAnalyteIdRouteImport.update({
   id: '/$analyteId',
   path: '/$analyteId',
@@ -186,11 +192,12 @@ export interface FileRoutesByFullPath {
   '/account': typeof ShellAccountRoute
   '/admin': typeof ShellAdminRoute
   '/analytes': typeof ShellAnalytesRouteWithChildren
-  '/batches': typeof ShellBatchesRoute
+  '/batches': typeof ShellBatchesRouteWithChildren
   '/overlay': typeof ShellOverlayRoute
   '/reports': typeof ShellReportsRoute
   '/shared/$token': typeof SharedTokenRoute
   '/analytes/$analyteId': typeof ShellAnalytesAnalyteIdRoute
+  '/batches/$batchId': typeof ShellBatchesBatchIdRoute
   '/columns/$columnId': typeof ShellColumnsColumnIdRoute
   '/methods/$methodId': typeof ShellMethodsMethodIdRoute
   '/methods/compare': typeof ShellMethodsCompareRoute
@@ -214,12 +221,13 @@ export interface FileRoutesByTo {
   '/account': typeof ShellAccountRoute
   '/admin': typeof ShellAdminRoute
   '/analytes': typeof ShellAnalytesRouteWithChildren
-  '/batches': typeof ShellBatchesRoute
+  '/batches': typeof ShellBatchesRouteWithChildren
   '/overlay': typeof ShellOverlayRoute
   '/reports': typeof ShellReportsRoute
   '/shared/$token': typeof SharedTokenRoute
   '/': typeof ShellIndexRoute
   '/analytes/$analyteId': typeof ShellAnalytesAnalyteIdRoute
+  '/batches/$batchId': typeof ShellBatchesBatchIdRoute
   '/columns/$columnId': typeof ShellColumnsColumnIdRoute
   '/methods/$methodId': typeof ShellMethodsMethodIdRoute
   '/methods/compare': typeof ShellMethodsCompareRoute
@@ -245,12 +253,13 @@ export interface FileRoutesById {
   '/_shell/account': typeof ShellAccountRoute
   '/_shell/admin': typeof ShellAdminRoute
   '/_shell/analytes': typeof ShellAnalytesRouteWithChildren
-  '/_shell/batches': typeof ShellBatchesRoute
+  '/_shell/batches': typeof ShellBatchesRouteWithChildren
   '/_shell/overlay': typeof ShellOverlayRoute
   '/_shell/reports': typeof ShellReportsRoute
   '/shared/$token': typeof SharedTokenRoute
   '/_shell/': typeof ShellIndexRoute
   '/_shell/analytes/$analyteId': typeof ShellAnalytesAnalyteIdRoute
+  '/_shell/batches/$batchId': typeof ShellBatchesBatchIdRoute
   '/_shell/columns/$columnId': typeof ShellColumnsColumnIdRoute
   '/_shell/methods/$methodId': typeof ShellMethodsMethodIdRoute
   '/_shell/methods/compare': typeof ShellMethodsCompareRoute
@@ -282,6 +291,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/shared/$token'
     | '/analytes/$analyteId'
+    | '/batches/$batchId'
     | '/columns/$columnId'
     | '/methods/$methodId'
     | '/methods/compare'
@@ -311,6 +321,7 @@ export interface FileRouteTypes {
     | '/shared/$token'
     | '/'
     | '/analytes/$analyteId'
+    | '/batches/$batchId'
     | '/columns/$columnId'
     | '/methods/$methodId'
     | '/methods/compare'
@@ -341,6 +352,7 @@ export interface FileRouteTypes {
     | '/shared/$token'
     | '/_shell/'
     | '/_shell/analytes/$analyteId'
+    | '/_shell/batches/$batchId'
     | '/_shell/columns/$columnId'
     | '/_shell/methods/$methodId'
     | '/_shell/methods/compare'
@@ -564,6 +576,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellColumnsColumnIdRouteImport
       parentRoute: typeof ShellRoute
     }
+    '/_shell/batches/$batchId': {
+      id: '/_shell/batches/$batchId'
+      path: '/$batchId'
+      fullPath: '/batches/$batchId'
+      preLoaderRoute: typeof ShellBatchesBatchIdRouteImport
+      parentRoute: typeof ShellBatchesRoute
+    }
     '/_shell/analytes/$analyteId': {
       id: '/_shell/analytes/$analyteId'
       path: '/$analyteId'
@@ -586,11 +605,23 @@ const ShellAnalytesRouteWithChildren = ShellAnalytesRoute._addFileChildren(
   ShellAnalytesRouteChildren,
 )
 
+interface ShellBatchesRouteChildren {
+  ShellBatchesBatchIdRoute: typeof ShellBatchesBatchIdRoute
+}
+
+const ShellBatchesRouteChildren: ShellBatchesRouteChildren = {
+  ShellBatchesBatchIdRoute: ShellBatchesBatchIdRoute,
+}
+
+const ShellBatchesRouteWithChildren = ShellBatchesRoute._addFileChildren(
+  ShellBatchesRouteChildren,
+)
+
 interface ShellRouteChildren {
   ShellAccountRoute: typeof ShellAccountRoute
   ShellAdminRoute: typeof ShellAdminRoute
   ShellAnalytesRoute: typeof ShellAnalytesRouteWithChildren
-  ShellBatchesRoute: typeof ShellBatchesRoute
+  ShellBatchesRoute: typeof ShellBatchesRouteWithChildren
   ShellOverlayRoute: typeof ShellOverlayRoute
   ShellReportsRoute: typeof ShellReportsRoute
   ShellIndexRoute: typeof ShellIndexRoute
@@ -608,7 +639,7 @@ const ShellRouteChildren: ShellRouteChildren = {
   ShellAccountRoute: ShellAccountRoute,
   ShellAdminRoute: ShellAdminRoute,
   ShellAnalytesRoute: ShellAnalytesRouteWithChildren,
-  ShellBatchesRoute: ShellBatchesRoute,
+  ShellBatchesRoute: ShellBatchesRouteWithChildren,
   ShellOverlayRoute: ShellOverlayRoute,
   ShellReportsRoute: ShellReportsRoute,
   ShellIndexRoute: ShellIndexRoute,
