@@ -100,6 +100,7 @@ export type Batch = {
   runIds: string[];
   status: "in_progress" | "complete" | "review";
   owner: string;
+  notes?: string;
 };
 
 export type User = {
