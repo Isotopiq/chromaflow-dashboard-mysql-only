@@ -16,6 +16,8 @@ export type Peak = {
   r2?: number;
   /** Asymmetry factor at 10% height (1.0 = symmetric, >1 = tailing). */
   asymmetry?: number;
+  /** Free-text reviewer notes saved server-side. */
+  notes?: string;
 };
 
 export type Run = {
