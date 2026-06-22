@@ -266,15 +266,70 @@ function RunDetail() {
   };
 
 
+  const [suggestFilter, setSuggestFilter] = useState("");
+  const suggested = useMemo(() => {
+    const q = suggestFilter.trim().toLowerCase();
+    return analytes
+      .map((a) => {
+        const dRt = Math.abs(a.rtExpected - (selected?.rt ?? 0));
+        const dPpm = selected?.mz ? Math.abs((a.mz - selected.mz) / a.mz) * 1e6 : 999;
+        return { a, dRt, dPpm, score: dRt * 10 + Math.min(dPpm, 100) / 5 };
+      })
+      .filter(({ a }) =>
+        q ? a.name.toLowerCase().includes(q) || (a.formula ?? "").toLowerCase().includes(q) : true,
+      )
+      .sort((a, b) => a.score - b.score);
+  }, [analytes, selected?.rt, selected?.mz, suggestFilter]);
 
-  const suggested = analytes
-    .map((a) => {
-      const dRt = Math.abs(a.rtExpected - (selected?.rt ?? 0));
-      const dPpm = selected?.mz ? Math.abs((a.mz - selected.mz) / a.mz) * 1e6 : 999;
-      return { a, dRt, dPpm, score: dRt * 10 + Math.min(dPpm, 100) / 5 };
-    })
-    .sort((a, b) => a.score - b.score)
-    .slice(0, 4);
+  // Track in-flight Accept actions per target so the checkbox doesn't double-fire.
+  const [acceptingIds, setAcceptingIds] = useState<Set<string>>(new Set());
+  // A library target is "accepted" when run.peaks already contains a peak linked to its analyte id.
+  const acceptedAnalyteIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const p of run.peaks) if (p.analyteId) ids.add(p.analyteId);
+    return ids;
+  }, [run.peaks]);
+
+  const acceptAnnotation = async (
+    tr: { id: string; mz: number; mzLow: number; mzHigh: number; peakRt: number | null; peakIntensity: number; area: number; height: number; fwhm: number; sn: number },
+    t: { id: string; name: string } | undefined,
+  ) => {
+    if (!t || tr.peakRt == null || tr.peakIntensity <= 0) return;
+    if (acceptedAnalyteIds.has(t.id) || acceptingIds.has(t.id)) return;
+    setAcceptingIds((s) => new Set(s).add(t.id));
+    try {
+      const half = Math.max(tr.fwhm / 2, 0.01);
+      const { peak } = await addManualPeakFn({
+        data: {
+          runId: run.id,
+          rt: tr.peakRt,
+          rtStart: tr.peakRt - half,
+          rtEnd: tr.peakRt + half,
+          area: tr.area,
+          height: tr.height,
+          fwhm: tr.fwhm,
+          sn: tr.sn,
+          mz: tr.mz,
+          mzLow: tr.mzLow,
+          mzHigh: tr.mzHigh,
+          analyteId: t.id,
+          analyteName: t.name,
+        },
+      });
+      addPeakLocal(run.id, peak);
+      setPeakTab("detected");
+      setSelected(peak.id);
+      toast.success(`Accepted ${t.name} at RT ${peak.rt.toFixed(2)}`);
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed to accept annotation");
+    } finally {
+      setAcceptingIds((s) => {
+        const n = new Set(s);
+        n.delete(t.id);
+        return n;
+      });
+    }
+  };
 
   const downloadCsv = () => {
     const header = "rt,area,height,fwhm,sn,mz,mz_low,mz_high,annotation\n";
@@ -503,6 +558,7 @@ function RunDetail() {
                     <TableHead className="text-[10px] uppercase tracking-wider">ΔRT</TableHead>
                     <TableHead className="text-[10px] uppercase tracking-wider">Intensity</TableHead>
                     <TableHead className="text-[10px] uppercase tracking-wider">Status</TableHead>
+                    <TableHead className="text-[10px] uppercase tracking-wider">Accept</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -540,6 +596,29 @@ function RunDetail() {
                           </Badge>
                         ) : (
                           <Badge variant="outline" className="text-[10px]">drift</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        {tr.peakIntensity > 0 && tr.peakRt != null && t ? (
+                          <div className="flex items-center gap-1.5">
+                            <Checkbox
+                              checked={acceptedAnalyteIds.has(t.id)}
+                              disabled={acceptedAnalyteIds.has(t.id) || acceptingIds.has(t.id)}
+                              onCheckedChange={(v) => {
+                                if (v) acceptAnnotation(tr, t);
+                              }}
+                              aria-label={`Accept ${t.name} annotation`}
+                            />
+                            <span className="text-[10px] text-muted-foreground">
+                              {acceptedAnalyteIds.has(t.id)
+                                ? "added"
+                                : acceptingIds.has(t.id)
+                                  ? "saving…"
+                                  : "add to peaks"}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-muted-foreground">—</span>
                         )}
                       </TableCell>
                     </TableRow>
@@ -777,39 +856,54 @@ function RunDetail() {
                 </div>
               ) : (
                 <>
-                  <div className="mt-4 text-[10px] uppercase tracking-widest text-muted-foreground">
-                    Suggested matches (RT + m/z)
+                  <div className="mt-4 flex items-center justify-between gap-2">
+                    <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                      Library candidates (RT + m/z) · {suggested.length} of {analytes.length}
+                    </div>
                   </div>
-                  <div className="mt-2 space-y-1">
-                    {suggested.map(({ a, dRt, dPpm }) => (
-                      <button
-                        key={a.id}
-                        onClick={async () => {
-                          if (!selected) return;
-                          try {
-                            await annotatePeak(run.id, selected.id, a.name, a.id);
-                            toast.success(`Annotated as ${a.name}`);
-                          } catch (err: any) {
-                            toast.error(err?.message ?? "Failed");
-                          }
-                        }}
-                        className="flex w-full items-center justify-between rounded-md border border-border bg-surface-elevated px-2 py-1.5 text-left text-xs hover:border-primary/60"
-                      >
-                        <div>
-                          <div className="font-medium">{a.name}</div>
-                          <div className="font-mono text-[10px] text-muted-foreground">
-                            {a.formula} · {a.mz.toFixed(4)}
+                  <Input
+                    value={suggestFilter}
+                    onChange={(e) => setSuggestFilter(e.target.value)}
+                    placeholder="Filter by name or formula…"
+                    className="mt-2 h-8 text-xs"
+                  />
+                  <div className="mt-2 max-h-72 space-y-1 overflow-y-auto pr-1">
+                    {suggested.length === 0 ? (
+                      <div className="rounded-md border border-dashed border-border p-3 text-center text-[11px] text-muted-foreground">
+                        No analytes match this filter.
+                      </div>
+                    ) : (
+                      suggested.map(({ a, dRt, dPpm }) => (
+                        <button
+                          key={a.id}
+                          onClick={async () => {
+                            if (!selected) return;
+                            try {
+                              await annotatePeak(run.id, selected.id, a.name, a.id);
+                              toast.success(`Annotated as ${a.name}`);
+                            } catch (err: any) {
+                              toast.error(err?.message ?? "Failed");
+                            }
+                          }}
+                          className="flex w-full items-center justify-between rounded-md border border-border bg-surface-elevated px-2 py-1.5 text-left text-xs hover:border-primary/60"
+                        >
+                          <div>
+                            <div className="font-medium">{a.name}</div>
+                            <div className="font-mono text-[10px] text-muted-foreground">
+                              {a.formula} · {a.mz.toFixed(4)}
+                            </div>
                           </div>
-                        </div>
-                        <div className="flex flex-col items-end gap-0.5">
-                          <Badge variant="outline" className="text-[10px]">ΔRT {dRt.toFixed(2)}</Badge>
-                          <span className="font-mono text-[9px] text-muted-foreground">
-                            {dPpm < 999 ? `${dPpm.toFixed(0)} ppm` : "—"}
-                          </span>
-                        </div>
-                      </button>
-                    ))}
+                          <div className="flex flex-col items-end gap-0.5">
+                            <Badge variant="outline" className="text-[10px]">ΔRT {dRt.toFixed(2)}</Badge>
+                            <span className="font-mono text-[9px] text-muted-foreground">
+                              {dPpm < 999 ? `${dPpm.toFixed(0)} ppm` : "—"}
+                            </span>
+                          </div>
+                        </button>
+                      ))
+                    )}
                   </div>
+
 
                   <div className="mt-4 text-[10px] uppercase tracking-widest text-muted-foreground">Manual label</div>
                   <div className="mt-2 flex gap-2">
