@@ -238,8 +238,20 @@ function RunDetail() {
       })) as typeof run.peaks;
   }, [run.peaks, batchQuery.data, matchRows]);
 
-  const usingDerivedPeaks = run.peaks.length === 0 && derivedPeaks.length > 0;
-  const peaksForTable = usingDerivedPeaks ? derivedPeaks : run.peaks;
+  const [peakTab, setPeakTab] = useState<"detected" | "library">("detected");
+  const hasDetected = run.peaks.length > 0;
+  const hasLibrary = derivedPeaks.length > 0;
+  // Auto-switch to whichever tab has content when the other is empty.
+  useEffect(() => {
+    if (peakTab === "detected" && !hasDetected && hasLibrary) setPeakTab("library");
+    if (peakTab === "library" && !hasLibrary && hasDetected) setPeakTab("detected");
+  }, [peakTab, hasDetected, hasLibrary]);
+  const activePeaks = peakTab === "library" ? derivedPeaks : run.peaks;
+  const peaksForTable = useMemo(
+    () => activePeaks.slice().sort((a, b) => a.rt - b.rt),
+    [activePeaks],
+  );
+  const usingDerivedPeaks = peakTab === "library";
   const selectedDerived = derivedPeaks.find((p) => p.id === selectedId);
   const effectiveSelected = selected ?? selectedDerived;
 
