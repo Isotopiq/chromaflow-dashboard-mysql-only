@@ -140,6 +140,17 @@ function RunDetail() {
   }, [analytes, adduct]);
 
   const [enabledIds, setEnabledIds] = useState<Set<string>>(new Set());
+  const [targetFilter, setTargetFilter] = useState("");
+  const filteredTargets = useMemo(() => {
+    const q = targetFilter.trim().toLowerCase();
+    if (!q) return libraryTargets;
+    return libraryTargets.filter(
+      (t) =>
+        t.name.toLowerCase().includes(q) ||
+        (t.formula ?? "").toLowerCase().includes(q) ||
+        t.mz.toFixed(4).includes(q),
+    );
+  }, [libraryTargets, targetFilter]);
   // Initialize selection on first render to all targets within a reasonable mass range.
   useMemo(() => {
     if (enabledIds.size === 0 && libraryTargets.length > 0) {
