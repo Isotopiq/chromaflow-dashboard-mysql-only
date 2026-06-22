@@ -664,7 +664,9 @@ function RunDetail() {
                           },
                         });
                         addPeakLocal(run.id, peak);
-                        toast.success("Manual peak saved");
+                        setPeakTab("detected");
+                        setSelected(peak.id);
+                        toast.success(`Manual peak saved at RT ${peak.rt.toFixed(2)}`);
                         setIntegration(null);
                         setIntegrateMode(false);
                       } catch (e: any) {
