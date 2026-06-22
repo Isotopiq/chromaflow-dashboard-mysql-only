@@ -174,10 +174,19 @@ function ColumnDetail({ col }: { col: Column }) {
   const upsertFn = useServerFn(upsertColumn);
   const deleteFn = useServerFn(deleteColumn);
 
-  const linkedMethods = methods.filter((m) => m.columnId === col.id);
-  const linkedRuns = runs.filter((r) => r.columnId === col.id);
+  const linkedMethods = useMemo(
+    () => methods.filter((m) => m.columnId === col.id),
+    [methods, col.id],
+  );
+  const linkedRuns = useMemo(
+    () => runs.filter((r) => r.columnId === col.id),
+    [runs, col.id],
+  );
   const pct = Math.min(100, (col.injectionsUsed / col.ratedInjections) * 100);
-  const trend = col.pressureTrend.map((p, i) => ({ batch: `B${i + 1}`, p }));
+  const trend = useMemo(
+    () => col.pressureTrend.map((p, i) => ({ batch: `B${i + 1}`, p })),
+    [col.pressureTrend],
+  );
 
   const [editOpen, setEditOpen] = useState(false);
   const [maintOpen, setMaintOpen] = useState(false);
