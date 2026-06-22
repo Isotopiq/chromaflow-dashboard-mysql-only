@@ -339,7 +339,45 @@ export const createRun = createServerFn({ method: "POST" })
       );
       peakRows.push(r);
     }
-    return mapRun(run, peakRows.map(mapPeak));
+
+    // ---- Auto-annotate against the analyte library ----
+    // Hard m/z gate (10 ppm) AND RT gate (0.3 min). Best score wins per peak.
+    try {
+      const analytes = await db.many<any>(
+        "select id, name, mz, rt_expected from public.analytes");
+      const RT_TOL = 0.3;
+      const PPM_TOL = 10;
+      for (const pr of peakRows) {
+        if (pr.mz == null) continue;
+        let best: { a: any; score: number } | null = null;
+        for (const a of analytes) {
+          const amz = Number(a.mz);
+          if (!Number.isFinite(amz) || amz <= 0) continue;
+          const dPpm = Math.abs((Number(pr.mz) - amz) / amz) * 1e6;
+          if (dPpm > PPM_TOL) continue;
+          const dRt = Math.abs(Number(pr.rt) - Number(a.rt_expected));
+          if (dRt > RT_TOL) continue;
+          // Lower score = better; weight m/z heavier than RT.
+          const score = dPpm + dRt * 30;
+          if (!best || score < best.score) best = { a, score };
+        }
+        if (best) {
+          const conf = Math.max(0.5, 1 - best.score / 30);
+          const updated = await db.one<any>(
+            `update public.peaks set
+               analyte_id=$1, analyte_name=$2, annotated_by=$3,
+               annotation_source='auto', confidence=$4
+             where id=$5 returning *`,
+            [best.a.id, best.a.name, userId, conf, pr.id],
+          );
+          Object.assign(pr, updated);
+        }
+      }
+    } catch {
+      // Auto-annotation is best-effort; never fail the upload because of it.
+    }
+
+    return mapRun(run, peakRows.map(mapPeak).sort((a: any, b: any) => a.rt - b.rt));
   });
 
 const AnnotateInput = z.object({
