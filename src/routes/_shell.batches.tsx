@@ -42,8 +42,36 @@ function Batches() {
   const { batches, runs, users } = useLab();
   const removeBatchLocal = useLab((s) => s.removeBatchLocal);
   const removeRunLocal = useLab((s) => s.removeRunLocal);
+  const upsertBatchLocal = useLab((s) => s.upsertBatchLocal);
   const deleteBatchFn = useServerFn(deleteBatch);
+  const upsertBatchFn = useServerFn(upsertBatch);
   const qc = useQueryClient();
+
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [project, setProject] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function handleCreate() {
+    if (!name.trim()) {
+      toast.error("Name is required");
+      return;
+    }
+    setSaving(true);
+    try {
+      const b = await upsertBatchFn({ data: { name: name.trim(), project: project.trim() } });
+      upsertBatchLocal(b);
+      qc.invalidateQueries({ queryKey: ["lab"] });
+      toast.success(`Created batch ${b.name}`);
+      setOpen(false);
+      setName("");
+      setProject("");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed to create batch");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="flex flex-col gap-4 p-6">
@@ -57,9 +85,50 @@ function Batches() {
             Group runs and methods into experiments and release lots.
           </p>
         </div>
-        <Button size="sm">
-          <Plus className="mr-1 h-3.5 w-3.5" /> New batch
-        </Button>
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogTrigger asChild>
+            <Button size="sm">
+              <Plus className="mr-1 h-3.5 w-3.5" /> New batch
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>New batch</DialogTitle>
+              <DialogDescription>
+                Create a batch to group related runs and methods.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Label htmlFor="batch-name">Name</Label>
+                <Input
+                  id="batch-name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. QC-2026-06"
+                  autoFocus
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="batch-project">Project</Label>
+                <Input
+                  id="batch-project"
+                  value={project}
+                  onChange={(e) => setProject(e.target.value)}
+                  placeholder="Optional project tag"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setOpen(false)} disabled={saving}>
+                Cancel
+              </Button>
+              <Button onClick={handleCreate} disabled={saving}>
+                {saving ? "Creating…" : "Create batch"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
