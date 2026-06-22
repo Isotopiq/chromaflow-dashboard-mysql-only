@@ -23,6 +23,10 @@ export type WorkerPeak = {
   mz: number | null;
   mzLow: number | null;
   mzHigh: number | null;
+  /** Gaussian-fit R² (0–1). */
+  r2?: number;
+  /** Asymmetry factor at 10% height (1 = symmetric). */
+  asymmetry?: number;
 };
 
 export type WorkerRunSummary = {
