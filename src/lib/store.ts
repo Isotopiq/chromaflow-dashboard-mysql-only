@@ -40,6 +40,10 @@ type State = {
   addPeakLocal: (runId: string, peak: Peak) => void;
   removeRunLocal: (id: string) => void;
   removeBatchLocal: (id: string) => void;
+  updateBatchNotesLocal: (batchId: string, notes: string) => void;
+  updateRunNotesLocal: (runId: string, notes: string) => void;
+  updatePeakNotesLocal: (runId: string, peakId: string, notes: string) => void;
+  setRunBatchLocal: (runId: string, batchId: string | null) => void;
 };
 
 export const useLab = create<State>((set) => ({
