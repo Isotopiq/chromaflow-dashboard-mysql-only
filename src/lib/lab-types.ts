@@ -36,6 +36,7 @@ export type Run = {
   ionMode: "positive" | "negative";
   scansBlobPath?: string | null;
   msLevel?: number;
+  notes?: string;
 };
 
 export type GradientStep = { time: number; pctB: number; flow: number };
