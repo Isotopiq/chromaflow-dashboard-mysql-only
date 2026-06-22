@@ -1,7 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { useQuery } from "@tanstack/react-query";
 import { useLab } from "@/lib/store";
 import type { Column } from "@/lib/lab-types";
 import { Card } from "@/components/ui/card";
@@ -41,45 +40,46 @@ import {
   CartesianGrid,
   Tooltip,
 } from "recharts";
-import { upsertColumn, deleteColumn, getColumnById } from "@/lib/lab.functions";
+import { upsertColumn, deleteColumn } from "@/lib/lab.functions";
 import { ColumnFormDialog, type ColumnFormValues } from "@/components/column-form-dialog";
 
 export const Route = createFileRoute("/_shell/columns/$columnId")({
   component: ColumnDetailGate,
+  notFoundComponent: () => (
+    <div className="p-6 text-sm text-muted-foreground">Column not found.</div>
+  ),
 });
 
 function ColumnDetailGate() {
   const { columnId } = Route.useParams();
-  const { columns, hydrated, upsertColumnLocal } = useLab();
-  const localCol = columns.find((c) => c.id === columnId);
+  const { columns, hydrated } = useLab();
+  const column = columns.find((c) => c.id === columnId);
 
-  const fetchById = useServerFn(getColumnById);
-  const query = useQuery({
-    queryKey: ["column", columnId],
-    queryFn: async () => {
-      const c = await fetchById({ data: { id: columnId } });
-      if (c) upsertColumnLocal(c);
-      return c;
-    },
-    enabled: !localCol && hydrated,
-    staleTime: 30_000,
-  });
-
-  const col = localCol ?? query.data ?? null;
-
-  if (!col) {
-    if (!hydrated || query.isLoading || query.isFetching) {
-      return <ColumnRouteState title="Loading column…" />;
-    }
+  if (!column) {
     return (
       <ColumnRouteState
-        title="Column not found"
-        description="This column is no longer in the library or you may not have access to it."
-        diagnostics={{ columnId, total: columns.length, ids: columns.map((c) => c.id) }}
+        title={hydrated ? "Column not found" : "Loading column…"}
+        description={
+          hydrated ? "This column is no longer in the library or you may not have access to it." : undefined
+        }
+        diagnostics={
+          hydrated
+            ? {
+                columnId,
+                total: columns.length,
+                ids: columns.map((c) => c.id),
+              }
+            : {
+                columnId,
+                total: 0,
+                ids: [],
+              }
+        }
       />
     );
   }
-  return <ColumnDetail col={normalizeColumn(col)} />;
+
+  return <ColumnDetail col={normalizeColumn(column)} />;
 }
 
 function ColumnRouteState({
@@ -174,10 +174,19 @@ function ColumnDetail({ col }: { col: Column }) {
   const upsertFn = useServerFn(upsertColumn);
   const deleteFn = useServerFn(deleteColumn);
 
-  const linkedMethods = methods.filter((m) => m.columnId === col.id);
-  const linkedRuns = runs.filter((r) => r.columnId === col.id);
+  const linkedMethods = useMemo(
+    () => methods.filter((m) => m.columnId === col.id),
+    [methods, col.id],
+  );
+  const linkedRuns = useMemo(
+    () => runs.filter((r) => r.columnId === col.id),
+    [runs, col.id],
+  );
   const pct = Math.min(100, (col.injectionsUsed / col.ratedInjections) * 100);
-  const trend = col.pressureTrend.map((p, i) => ({ batch: `B${i + 1}`, p }));
+  const trend = useMemo(
+    () => col.pressureTrend.map((p, i) => ({ batch: `B${i + 1}`, p })),
+    [col.pressureTrend],
+  );
 
   const [editOpen, setEditOpen] = useState(false);
   const [maintOpen, setMaintOpen] = useState(false);

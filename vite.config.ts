@@ -16,7 +16,7 @@ const allowedHosts: true | string[] | undefined =
     ? true
     : raw
         ? raw.split(",").map((h) => h.trim()).filter(Boolean)
-        : undefined;
+        : true;
 
 export default defineConfig({
   nitro: {
