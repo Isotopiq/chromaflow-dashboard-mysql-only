@@ -558,6 +558,7 @@ function RunDetail() {
                     <TableHead className="text-[10px] uppercase tracking-wider">ΔRT</TableHead>
                     <TableHead className="text-[10px] uppercase tracking-wider">Intensity</TableHead>
                     <TableHead className="text-[10px] uppercase tracking-wider">Status</TableHead>
+                    <TableHead className="text-[10px] uppercase tracking-wider">Accept</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
