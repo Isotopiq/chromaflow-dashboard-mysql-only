@@ -88,6 +88,7 @@ export function mapRun(r: any, peaks: Peak[] = []): Run {
     ionMode: (s.ionMode as Run["ionMode"]) ?? "positive",
     scansBlobPath: r.scans_blob_path ?? null,
     msLevel: r.ms_level ?? 1,
+    notes: r.notes ?? "",
   };
 }
 
@@ -99,8 +100,9 @@ export function mapBatch(r: any, runIds: string[] = []): Batch {
     startedAt: r.started_at,
     sampleCount: runIds.length,
     runIds,
-    status: "in_progress",
+    status: (r.status as Batch["status"]) ?? "in_progress",
     owner: r.owner_id ?? "",
+    notes: r.notes ?? "",
   };
 }
 
