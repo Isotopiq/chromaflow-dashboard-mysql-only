@@ -856,39 +856,54 @@ function RunDetail() {
                 </div>
               ) : (
                 <>
-                  <div className="mt-4 text-[10px] uppercase tracking-widest text-muted-foreground">
-                    Suggested matches (RT + m/z)
+                  <div className="mt-4 flex items-center justify-between gap-2">
+                    <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                      Library candidates (RT + m/z) · {suggested.length} of {analytes.length}
+                    </div>
                   </div>
-                  <div className="mt-2 space-y-1">
-                    {suggested.map(({ a, dRt, dPpm }) => (
-                      <button
-                        key={a.id}
-                        onClick={async () => {
-                          if (!selected) return;
-                          try {
-                            await annotatePeak(run.id, selected.id, a.name, a.id);
-                            toast.success(`Annotated as ${a.name}`);
-                          } catch (err: any) {
-                            toast.error(err?.message ?? "Failed");
-                          }
-                        }}
-                        className="flex w-full items-center justify-between rounded-md border border-border bg-surface-elevated px-2 py-1.5 text-left text-xs hover:border-primary/60"
-                      >
-                        <div>
-                          <div className="font-medium">{a.name}</div>
-                          <div className="font-mono text-[10px] text-muted-foreground">
-                            {a.formula} · {a.mz.toFixed(4)}
+                  <Input
+                    value={suggestFilter}
+                    onChange={(e) => setSuggestFilter(e.target.value)}
+                    placeholder="Filter by name or formula…"
+                    className="mt-2 h-8 text-xs"
+                  />
+                  <div className="mt-2 max-h-72 space-y-1 overflow-y-auto pr-1">
+                    {suggested.length === 0 ? (
+                      <div className="rounded-md border border-dashed border-border p-3 text-center text-[11px] text-muted-foreground">
+                        No analytes match this filter.
+                      </div>
+                    ) : (
+                      suggested.map(({ a, dRt, dPpm }) => (
+                        <button
+                          key={a.id}
+                          onClick={async () => {
+                            if (!selected) return;
+                            try {
+                              await annotatePeak(run.id, selected.id, a.name, a.id);
+                              toast.success(`Annotated as ${a.name}`);
+                            } catch (err: any) {
+                              toast.error(err?.message ?? "Failed");
+                            }
+                          }}
+                          className="flex w-full items-center justify-between rounded-md border border-border bg-surface-elevated px-2 py-1.5 text-left text-xs hover:border-primary/60"
+                        >
+                          <div>
+                            <div className="font-medium">{a.name}</div>
+                            <div className="font-mono text-[10px] text-muted-foreground">
+                              {a.formula} · {a.mz.toFixed(4)}
+                            </div>
                           </div>
-                        </div>
-                        <div className="flex flex-col items-end gap-0.5">
-                          <Badge variant="outline" className="text-[10px]">ΔRT {dRt.toFixed(2)}</Badge>
-                          <span className="font-mono text-[9px] text-muted-foreground">
-                            {dPpm < 999 ? `${dPpm.toFixed(0)} ppm` : "—"}
-                          </span>
-                        </div>
-                      </button>
-                    ))}
+                          <div className="flex flex-col items-end gap-0.5">
+                            <Badge variant="outline" className="text-[10px]">ΔRT {dRt.toFixed(2)}</Badge>
+                            <span className="font-mono text-[9px] text-muted-foreground">
+                              {dPpm < 999 ? `${dPpm.toFixed(0)} ppm` : "—"}
+                            </span>
+                          </div>
+                        </button>
+                      ))
+                    )}
                   </div>
+
 
                   <div className="mt-4 text-[10px] uppercase tracking-widest text-muted-foreground">Manual label</div>
                   <div className="mt-2 flex gap-2">
