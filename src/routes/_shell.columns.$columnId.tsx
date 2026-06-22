@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { useLab } from "@/lib/store";
@@ -46,40 +46,56 @@ import { ColumnFormDialog, type ColumnFormValues } from "@/components/column-for
 
 export const Route = createFileRoute("/_shell/columns/$columnId")({
   component: ColumnDetailGate,
+  notFoundComponent: () => (
+    <div className="p-6 text-sm text-muted-foreground">Column not found.</div>
+  ),
 });
 
 function ColumnDetailGate() {
   const { columnId } = Route.useParams();
   const { columns, hydrated, upsertColumnLocal } = useLab();
-  const localCol = columns.find((c) => c.id === columnId);
+  const localColumn = columns.find((c) => c.id === columnId);
 
-  const fetchById = useServerFn(getColumnById);
-  const query = useQuery({
-    queryKey: ["column", columnId],
-    queryFn: async () => {
-      const c = await fetchById({ data: { id: columnId } });
-      if (c) upsertColumnLocal(c);
-      return c;
-    },
-    enabled: !localCol && hydrated,
+  const getColumn = useServerFn(getColumnById);
+  const columnQuery = useQuery({
+    queryKey: ["column-detail", columnId],
+    queryFn: () => getColumn({ data: { id: columnId } }),
+    enabled: hydrated && !localColumn,
+    retry: false,
     staleTime: 30_000,
   });
 
-  const col = localCol ?? query.data ?? null;
+  useEffect(() => {
+    if (columnQuery.data) upsertColumnLocal(columnQuery.data);
+  }, [columnQuery.data, upsertColumnLocal]);
 
-  if (!col) {
-    if (!hydrated || query.isLoading || query.isFetching) {
-      return <ColumnRouteState title="Loading column…" />;
-    }
+  const column = localColumn ?? columnQuery.data ?? null;
+
+  if (!column) {
+    const loading = !hydrated || columnQuery.isLoading || columnQuery.isFetching;
     return (
       <ColumnRouteState
-        title="Column not found"
-        description="This column is no longer in the library or you may not have access to it."
-        diagnostics={{ columnId, total: columns.length, ids: columns.map((c) => c.id) }}
+        title={loading ? "Loading column…" : "Column not found"}
+        description={
+          loading
+            ? undefined
+            : "This column is no longer in the library or you may not have access to it."
+        }
+        diagnostics={
+          loading
+            ? undefined
+            : {
+                columnId,
+                total: columns.length,
+                ids: columns.map((c) => c.id),
+                error: columnQuery.error instanceof Error ? columnQuery.error.message : undefined,
+              }
+        }
       />
     );
   }
-  return <ColumnDetail col={normalizeColumn(col)} />;
+
+  return <ColumnDetail col={normalizeColumn(column)} />;
 }
 
 function ColumnRouteState({
@@ -89,7 +105,7 @@ function ColumnRouteState({
 }: {
   title: string;
   description?: string;
-  diagnostics?: { columnId: string; total: number; ids: string[] };
+  diagnostics?: { columnId: string; total: number; ids: string[]; error?: string };
 }) {
   return (
     <div className="flex flex-col gap-3 p-6">
@@ -110,6 +126,11 @@ function ColumnRouteState({
             <div>
               <span className="text-foreground">Columns loaded:</span> {diagnostics.total}
             </div>
+            {diagnostics.error && (
+              <div className="break-all">
+                <span className="text-foreground">Server fallback:</span> {diagnostics.error}
+              </div>
+            )}
             {diagnostics.total > 0 && (
               <div className="break-all">
                 <span className="text-foreground">First IDs:</span>{" "}
