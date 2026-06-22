@@ -238,8 +238,20 @@ function RunDetail() {
       })) as typeof run.peaks;
   }, [run.peaks, batchQuery.data, matchRows]);
 
-  const usingDerivedPeaks = run.peaks.length === 0 && derivedPeaks.length > 0;
-  const peaksForTable = usingDerivedPeaks ? derivedPeaks : run.peaks;
+  const [peakTab, setPeakTab] = useState<"detected" | "library">("detected");
+  const hasDetected = run.peaks.length > 0;
+  const hasLibrary = derivedPeaks.length > 0;
+  // Auto-switch to whichever tab has content when the other is empty.
+  useEffect(() => {
+    if (peakTab === "detected" && !hasDetected && hasLibrary) setPeakTab("library");
+    if (peakTab === "library" && !hasLibrary && hasDetected) setPeakTab("detected");
+  }, [peakTab, hasDetected, hasLibrary]);
+  const activePeaks = peakTab === "library" ? derivedPeaks : run.peaks;
+  const peaksForTable = useMemo(
+    () => activePeaks.slice().sort((a, b) => a.rt - b.rt),
+    [activePeaks],
+  );
+  const usingDerivedPeaks = peakTab === "library";
   const selectedDerived = derivedPeaks.find((p) => p.id === selectedId);
   const effectiveSelected = selected ?? selectedDerived;
 
@@ -652,7 +664,9 @@ function RunDetail() {
                           },
                         });
                         addPeakLocal(run.id, peak);
-                        toast.success("Manual peak saved");
+                        setPeakTab("detected");
+                        setSelected(peak.id);
+                        toast.success(`Manual peak saved at RT ${peak.rt.toFixed(2)}`);
                         setIntegration(null);
                         setIntegrateMode(false);
                       } catch (e: any) {
@@ -690,23 +704,36 @@ function RunDetail() {
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="border-border bg-card p-0 lg:col-span-2">
-          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
             <div>
               <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Peak table</div>
               <h2 className="text-sm font-semibold">
                 {usingDerivedPeaks
-                  ? "Detected peaks (from Auto-XIC) — click any row to extract its EIC"
-                  : "Detected peaks — click any row to extract its EIC"}
+                  ? "Library candidates (from Auto-XIC) — click any row to extract its EIC"
+                  : "Detected peaks (validated) — click any row to extract its EIC"}
               </h2>
             </div>
-            {usingDerivedPeaks && (
-              <Badge variant="outline" className="text-[10px]">derived</Badge>
-            )}
+            <div className="flex items-center gap-1 rounded-md border border-border bg-muted/30 p-0.5">
+              <button
+                onClick={() => setPeakTab("detected")}
+                className={`rounded px-2 py-1 text-[10px] uppercase tracking-wider ${peakTab === "detected" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"}`}
+              >
+                Detected ({run.peaks.length})
+              </button>
+              <button
+                onClick={() => setPeakTab("library")}
+                className={`rounded px-2 py-1 text-[10px] uppercase tracking-wider ${peakTab === "library" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"}`}
+              >
+                Library ({derivedPeaks.length})
+              </button>
+            </div>
           </div>
           <div className="p-3">
             {peaksForTable.length === 0 ? (
               <div className="rounded-md border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
-                No peaks detected on the raw run, and no Auto-XIC matches yet. Pick analytes above to extract candidate peaks.
+                {peakTab === "detected"
+                  ? "No peaks detected on the raw run. Switch to Library to extract analyte-targeted candidates."
+                  : "No Auto-XIC matches yet. Pick analytes above to extract candidate peaks."}
               </div>
             ) : (
               <PeakTable

@@ -96,7 +96,9 @@ export const useLab = create<State>((set) => ({
   addPeakLocal: (runId, peak) =>
     set((s) => ({
       runs: s.runs.map((r) =>
-        r.id === runId ? { ...r, peaks: [...r.peaks, peak] } : r,
+        r.id === runId
+          ? { ...r, peaks: [...r.peaks, peak].sort((a, b) => a.rt - b.rt) }
+          : r,
       ),
     })),
   annotatePeakLocal: (runId, peakId, label, analyteId) =>
