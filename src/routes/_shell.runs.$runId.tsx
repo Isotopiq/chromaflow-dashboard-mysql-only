@@ -491,38 +491,78 @@ function RunDetail() {
           </div>
         </div>
 
-        <div className="mb-3 flex flex-wrap gap-1.5">
-          {libraryTargets.length === 0 ? (
-            <div className="text-xs text-muted-foreground">
-              No analytes in library. Add analytes manually or upload a CSV from the Analytes page.
+        {libraryTargets.length === 0 ? (
+          <div className="text-xs text-muted-foreground">
+            No analytes in library. Add analytes manually or upload a CSV from the Analytes page.
+          </div>
+        ) : (
+          <>
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <Input
+                value={targetFilter}
+                onChange={(e) => setTargetFilter(e.target.value)}
+                placeholder={`Search ${libraryTargets.length} analytes by name, formula, or m/z…`}
+                className="h-8 flex-1 min-w-[200px] text-xs"
+              />
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                {enabledIds.size} selected
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs"
+                onClick={() => {
+                  const next = new Set(enabledIds);
+                  for (const t of filteredTargets) next.add(t.id);
+                  setEnabledIds(next);
+                }}
+              >
+                Select{targetFilter ? " filtered" : " all"}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs"
+                onClick={() => setEnabledIds(new Set())}
+              >
+                Clear
+              </Button>
             </div>
-          ) : (
-            libraryTargets.map((t) => {
-              const checked = enabledIds.has(t.id);
-              return (
-                <label
-                  key={t.id}
-                  className={`flex cursor-pointer items-center gap-1.5 rounded-md border px-2 py-1 text-xs ${
-                    checked ? "border-primary bg-primary/10" : "border-border"
-                  }`}
-                >
-                  <Checkbox
-                    checked={checked}
-                    onCheckedChange={(v) => {
-                      const next = new Set(enabledIds);
-                      if (v) next.add(t.id);
-                      else next.delete(t.id);
-                      setEnabledIds(next);
-                    }}
-                  />
-                  <span>{t.name}</span>
-                  <span className="font-mono text-[10px] text-muted-foreground">
-                    {t.mz.toFixed(4)}
-                  </span>
-                </label>
-              );
-            })
-          )}
+            <div className="mb-3 flex max-h-64 flex-wrap gap-1.5 overflow-y-auto rounded-md border border-border bg-surface-elevated/40 p-2">
+              {filteredTargets.length === 0 ? (
+                <div className="w-full p-4 text-center text-xs text-muted-foreground">
+                  No analytes match “{targetFilter}”.
+                </div>
+              ) : (
+                filteredTargets.map((t) => {
+                  const checked = enabledIds.has(t.id);
+                  return (
+                    <label
+                      key={t.id}
+                      className={`flex cursor-pointer items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition-colors ${
+                        checked ? "border-primary bg-primary/10" : "border-border hover:border-primary/40"
+                      }`}
+                    >
+                      <Checkbox
+                        checked={checked}
+                        onCheckedChange={(v) => {
+                          const next = new Set(enabledIds);
+                          if (v) next.add(t.id);
+                          else next.delete(t.id);
+                          setEnabledIds(next);
+                        }}
+                      />
+                      <span>{t.name}</span>
+                      <span className="font-mono text-[10px] text-muted-foreground">
+                        {t.mz.toFixed(4)}
+                      </span>
+                    </label>
+                  );
+                })
+              )}
+            </div>
+          </>
+        )}
         </div>
 
         {!run.scansBlobPath ? (
