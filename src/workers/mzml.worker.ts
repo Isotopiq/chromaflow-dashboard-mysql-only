@@ -650,7 +650,8 @@ async function parseMzML(text: string): Promise<{ summary: WorkerRunSummary; sca
   }
 
   // Merge near-duplicates: ±5 ppm AND <=0.05 min rt.
-  allPeaks.sort((a, b) => b.area - a.area);
+  // Prefer the higher-R² candidate (tie: larger area).
+  allPeaks.sort((a, b) => (b.r2 - a.r2) || (b.area - a.area));
   const kept: TracePeak[] = [];
   for (const p of allPeaks) {
     const tol = (p.mz * 5) / 1e6;
@@ -672,6 +673,8 @@ async function parseMzML(text: string): Promise<{ summary: WorkerRunSummary; sca
     mz: p.mz,
     mzLow: p.mzLow,
     mzHigh: p.mzHigh,
+    r2: p.r2,
+    asymmetry: p.asymmetry,
   }));
 
   const summary: WorkerRunSummary = {
