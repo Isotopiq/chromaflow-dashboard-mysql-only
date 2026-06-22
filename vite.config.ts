@@ -11,13 +11,12 @@ import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 // Set ALLOWED_HOSTS=all to disable the host check entirely (safe only
 // behind a trusted reverse proxy).
 const raw = (process.env.ALLOWED_HOSTS ?? process.env.VITE_ALLOWED_HOSTS ?? "").trim();
-const lovablePreviewHosts = [".lovableproject.com", ".lovable.app"];
 const allowedHosts: true | string[] | undefined =
   raw.toLowerCase() === "all"
     ? true
     : raw
-        ? [...lovablePreviewHosts, ...raw.split(",").map((h) => h.trim()).filter(Boolean)]
-        : lovablePreviewHosts;
+        ? raw.split(",").map((h) => h.trim()).filter(Boolean)
+        : true;
 
 export default defineConfig({
   nitro: {
