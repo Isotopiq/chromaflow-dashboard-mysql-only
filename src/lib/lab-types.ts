@@ -12,6 +12,10 @@ export type Peak = {
   analyteName?: string;
   confidence?: number;
   manual?: boolean;
+  /** Gaussian-fit R² of the peak shape (0–1). Higher = more peak-like. */
+  r2?: number;
+  /** Asymmetry factor at 10% height (1.0 = symmetric, >1 = tailing). */
+  asymmetry?: number;
 };
 
 export type Run = {
