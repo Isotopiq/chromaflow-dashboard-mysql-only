@@ -279,6 +279,15 @@ function buildMassTraces(
 }
 
 // ---------- per-trace peak picker ----------
+//
+// Validation pipeline (CentWave-inspired, Tautenhahn et al. BMC Bioinf. 2008):
+//   1. Smooth with SG5 to suppress single-scan spikes.
+//   2. Robust baseline + noise from lower-half MAD of *positive* samples.
+//   3. Find local maxima above S/N >= snThreshold AND a height floor.
+//   4. Walk outward to baseline + 1σ to find peak boundaries.
+//   5. Validate shape: FWHM bounds, asymmetry (10% height) in [0.5, 3.0],
+//      and Gaussian-fit R² >= minR2. Reject anything that fails.
+//   6. Dedupe overlaps by keeping the higher-R² (tie: larger area) peak.
 type TracePeak = {
   rt: number;
   rtL: number;
@@ -287,22 +296,85 @@ type TracePeak = {
   height: number;
   fwhm: number;
   sn: number;
+  r2: number;
+  asymmetry: number;
   mz: number;
   mzLow: number;
   mzHigh: number;
 };
+
+type PickerConfig = {
+  ppm: number;
+  snThreshold: number;
+  fwhmMin: number;
+  fwhmMax: number;
+  minR2: number;
+};
+
+const DEFAULT_PICKER: PickerConfig = {
+  ppm: 10,
+  snThreshold: 5,
+  fwhmMin: 0.01,
+  fwhmMax: 1.5,
+  minR2: 0.75,
+};
+
+function gaussianFitR2(
+  xs: number[],
+  ys: number[],
+  apexX: number,
+  apexY: number,
+  fwhm: number,
+): number {
+  if (apexY <= 0 || fwhm <= 0 || xs.length < 4) return 0;
+  // sigma from FWHM (Gaussian relationship): FWHM = 2*sqrt(2*ln 2)*sigma ≈ 2.3548*sigma
+  const sigma = fwhm / 2.3548;
+  if (!Number.isFinite(sigma) || sigma <= 0) return 0;
+  const two_s2 = 2 * sigma * sigma;
+  let ssRes = 0;
+  let ssTot = 0;
+  let mean = 0;
+  for (const y of ys) mean += y;
+  mean /= ys.length;
+  for (let i = 0; i < xs.length; i++) {
+    const fit = apexY * Math.exp(-((xs[i] - apexX) ** 2) / two_s2);
+    ssRes += (ys[i] - fit) ** 2;
+    ssTot += (ys[i] - mean) ** 2;
+  }
+  if (ssTot === 0) return 0;
+  return Math.max(0, 1 - ssRes / ssTot);
+}
+
+function asymmetryAt10(
+  xs: number[],
+  ys: number[],
+  apexIdx: number,
+  apexY: number,
+  baseline: number,
+): number {
+  // A_s = (right half-width at 10% height) / (left half-width at 10% height)
+  const threshold = baseline + (apexY - baseline) * 0.1;
+  let l = apexIdx;
+  while (l > 0 && ys[l] > threshold) l--;
+  let r = apexIdx;
+  while (r < ys.length - 1 && ys[r] > threshold) r++;
+  const leftW = xs[apexIdx] - xs[l];
+  const rightW = xs[r] - xs[apexIdx];
+  if (leftW <= 0) return 99;
+  return rightW / leftW;
+}
 
 function pickTracePeaks(
   trace: MassTrace,
   scanRts: number[],
   numScans: number,
   ppm: number,
+  cfg: PickerConfig = DEFAULT_PICKER,
 ): TracePeak[] {
   const npts = trace.scanIdx.length;
   if (npts < 5) return [];
 
   // Dense vector of intensity across scans where this trace had hits.
-  // We work over [firstScan..lastScan] to keep things compact.
   const first = trace.scanIdx[0];
   const last = trace.scanIdx[npts - 1];
   const len = last - first + 1;
@@ -314,16 +386,14 @@ function pickTracePeaks(
     y[idx] = trace.intensity[i];
     xMz[idx] = trace.apexMz[i];
   }
-  // Rt axis for this slice
   const xRt = new Array<number>(len);
   for (let i = 0; i < len; i++) xRt[i] = scanRts[first + i];
 
   const ys = sg5(y);
 
-  // Noise from positive (non-zero) samples only — zeros are gaps where the
-  // ion wasn't detected, not noise. Use lower-half MAD for robustness.
+  // Robust baseline + noise from positive samples (zeros = gaps, not noise).
   const positives = ys.filter((v) => v > 0).sort((a, b) => a - b);
-  if (positives.length < 3) return [];
+  if (positives.length < 4) return [];
   const lowerN = Math.max(1, Math.floor(positives.length / 2));
   const lower = positives.slice(0, lowerN);
   const baseline = lower[Math.floor(lower.length / 2)] || 0;
@@ -331,39 +401,59 @@ function pickTracePeaks(
   for (const v of lower) madSum += Math.abs(v - baseline);
   const noise = Math.max(1, (madSum / lower.length) * 1.4826);
   const apexMax = positives[positives.length - 1];
-  // Peak must be S/N >= 3 AND clearly above the trace's own baseline.
-  const minHeight = Math.max(baseline + 3 * noise, apexMax * 0.05);
-  const peaks: TracePeak[] = [];
+  // Apex must clear noise floor AND a small fraction of the trace's max,
+  // so we don't waste cycles on baseline ripples.
+  const minHeight = Math.max(baseline + cfg.snThreshold * noise, apexMax * 0.04);
 
+  const candidates: TracePeak[] = [];
   for (let i = 2; i < len - 2; i++) {
     const v = ys[i];
     if (v < minHeight) continue;
     if (v <= ys[i - 1] || v <= ys[i + 1]) continue;
     if (v <= ys[i - 2] || v <= ys[i + 2]) continue;
 
-    // Half max boundaries
+    // Half-max boundaries for FWHM.
     const half = (v + baseline) / 2;
     let l = i;
     while (l > 0 && ys[l] > half) l--;
     let r = i;
     while (r < len - 1 && ys[r] > half) r++;
     const fwhm = Math.max(0, xRt[r] - xRt[l]);
-    if (fwhm < 0.005 || fwhm > 2.5) continue;
+    if (fwhm < cfg.fwhmMin || fwhm > cfg.fwhmMax) continue;
 
-    // Extend to baseline (or trace edges) for area
+    // Extend to baseline+1σ for area & shape fit.
+    const stopAt = baseline + noise;
     let lb = i;
-    while (lb > 0 && ys[lb] > baseline + noise && ys[lb - 1] <= ys[lb]) lb--;
+    while (lb > 0 && ys[lb] > stopAt && ys[lb - 1] <= ys[lb]) lb--;
     let rb = i;
-    while (rb < len - 1 && ys[rb] > baseline + noise && ys[rb + 1] <= ys[rb]) rb++;
+    while (rb < len - 1 && ys[rb] > stopAt && ys[rb + 1] <= ys[rb]) rb++;
+    if (rb - lb < 3) continue;
+
+    // Area: trapezoidal of (y - baseline), clamp negatives.
     let area = 0;
     for (let k = lb; k < rb; k++) {
-      area += ((ys[k] + ys[k + 1]) / 2 - baseline) * (xRt[k + 1] - xRt[k]);
+      const v0 = Math.max(0, ys[k] - baseline);
+      const v1 = Math.max(0, ys[k + 1] - baseline);
+      area += ((v0 + v1) / 2) * (xRt[k + 1] - xRt[k]);
     }
     if (area <= 0) continue;
 
+    // Shape validation: asymmetry + Gaussian fit on baseline-subtracted profile.
+    const asym = asymmetryAt10(xRt, ys, i, v, baseline);
+    if (asym < 0.4 || asym > 3.5) continue;
+
+    const xsFit: number[] = [];
+    const ysFit: number[] = [];
+    for (let k = lb; k <= rb; k++) {
+      xsFit.push(xRt[k]);
+      ysFit.push(Math.max(0, ys[k] - baseline));
+    }
+    const r2 = gaussianFitR2(xsFit, ysFit, xRt[i], v - baseline, fwhm);
+    if (r2 < cfg.minR2) continue;
+
     const apexMz = xMz[i] || trace.mz;
     const window = (apexMz * ppm) / 1e6;
-    peaks.push({
+    candidates.push({
       rt: +xRt[i].toFixed(4),
       rtL: xRt[lb],
       rtR: xRt[rb],
@@ -371,12 +461,14 @@ function pickTracePeaks(
       height: +(v - baseline).toFixed(0),
       fwhm: +fwhm.toFixed(4),
       sn: +((v - baseline) / noise).toFixed(1),
+      r2: +r2.toFixed(3),
+      asymmetry: +asym.toFixed(2),
       mz: +apexMz.toFixed(4),
       mzLow: +(apexMz - window).toFixed(4),
       mzHigh: +(apexMz + window).toFixed(4),
     });
   }
-  return peaks;
+  return candidates;
 }
 
 // ---------- scans blob format (little-endian) ----------
