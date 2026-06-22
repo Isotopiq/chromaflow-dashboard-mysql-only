@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Peak } from "@/lib/lab-types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -20,6 +20,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+
+type SortKey = "rt" | "area" | "height" | "fwhm" | "sn" | "r2" | "mz";
+type SortDir = "asc" | "desc";
 
 export function PeakTable({
   peaks,
@@ -36,20 +39,55 @@ export function PeakTable({
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [pageSize, setPageSize] = useState<number>(25);
   const [page, setPage] = useState<number>(1);
+  const [sortKey, setSortKey] = useState<SortKey>("rt");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [annotatedOnly, setAnnotatedOnly] = useState(false);
 
-  const totalPages = Math.max(1, Math.ceil(peaks.length / pageSize));
+  const hasR2 = useMemo(() => peaks.some((p) => p.r2 != null), [peaks]);
+
+  const filtered = useMemo(
+    () => (annotatedOnly ? peaks.filter((p) => !!p.analyteName) : peaks),
+    [peaks, annotatedOnly],
+  );
+
+  const sorted = useMemo(() => {
+    const arr = filtered.slice();
+    const sign = sortDir === "asc" ? 1 : -1;
+    arr.sort((a, b) => {
+      const av = (a[sortKey] as number | undefined) ?? 0;
+      const bv = (b[sortKey] as number | undefined) ?? 0;
+      return (av - bv) * sign;
+    });
+    return arr;
+  }, [filtered, sortKey, sortDir]);
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
 
+  // When selection changes, page to the selected row so it's actually visible.
+  useEffect(() => {
+    if (!selectedId) return;
+    const idx = sorted.findIndex((p) => p.id === selectedId);
+    if (idx < 0) return;
+    const targetPage = Math.floor(idx / pageSize) + 1;
+    if (targetPage !== page) setPage(targetPage);
+  }, [selectedId, sorted, pageSize]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const pagedPeaks = useMemo(
-    () => peaks.slice((page - 1) * pageSize, page * pageSize),
-    [peaks, page, pageSize],
+    () => sorted.slice((page - 1) * pageSize, page * pageSize),
+    [sorted, page, pageSize],
   );
 
+  const selectedRowRef = useRef<HTMLTableRowElement | null>(null);
+  useEffect(() => {
+    selectedRowRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [selectedId, page]);
+
   const assignedIds = useMemo(
-    () => peaks.filter((p) => p.analyteName).map((p) => p.id),
-    [peaks],
+    () => sorted.filter((p) => p.analyteName).map((p) => p.id),
+    [sorted],
   );
   const allAssignedChecked =
     assignedIds.length > 0 && assignedIds.every((id) => checked.has(id));
@@ -84,15 +122,59 @@ export function PeakTable({
     });
   };
 
+  const sortBy = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir(key === "rt" ? "asc" : "desc");
+    }
+    setPage(1);
+  };
+
+  const Th = ({ k, label }: { k: SortKey; label: string }) => (
+    <TableHead className="h-8 text-[10px] uppercase tracking-wider">
+      <button
+        onClick={() => sortBy(k)}
+        className="inline-flex items-center gap-1 hover:text-foreground"
+      >
+        {label}
+        {sortKey === k && (
+          sortDir === "asc"
+            ? <ArrowUp className="h-3 w-3" />
+            : <ArrowDown className="h-3 w-3" />
+        )}
+      </button>
+    </TableHead>
+  );
+
+  const annotatedCount = useMemo(
+    () => peaks.filter((p) => p.analyteName).length,
+    [peaks],
+  );
+
   return (
     <div className="space-y-2">
-      {onUnassign && (
-        <div className="flex items-center justify-between gap-2 px-1">
-          <span className="text-[10px] text-muted-foreground">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+        <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+          <span>
             {checked.size > 0
               ? `${checked.size} selected`
-              : `${assignedIds.length} assigned`}
+              : `${sorted.length} of ${peaks.length} · ${annotatedCount} annotated`}
           </span>
+          <label className="flex cursor-pointer items-center gap-1.5">
+            <Checkbox
+              checked={annotatedOnly}
+              onCheckedChange={(v) => {
+                setAnnotatedOnly(!!v);
+                setPage(1);
+              }}
+              aria-label="Show annotated only"
+            />
+            <span>Annotated only</span>
+          </label>
+        </div>
+        {onUnassign && (
           <Button
             size="sm"
             variant="outline"
@@ -103,8 +185,8 @@ export function PeakTable({
             <Trash2 className="mr-1 h-3 w-3" />
             Clear assignment{checked.size === 1 ? "" : "s"}
           </Button>
-        </div>
-      )}
+        )}
+      </div>
       <div className="overflow-hidden rounded-md border border-border">
         <Table>
           <TableHeader>
@@ -119,12 +201,13 @@ export function PeakTable({
                   />
                 </TableHead>
               )}
-              <TableHead className="h-8 text-[10px] uppercase tracking-wider">RT</TableHead>
-              <TableHead className="h-8 text-[10px] uppercase tracking-wider">Area</TableHead>
-              <TableHead className="h-8 text-[10px] uppercase tracking-wider">Height</TableHead>
-              <TableHead className="h-8 text-[10px] uppercase tracking-wider">FWHM</TableHead>
-              <TableHead className="h-8 text-[10px] uppercase tracking-wider">S/N</TableHead>
-              <TableHead className="h-8 text-[10px] uppercase tracking-wider">m/z</TableHead>
+              <Th k="rt" label="RT" />
+              <Th k="area" label="Area" />
+              <Th k="height" label="Height" />
+              <Th k="fwhm" label="FWHM" />
+              <Th k="sn" label="S/N" />
+              {hasR2 && <Th k="r2" label="R²" />}
+              <Th k="mz" label="m/z" />
               <TableHead className="h-8 text-[10px] uppercase tracking-wider">Annotation</TableHead>
               {onUnassign && <TableHead className="h-8 w-8" />}
             </TableRow>
@@ -132,13 +215,16 @@ export function PeakTable({
           <TableBody>
             {pagedPeaks.map((p) => {
               const isAssigned = !!p.analyteName;
+              const isSelected = selectedId === p.id;
               return (
                 <TableRow
                   key={p.id}
+                  ref={isSelected ? selectedRowRef : undefined}
+                  data-peak-id={p.id}
                   onClick={() => onSelect?.(p)}
                   className={cn(
                     "cursor-pointer font-mono text-xs",
-                    selectedId === p.id && "bg-accent/40",
+                    isSelected && "bg-accent/40",
                   )}
                 >
                   {onUnassign && (
@@ -159,6 +245,11 @@ export function PeakTable({
                   <TableCell className="py-1.5">{p.height.toLocaleString()}</TableCell>
                   <TableCell className="py-1.5">{p.fwhm.toFixed(3)}</TableCell>
                   <TableCell className="py-1.5">{p.sn.toFixed(1)}</TableCell>
+                  {hasR2 && (
+                    <TableCell className="py-1.5">
+                      {p.r2 != null ? p.r2.toFixed(2) : "—"}
+                    </TableCell>
+                  )}
                   <TableCell className="py-1.5">{p.mz?.toFixed(4) ?? "—"}</TableCell>
                   <TableCell className="py-1.5 font-sans">
                     {p.analyteName ? (
@@ -204,7 +295,7 @@ export function PeakTable({
           </TableBody>
         </Table>
       </div>
-      {peaks.length > 0 && (
+      {sorted.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-2 px-1 pt-1 text-[11px] text-muted-foreground">
           <div className="flex items-center gap-2">
             <span>Rows per page</span>
@@ -227,7 +318,7 @@ export function PeakTable({
               </SelectContent>
             </Select>
             <span>
-              {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, peaks.length)} of {peaks.length}
+              {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, sorted.length)} of {sorted.length}
             </span>
           </div>
           <div className="flex items-center gap-1">
