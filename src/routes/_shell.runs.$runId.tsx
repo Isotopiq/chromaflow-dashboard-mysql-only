@@ -266,15 +266,70 @@ function RunDetail() {
   };
 
 
+  const [suggestFilter, setSuggestFilter] = useState("");
+  const suggested = useMemo(() => {
+    const q = suggestFilter.trim().toLowerCase();
+    return analytes
+      .map((a) => {
+        const dRt = Math.abs(a.rtExpected - (selected?.rt ?? 0));
+        const dPpm = selected?.mz ? Math.abs((a.mz - selected.mz) / a.mz) * 1e6 : 999;
+        return { a, dRt, dPpm, score: dRt * 10 + Math.min(dPpm, 100) / 5 };
+      })
+      .filter(({ a }) =>
+        q ? a.name.toLowerCase().includes(q) || (a.formula ?? "").toLowerCase().includes(q) : true,
+      )
+      .sort((a, b) => a.score - b.score);
+  }, [analytes, selected?.rt, selected?.mz, suggestFilter]);
 
-  const suggested = analytes
-    .map((a) => {
-      const dRt = Math.abs(a.rtExpected - (selected?.rt ?? 0));
-      const dPpm = selected?.mz ? Math.abs((a.mz - selected.mz) / a.mz) * 1e6 : 999;
-      return { a, dRt, dPpm, score: dRt * 10 + Math.min(dPpm, 100) / 5 };
-    })
-    .sort((a, b) => a.score - b.score)
-    .slice(0, 4);
+  // Track in-flight Accept actions per target so the checkbox doesn't double-fire.
+  const [acceptingIds, setAcceptingIds] = useState<Set<string>>(new Set());
+  // A library target is "accepted" when run.peaks already contains a peak linked to its analyte id.
+  const acceptedAnalyteIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const p of run.peaks) if (p.analyteId) ids.add(p.analyteId);
+    return ids;
+  }, [run.peaks]);
+
+  const acceptAnnotation = async (
+    tr: { id: string; mz: number; mzLow: number; mzHigh: number; peakRt: number | null; peakIntensity: number; area: number; height: number; fwhm: number; sn: number },
+    t: { id: string; name: string } | undefined,
+  ) => {
+    if (!t || tr.peakRt == null || tr.peakIntensity <= 0) return;
+    if (acceptedAnalyteIds.has(t.id) || acceptingIds.has(t.id)) return;
+    setAcceptingIds((s) => new Set(s).add(t.id));
+    try {
+      const half = Math.max(tr.fwhm / 2, 0.01);
+      const { peak } = await addManualPeakFn({
+        data: {
+          runId: run.id,
+          rt: tr.peakRt,
+          rtStart: tr.peakRt - half,
+          rtEnd: tr.peakRt + half,
+          area: tr.area,
+          height: tr.height,
+          fwhm: tr.fwhm,
+          sn: tr.sn,
+          mz: tr.mz,
+          mzLow: tr.mzLow,
+          mzHigh: tr.mzHigh,
+          analyteId: t.id,
+          analyteName: t.name,
+        },
+      });
+      addPeakLocal(run.id, peak);
+      setPeakTab("detected");
+      setSelected(peak.id);
+      toast.success(`Accepted ${t.name} at RT ${peak.rt.toFixed(2)}`);
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed to accept annotation");
+    } finally {
+      setAcceptingIds((s) => {
+        const n = new Set(s);
+        n.delete(t.id);
+        return n;
+      });
+    }
+  };
 
   const downloadCsv = () => {
     const header = "rt,area,height,fwhm,sn,mz,mz_low,mz_high,annotation\n";
