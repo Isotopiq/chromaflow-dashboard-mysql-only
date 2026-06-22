@@ -598,6 +598,29 @@ function RunDetail() {
                           <Badge variant="outline" className="text-[10px]">drift</Badge>
                         )}
                       </TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        {tr.peakIntensity > 0 && tr.peakRt != null && t ? (
+                          <div className="flex items-center gap-1.5">
+                            <Checkbox
+                              checked={acceptedAnalyteIds.has(t.id)}
+                              disabled={acceptedAnalyteIds.has(t.id) || acceptingIds.has(t.id)}
+                              onCheckedChange={(v) => {
+                                if (v) acceptAnnotation(tr, t);
+                              }}
+                              aria-label={`Accept ${t.name} annotation`}
+                            />
+                            <span className="text-[10px] text-muted-foreground">
+                              {acceptedAnalyteIds.has(t.id)
+                                ? "added"
+                                : acceptingIds.has(t.id)
+                                  ? "saving…"
+                                  : "add to peaks"}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
