@@ -33,7 +33,7 @@ function HistoryPage() {
       ? [{ ts: method.updatedAt, label: "Last updated", kind: "updated" as const }]
       : []),
     ...methodRuns.map((r) => ({
-      ts: r.acquiredAt ?? r.createdAt,
+      ts: r.acquiredAt ?? method.updatedAt,
       label: `Run linked — ${r.name}`,
       kind: "run" as const,
     })),
