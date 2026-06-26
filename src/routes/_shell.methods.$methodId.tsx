@@ -81,11 +81,15 @@ function MethodDetail({ method }: { method: Method }) {
           </div>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm">
-            <GitBranch className="mr-1 h-3.5 w-3.5" /> Revision history
+          <Button asChild variant="outline" size="sm">
+            <Link to="/methods/$methodId/history" params={{ methodId: method.id }}>
+              <GitBranch className="mr-1 h-3.5 w-3.5" /> Revision history
+            </Link>
           </Button>
-          <Button size="sm">
-            <Edit3 className="mr-1 h-3.5 w-3.5" /> Edit method
+          <Button asChild size="sm">
+            <Link to="/methods/$methodId/edit" params={{ methodId: method.id }}>
+              <Edit3 className="mr-1 h-3.5 w-3.5" /> Edit method
+            </Link>
           </Button>
         </div>
       </div>
