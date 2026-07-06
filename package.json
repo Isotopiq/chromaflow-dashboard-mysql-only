@@ -61,7 +61,7 @@
     "jspdf": "^4.2.1",
     "lucide-react": "^0.575.0",
     "nitro": "3.0.260603-beta",
-    "nodemailer": "^8.0.10",
+    "nodemailer": "^9.0.3",
     "pako": "^2.1.0",
     "papaparse": "^5.5.3",
     "pg": "^8.21.0",
