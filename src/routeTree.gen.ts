@@ -38,6 +38,7 @@ import { Route as ShellMethodsMethodIdRouteImport } from './routes/_shell.method
 import { Route as ShellColumnsColumnIdRouteImport } from './routes/_shell.columns.$columnId'
 import { Route as ShellBatchesBatchIdRouteImport } from './routes/_shell.batches.$batchId'
 import { Route as ShellAnalytesAnalyteIdRouteImport } from './routes/_shell.analytes.$analyteId'
+import { Route as ShellMethodsMethodIdIndexRouteImport } from './routes/_shell.methods.$methodId.index'
 import { Route as ShellMethodsMethodIdHistoryRouteImport } from './routes/_shell.methods.$methodId.history'
 import { Route as ShellMethodsMethodIdEditRouteImport } from './routes/_shell.methods.$methodId.edit'
 
@@ -185,6 +186,12 @@ const ShellAnalytesAnalyteIdRoute = ShellAnalytesAnalyteIdRouteImport.update({
   path: '/$analyteId',
   getParentRoute: () => ShellAnalytesRoute,
 } as any)
+const ShellMethodsMethodIdIndexRoute =
+  ShellMethodsMethodIdIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => ShellMethodsMethodIdRoute,
+  } as any)
 const ShellMethodsMethodIdHistoryRoute =
   ShellMethodsMethodIdHistoryRouteImport.update({
     id: '/history',
@@ -229,6 +236,7 @@ export interface FileRoutesByFullPath {
   '/runs/': typeof ShellRunsIndexRoute
   '/methods/$methodId/edit': typeof ShellMethodsMethodIdEditRoute
   '/methods/$methodId/history': typeof ShellMethodsMethodIdHistoryRoute
+  '/methods/$methodId/': typeof ShellMethodsMethodIdIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
@@ -245,7 +253,6 @@ export interface FileRoutesByTo {
   '/analytes/$analyteId': typeof ShellAnalytesAnalyteIdRoute
   '/batches/$batchId': typeof ShellBatchesBatchIdRoute
   '/columns/$columnId': typeof ShellColumnsColumnIdRoute
-  '/methods/$methodId': typeof ShellMethodsMethodIdRouteWithChildren
   '/methods/compare': typeof ShellMethodsCompareRoute
   '/methods/new': typeof ShellMethodsNewRoute
   '/runs/$runId': typeof ShellRunsRunIdRoute
@@ -261,6 +268,7 @@ export interface FileRoutesByTo {
   '/runs': typeof ShellRunsIndexRoute
   '/methods/$methodId/edit': typeof ShellMethodsMethodIdEditRoute
   '/methods/$methodId/history': typeof ShellMethodsMethodIdHistoryRoute
+  '/methods/$methodId': typeof ShellMethodsMethodIdIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -295,6 +303,7 @@ export interface FileRoutesById {
   '/_shell/runs/': typeof ShellRunsIndexRoute
   '/_shell/methods/$methodId/edit': typeof ShellMethodsMethodIdEditRoute
   '/_shell/methods/$methodId/history': typeof ShellMethodsMethodIdHistoryRoute
+  '/_shell/methods/$methodId/': typeof ShellMethodsMethodIdIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -329,6 +338,7 @@ export interface FileRouteTypes {
     | '/runs/'
     | '/methods/$methodId/edit'
     | '/methods/$methodId/history'
+    | '/methods/$methodId/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -345,7 +355,6 @@ export interface FileRouteTypes {
     | '/analytes/$analyteId'
     | '/batches/$batchId'
     | '/columns/$columnId'
-    | '/methods/$methodId'
     | '/methods/compare'
     | '/methods/new'
     | '/runs/$runId'
@@ -361,6 +370,7 @@ export interface FileRouteTypes {
     | '/runs'
     | '/methods/$methodId/edit'
     | '/methods/$methodId/history'
+    | '/methods/$methodId'
   id:
     | '__root__'
     | '/_shell'
@@ -394,6 +404,7 @@ export interface FileRouteTypes {
     | '/_shell/runs/'
     | '/_shell/methods/$methodId/edit'
     | '/_shell/methods/$methodId/history'
+    | '/_shell/methods/$methodId/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -616,6 +627,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellAnalytesAnalyteIdRouteImport
       parentRoute: typeof ShellAnalytesRoute
     }
+    '/_shell/methods/$methodId/': {
+      id: '/_shell/methods/$methodId/'
+      path: '/'
+      fullPath: '/methods/$methodId/'
+      preLoaderRoute: typeof ShellMethodsMethodIdIndexRouteImport
+      parentRoute: typeof ShellMethodsMethodIdRoute
+    }
     '/_shell/methods/$methodId/history': {
       id: '/_shell/methods/$methodId/history'
       path: '/history'
@@ -660,11 +678,13 @@ const ShellBatchesRouteWithChildren = ShellBatchesRoute._addFileChildren(
 interface ShellMethodsMethodIdRouteChildren {
   ShellMethodsMethodIdEditRoute: typeof ShellMethodsMethodIdEditRoute
   ShellMethodsMethodIdHistoryRoute: typeof ShellMethodsMethodIdHistoryRoute
+  ShellMethodsMethodIdIndexRoute: typeof ShellMethodsMethodIdIndexRoute
 }
 
 const ShellMethodsMethodIdRouteChildren: ShellMethodsMethodIdRouteChildren = {
   ShellMethodsMethodIdEditRoute: ShellMethodsMethodIdEditRoute,
   ShellMethodsMethodIdHistoryRoute: ShellMethodsMethodIdHistoryRoute,
+  ShellMethodsMethodIdIndexRoute: ShellMethodsMethodIdIndexRoute,
 }
 
 const ShellMethodsMethodIdRouteWithChildren =
