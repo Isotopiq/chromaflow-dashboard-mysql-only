@@ -82,7 +82,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",
-    "@lovable.dev/vite-tanstack-config": "2.7.0",
+    "@lovable.dev/vite-tanstack-config": "2.7.1",
     "@types/bcryptjs": "^3.0.0",
     "@types/node": "^22.16.5",
     "@types/nodemailer": "^8.0.0",
@@ -104,9 +104,11 @@
     "vite": "^7.3.1"
   },
   "overrides": {
-    "js-yaml": "^4.1.2"
+    "js-yaml": "^4.1.2",
+    "dompurify": "^3.4.11"
   },
   "resolutions": {
-    "js-yaml": "^4.1.2"
+    "js-yaml": "^4.1.2",
+    "dompurify": "^3.4.11"
   }
 }
