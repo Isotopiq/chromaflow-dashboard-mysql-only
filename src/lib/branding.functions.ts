@@ -20,9 +20,17 @@ async function resolveBrandingUrl(
 // ---- Branding ----
 // Public read.
 export const getBranding = createServerFn({ method: "GET" }).handler(async () => {
-  const data = await withAdmin((db) =>
-    db.maybe<any>("select * from public.branding_settings where id = 1"),
-  );
+  // Branding is cosmetic: if the database is unreachable (e.g. local preview
+  // without Postgres), fall back to defaults instead of blanking the app.
+  let data: any = null;
+  try {
+    data = await withAdmin((db) =>
+      db.maybe<any>("select * from public.branding_settings where id = 1"),
+    );
+  } catch (e) {
+    console.warn("[branding] falling back to defaults:", (e as Error)?.message);
+  }
+
   const faviconUrlExplicit = (data?.favicon_url as string | null) ?? null;
   const webLogoUrlExplicit = (data?.web_logo_url as string | null) ?? null;
   const pdfLogoUrlExplicit = (data?.pdf_logo_url as string | null) ?? null;
