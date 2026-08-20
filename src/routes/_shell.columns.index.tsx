@@ -84,9 +84,25 @@ function ColumnsList() {
                         {c.manufacturer} · {c.dimensions} · {c.particleSize}
                       </div>
                     </div>
-                    <Badge variant="outline" className="text-[10px] capitalize">
-                      {c.status}
-                    </Badge>
+                    <div className="flex items-center gap-1">
+                      <Badge variant="outline" className="text-[10px] capitalize">
+                        {c.status}
+                      </Badge>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-6 w-6"
+                        aria-label="Reset injection count"
+                        title="Reset injection count / log guard change"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setResetTarget(c);
+                        }}
+                      >
+                        <RotateCcw className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
                   </div>
 
                   <div className="mt-4 flex items-end justify-between gap-2">
