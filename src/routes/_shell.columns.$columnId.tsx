@@ -7,6 +7,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { StatusDot } from "@/components/status-dot";
+import { ColumnServicePanel } from "@/components/column-service-panel";
 import { ArrowLeft, Activity, FlaskConical, Gauge } from "lucide-react";
 import {
   LineChart,
