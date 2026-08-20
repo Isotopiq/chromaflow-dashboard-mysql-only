@@ -111,3 +111,15 @@ export type User = {
   avatar: string;
   avatarUrl?: string | null;
 };
+export type ColumnServiceEvent = {
+  id: string;
+  columnId: string;
+  kind: "reset" | "guard_change" | "maintenance" | "install";
+  injectionsBefore: number;
+  injectionsAfter: number;
+  resetUsage: boolean;
+  serial: string;
+  notes: string;
+  performedBy?: string | null;
+  createdAt: string;
+};
