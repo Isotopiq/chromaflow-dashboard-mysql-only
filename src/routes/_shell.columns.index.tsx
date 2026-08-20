@@ -186,6 +186,28 @@ function ColumnsList() {
       )}
 
       <ColumnFormDialog open={open} onOpenChange={setOpen} onSubmit={handleSubmit} />
+
+      <AlertDialog
+        open={!!resetTarget}
+        onOpenChange={(o) => !resetting && !o && setResetTarget(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reset injection count?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {resetTarget
+                ? `"${resetTarget.name}" is at ${resetTarget.injectionsUsed} / ${resetTarget.ratedInjections} injections. This logs a guard change, resets the counter to 0, clears the pressure trend and marks the column healthy. Open the column page for more service options.`
+                : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={resetting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmReset} disabled={resetting}>
+              {resetting ? "Resetting…" : "Reset & log"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
