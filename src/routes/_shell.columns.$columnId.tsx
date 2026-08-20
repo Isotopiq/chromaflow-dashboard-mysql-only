@@ -127,6 +127,8 @@ function ColumnDetail({ column }: { column: Column }) {
         />
       </div>
 
+      <ColumnServicePanel column={column} />
+
       <Card className="border-border bg-card p-4">
         <div className="flex flex-wrap items-end justify-between gap-2">
           <div>
