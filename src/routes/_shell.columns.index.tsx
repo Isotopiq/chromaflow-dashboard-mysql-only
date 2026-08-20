@@ -32,7 +32,35 @@ export const Route = createFileRoute("/_shell/columns/")({
 function ColumnsList() {
   const { columns, upsertColumnLocal } = useLab();
   const upsertFn = useServerFn(upsertColumn);
+  const serviceFn = useServerFn(logColumnService);
   const [open, setOpen] = useState(false);
+  const [resetTarget, setResetTarget] = useState<Column | null>(null);
+  const [resetting, setResetting] = useState(false);
+
+  const confirmReset = async () => {
+    if (!resetTarget) return;
+    setResetting(true);
+    try {
+      const res = await serviceFn({
+        data: {
+          columnId: resetTarget.id,
+          kind: "guard_change",
+          resetUsage: true,
+          resetInstalledAt: true,
+          status: "healthy",
+          serial: "",
+          notes: "Guard change / column replaced — injection count reset.",
+        },
+      });
+      upsertColumnLocal(res.column);
+      toast.success(`Injection count reset for "${res.column.name}"`);
+      setResetTarget(null);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to reset injection count");
+    } finally {
+      setResetting(false);
+    }
+  };
 
   const handleSubmit = async (values: ColumnFormValues) => {
     try {
