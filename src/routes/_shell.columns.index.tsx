@@ -7,7 +7,19 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { StatusDot } from "@/components/status-dot";
 import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
+import { Plus, RotateCcw } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { logColumnService } from "@/lib/lab.functions";
+import type { Column } from "@/lib/lab-types";
 import { LineChart, Line, ResponsiveContainer, YAxis } from "recharts";
 import { toast } from "sonner";
 import { upsertColumn } from "@/lib/lab.functions";
@@ -20,7 +32,35 @@ export const Route = createFileRoute("/_shell/columns/")({
 function ColumnsList() {
   const { columns, upsertColumnLocal } = useLab();
   const upsertFn = useServerFn(upsertColumn);
+  const serviceFn = useServerFn(logColumnService);
   const [open, setOpen] = useState(false);
+  const [resetTarget, setResetTarget] = useState<Column | null>(null);
+  const [resetting, setResetting] = useState(false);
+
+  const confirmReset = async () => {
+    if (!resetTarget) return;
+    setResetting(true);
+    try {
+      const res = await serviceFn({
+        data: {
+          columnId: resetTarget.id,
+          kind: "guard_change",
+          resetUsage: true,
+          resetInstalledAt: true,
+          status: "healthy",
+          serial: "",
+          notes: "Guard change / column replaced — injection count reset.",
+        },
+      });
+      upsertColumnLocal(res.column);
+      toast.success(`Injection count reset for "${res.column.name}"`);
+      setResetTarget(null);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to reset injection count");
+    } finally {
+      setResetting(false);
+    }
+  };
 
   const handleSubmit = async (values: ColumnFormValues) => {
     try {
@@ -84,9 +124,25 @@ function ColumnsList() {
                         {c.manufacturer} · {c.dimensions} · {c.particleSize}
                       </div>
                     </div>
-                    <Badge variant="outline" className="text-[10px] capitalize">
-                      {c.status}
-                    </Badge>
+                    <div className="flex items-center gap-1">
+                      <Badge variant="outline" className="text-[10px] capitalize">
+                        {c.status}
+                      </Badge>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-6 w-6"
+                        aria-label="Reset injection count"
+                        title="Reset injection count / log guard change"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setResetTarget(c);
+                        }}
+                      >
+                        <RotateCcw className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
                   </div>
 
                   <div className="mt-4 flex items-end justify-between gap-2">
@@ -130,6 +186,28 @@ function ColumnsList() {
       )}
 
       <ColumnFormDialog open={open} onOpenChange={setOpen} onSubmit={handleSubmit} />
+
+      <AlertDialog
+        open={!!resetTarget}
+        onOpenChange={(o) => !resetting && !o && setResetTarget(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reset injection count?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {resetTarget
+                ? `"${resetTarget.name}" is at ${resetTarget.injectionsUsed} / ${resetTarget.ratedInjections} injections. This logs a guard change, resets the counter to 0, clears the pressure trend and marks the column healthy. Open the column page for more service options.`
+                : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={resetting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmReset} disabled={resetting}>
+              {resetting ? "Resetting…" : "Reset & log"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

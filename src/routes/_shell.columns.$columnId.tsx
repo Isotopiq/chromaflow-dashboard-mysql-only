@@ -7,6 +7,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { StatusDot } from "@/components/status-dot";
+import { ColumnServicePanel } from "@/components/column-service-panel";
 import { ArrowLeft, Activity, FlaskConical, Gauge } from "lucide-react";
 import {
   LineChart,
@@ -126,6 +127,8 @@ function ColumnDetail({ column }: { column: Column }) {
           detail={`${linkedRuns.length} linked run${linkedRuns.length === 1 ? "" : "s"}`}
         />
       </div>
+
+      <ColumnServicePanel column={column} />
 
       <Card className="border-border bg-card p-4">
         <div className="flex flex-wrap items-end justify-between gap-2">

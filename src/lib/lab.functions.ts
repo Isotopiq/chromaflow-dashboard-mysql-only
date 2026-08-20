@@ -936,3 +936,96 @@ export const deleteBatch = createServerFn({ method: "POST" })
     await db.query("delete from public.batches where id=$1", [data.batchId]);
     return { ok: true };
   });
+
+// ---- Column service log (guard changes, usage resets) ----
+function mapServiceEvent(r: any) {
+  return {
+    id: r.id as string,
+    columnId: r.column_id as string,
+    kind: r.kind as "reset" | "guard_change" | "maintenance" | "install",
+    injectionsBefore: Number(r.injections_before ?? 0),
+    injectionsAfter: Number(r.injections_after ?? 0),
+    resetUsage: r.reset_usage === true,
+    serial: r.serial ?? "",
+    notes: r.notes ?? "",
+    performedBy: r.performed_by ?? null,
+    createdAt: String(r.created_at),
+  };
+}
+
+export const listColumnServiceEvents = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) => z.object({ columnId: z.string() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { db } = context as { db: import("@/db/index.server").Db };
+    const rows = await db.many<any>(
+      `select * from public.column_service_events
+        where column_id = $1 order by created_at desc limit 200`,
+      [data.columnId],
+    );
+    return rows.map(mapServiceEvent);
+  });
+
+export const logColumnService = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) =>
+    z
+      .object({
+        columnId: z.string(),
+        kind: z.enum(["reset", "guard_change", "maintenance", "install"]),
+        resetUsage: z.boolean().default(false),
+        serial: z.string().max(100).default(""),
+        notes: z.string().max(5000).default(""),
+        status: z.enum(["healthy", "warn", "expired"]).optional(),
+        resetInstalledAt: z.boolean().default(false),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { userId, db } = context as { userId: string; db: import("@/db/index.server").Db };
+    const col = await db.maybe<any>(
+      "select * from public.columns where id = $1",
+      [data.columnId],
+    );
+    if (!col) throw new Error("Column not found");
+
+    const before = Number(col.used_injections ?? 0);
+    const after = data.resetUsage ? 0 : before;
+
+    const updated = await db.one<any>(
+      `update public.columns set
+         used_injections = $1,
+         serial = coalesce(nullif($2, ''), serial),
+         status = coalesce($3, status),
+         installed_at = case when $4 then now() else installed_at end,
+         pressure_trend = case when $5 then '[]'::jsonb else pressure_trend end,
+         updated_at = now()
+       where id = $6 returning *`,
+      [
+        after,
+        data.serial,
+        data.status ?? null,
+        data.resetInstalledAt,
+        data.resetUsage,
+        data.columnId,
+      ],
+    );
+
+    const event = await db.one<any>(
+      `insert into public.column_service_events
+         (column_id, kind, injections_before, injections_after, reset_usage, serial, notes, performed_by)
+       values ($1,$2,$3,$4,$5,$6,$7,$8) returning *`,
+      [data.columnId, data.kind, before, after, data.resetUsage, data.serial, data.notes, userId],
+    );
+
+    return { column: mapColumn(updated), event: mapServiceEvent(event) };
+  });
+
+export const deleteColumnServiceEvent = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) => z.object({ id: z.string() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { db } = context as { db: import("@/db/index.server").Db };
+    await db.query("delete from public.column_service_events where id = $1", [data.id]);
+    return { ok: true };
+  });
