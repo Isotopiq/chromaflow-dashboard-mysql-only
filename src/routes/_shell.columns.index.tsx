@@ -30,12 +30,30 @@ export const Route = createFileRoute("/_shell/columns/")({
 });
 
 function ColumnsList() {
-  const { columns, upsertColumnLocal } = useLab();
+  const { columns, upsertColumnLocal, removeColumnLocal } = useLab();
   const upsertFn = useServerFn(upsertColumn);
   const serviceFn = useServerFn(logColumnService);
+  const deleteFn = useServerFn(deleteColumn);
   const [open, setOpen] = useState(false);
   const [resetTarget, setResetTarget] = useState<Column | null>(null);
   const [resetting, setResetting] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Column | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await deleteFn({ data: { id: deleteTarget.id } });
+      removeColumnLocal(deleteTarget.id);
+      toast.success(`Column "${deleteTarget.name}" deleted`);
+      setDeleteTarget(null);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to delete column");
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const confirmReset = async () => {
     if (!resetTarget) return;
