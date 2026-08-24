@@ -7,7 +7,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { StatusDot } from "@/components/status-dot";
 import { Button } from "@/components/ui/button";
-import { Plus, RotateCcw } from "lucide-react";
+import { Plus, RotateCcw, Trash2 } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,7 +18,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { logColumnService } from "@/lib/lab.functions";
+import { logColumnService, deleteColumn } from "@/lib/lab.functions";
 import type { Column } from "@/lib/lab-types";
 import { LineChart, Line, ResponsiveContainer, YAxis } from "recharts";
 import { toast } from "sonner";
@@ -30,12 +30,30 @@ export const Route = createFileRoute("/_shell/columns/")({
 });
 
 function ColumnsList() {
-  const { columns, upsertColumnLocal } = useLab();
+  const { columns, upsertColumnLocal, removeColumnLocal } = useLab();
   const upsertFn = useServerFn(upsertColumn);
   const serviceFn = useServerFn(logColumnService);
+  const deleteFn = useServerFn(deleteColumn);
   const [open, setOpen] = useState(false);
   const [resetTarget, setResetTarget] = useState<Column | null>(null);
   const [resetting, setResetting] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Column | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await deleteFn({ data: { id: deleteTarget.id } });
+      removeColumnLocal(deleteTarget.id);
+      toast.success(`Column "${deleteTarget.name}" deleted`);
+      setDeleteTarget(null);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to delete column");
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const confirmReset = async () => {
     if (!resetTarget) return;
@@ -142,6 +160,20 @@ function ColumnsList() {
                       >
                         <RotateCcw className="h-3.5 w-3.5" />
                       </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                        aria-label="Delete column"
+                        title="Delete column"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setDeleteTarget(c);
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
                     </div>
                   </div>
 
@@ -204,6 +236,32 @@ function ColumnsList() {
             <AlertDialogCancel disabled={resetting}>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={confirmReset} disabled={resetting}>
               {resetting ? "Resetting…" : "Reset & log"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => !deleting && !o && setDeleteTarget(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this column?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget
+                ? `"${deleteTarget.name}" and its service history will be permanently removed. Columns still linked to methods or runs must be unlinked first.`
+                : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? "Deleting…" : "Delete column"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
