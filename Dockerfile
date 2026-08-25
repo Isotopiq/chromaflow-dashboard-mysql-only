@@ -13,6 +13,11 @@ FROM oven/bun:1.3.3-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# Cap the JS heap so the build stays inside the container memory limit instead
+# of being SIGKILLed ("cannot allocate memory") on small hosts.
+ENV NODE_ENV=production \
+    NODE_OPTIONS=--max-old-space-size=2048 \
+    ROLLUP_NO_NATIVE=1
 RUN bun run build
 
 # ---------- runtime ----------
