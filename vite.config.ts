@@ -33,5 +33,15 @@ export default defineConfig({
   vite: {
     preview: { host: true, allowedHosts },
     server: { host: true, allowedHosts },
+    // Keep peak memory low so constrained CI/Docker builders (Easypanel)
+    // don't get OOM-killed during the Rollup phase.
+    build: {
+      sourcemap: false,
+      reportCompressedSize: false,
+      rollupOptions: {
+        maxParallelFileOps: 1,
+        cache: false,
+      },
+    },
   },
 });
