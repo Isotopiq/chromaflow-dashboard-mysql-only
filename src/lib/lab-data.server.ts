@@ -156,6 +156,29 @@ export async function fetchAllForUser(db: Db) {
   const batches = await db.many("select * from public.batches order by started_at desc");
   const analytes = await db.many("select * from public.analytes order by name");
 
+  // Fetch per-column RT overrides for all analytes.
+  const columnRts = await db.many<any>(
+    `select acrt.id, acrt.analyte_id, acrt.column_id, acrt.rt_expected,
+            acrt.notes, acrt.updated_at, c.name as column_name
+     from public.analyte_column_rt acrt
+     join public.columns c on c.id = acrt.column_id
+     order by c.name`,
+  );
+  const columnRtByAnalyte = new Map<string, any[]>();
+  for (const cr of columnRts) {
+    const arr = columnRtByAnalyte.get(cr.analyte_id) ?? [];
+    arr.push({
+      id: cr.id,
+      analyteId: cr.analyte_id,
+      columnId: cr.column_id,
+      columnName: cr.column_name,
+      rtExpected: Number(cr.rt_expected),
+      notes: cr.notes ?? "",
+      updatedAt: cr.updated_at,
+    });
+    columnRtByAnalyte.set(cr.analyte_id, arr);
+  }
+
   const peaksByRun = new Map<string, Peak[]>();
   for (const p of peaks) {
     const key = p.run_id;
@@ -179,7 +202,10 @@ export async function fetchAllForUser(db: Db) {
     methods: methods.map(mapMethod),
     runs: runsMapped,
     batches: batches.map((b: any) => mapBatch(b, runsByBatch.get(b.id) ?? [])),
-    analytes: analytes.map(mapAnalyte),
+    analytes: analytes.map((a: any) => ({
+      ...mapAnalyte(a),
+      columnRts: columnRtByAnalyte.get(a.id) ?? [],
+    })),
   };
 }
 

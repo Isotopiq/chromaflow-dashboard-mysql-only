@@ -202,6 +202,30 @@ create policy "analytes: write auth" on public.analytes for all
   using (created_by = public.current_app_user() or public.current_app_is_admin() or created_by is null)
   with check (true);
 
+-- ---- analyte_column_rt: per-column retention time overrides ----
+-- RT changes with each column. This table stores column-specific RT
+-- values for each analyte. When present, the column-specific RT is used
+-- for auto-annotation instead of the default rt_expected on the analyte.
+create table if not exists public.analyte_column_rt (
+  id          uuid primary key default gen_random_uuid(),
+  analyte_id  uuid not null references public.analytes(id) on delete cascade,
+  column_id   uuid not null references public.columns(id) on delete cascade,
+  rt_expected double precision not null,
+  notes       text default '',
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+  unique (analyte_id, column_id)
+);
+create index if not exists analyte_column_rt_analyte_idx on public.analyte_column_rt(analyte_id);
+create index if not exists analyte_column_rt_column_idx  on public.analyte_column_rt(column_id);
+alter table public.analyte_column_rt enable row level security;
+drop policy if exists "analyte_column_rt: read all"   on public.analyte_column_rt;
+drop policy if exists "analyte_column_rt: write auth" on public.analyte_column_rt;
+create policy "analyte_column_rt: read all" on public.analyte_column_rt for select using (true);
+create policy "analyte_column_rt: write auth" on public.analyte_column_rt for all
+  using (true)
+  with check (true);
+
 -- ---- runs ----
 create table if not exists public.runs (
   id              uuid primary key default gen_random_uuid(),

@@ -385,6 +385,66 @@ export const deleteAnalyte = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+// ---- Analyte per-column RT ----
+export const getAnalyteColumnRts = createServerFn({ method: "GET" })
+  .middleware([requireAuth])
+  .inputValidator((d) => z.object({ analyteId: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { db } = context as { db: import("@/db/index.server").Db };
+    const rows = await db.many<any>(
+      `select acrt.id, acrt.analyte_id, acrt.column_id, acrt.rt_expected,
+              acrt.notes, acrt.updated_at, c.name as column_name
+       from public.analyte_column_rt acrt
+       join public.columns c on c.id = acrt.column_id
+       where acrt.analyte_id = $1
+       order by c.name`,
+      [data.analyteId],
+    );
+    return rows.map((r: any) => ({
+      id: r.id,
+      analyteId: r.analyte_id,
+      columnId: r.column_id,
+      columnName: r.column_name,
+      rtExpected: Number(r.rt_expected),
+      notes: r.notes ?? "",
+      updatedAt: r.updated_at,
+    }));
+  });
+
+const ColumnRtInput = z.object({
+  analyteId: z.string().uuid(),
+  columnId: z.string().uuid(),
+  rtExpected: z.number().min(0).max(120),
+  notes: z.string().max(500).optional().default(""),
+});
+
+export const setAnalyteColumnRt = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) => ColumnRtInput.parse(d))
+  .handler(async ({ data, context }) => {
+    const { db } = context as { db: import("@/db/index.server").Db };
+    const row = await db.one<any>(
+      `insert into public.analyte_column_rt (analyte_id, column_id, rt_expected, notes)
+       values ($1, $2, $3, $4)
+       on conflict (analyte_id, column_id) do update set
+         rt_expected = excluded.rt_expected,
+         notes = excluded.notes,
+         updated_at = now()
+       returning *`,
+      [data.analyteId, data.columnId, data.rtExpected, data.notes ?? ""],
+    );
+    return { ok: true, id: row.id };
+  });
+
+export const deleteAnalyteColumnRt = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { db } = context as { db: import("@/db/index.server").Db };
+    await db.query("delete from public.analyte_column_rt where id = $1", [data.id]);
+    return { ok: true };
+  });
+
 // ---- Analyte bulk import/export ----
 const AnalyteImportRow = z.object({
   name: z.string().min(1).max(200),
@@ -565,9 +625,22 @@ export const createRun = createServerFn({ method: "POST" })
 
     // ---- Auto-annotate against the analyte library ----
     // Hard m/z gate (10 ppm) AND RT gate (0.3 min). Best score wins per peak.
+    // Uses per-column RT overrides when available, falling back to the
+    // analyte's default rt_expected.
     try {
       const analytes = await db.many<any>(
         "select id, name, mz, rt_expected from public.analytes");
+      // Fetch per-column RT overrides for this run's column.
+      let columnRtMap: Map<string, number> = new Map();
+      if (run.column_id) {
+        const colRts = await db.many<any>(
+          "select analyte_id, rt_expected from public.analyte_column_rt where column_id = $1",
+          [run.column_id],
+        );
+        for (const cr of colRts) {
+          columnRtMap.set(cr.analyte_id, Number(cr.rt_expected));
+        }
+      }
       const RT_TOL = 0.3;
       const PPM_TOL = 10;
       for (const pr of peakRows) {
@@ -578,7 +651,9 @@ export const createRun = createServerFn({ method: "POST" })
           if (!Number.isFinite(amz) || amz <= 0) continue;
           const dPpm = Math.abs((Number(pr.mz) - amz) / amz) * 1e6;
           if (dPpm > PPM_TOL) continue;
-          const dRt = Math.abs(Number(pr.rt) - Number(a.rt_expected));
+          // Use column-specific RT if available, otherwise the default.
+          const aRt = columnRtMap.get(a.id) ?? Number(a.rt_expected);
+          const dRt = Math.abs(Number(pr.rt) - aRt);
           if (dRt > RT_TOL) continue;
           // Lower score = better; weight m/z heavier than RT.
           const score = dPpm + dRt * 30;
@@ -1071,19 +1146,43 @@ export const autoAnnotateBatch = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { userId, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
     const runs = await db.many<any>(
-      "select id from public.runs where batch_id=$1", [data.batchId]);
+      "select id, column_id from public.runs where batch_id=$1", [data.batchId]);
     if (runs.length === 0) return { annotated: 0, scanned: 0 };
     const analytes = await db.many<any>(
       "select id, name, mz, rt_expected from public.analytes");
+    // Pre-fetch per-column RT overrides for all columns used by runs in this batch.
+    const columnIds = [...new Set(runs.map((r: any) => r.column_id).filter(Boolean))];
+    const colRtByColumn = new Map<string, Map<string, number>>();
+    if (columnIds.length > 0) {
+      for (const colId of columnIds) {
+        const colRts = await db.many<any>(
+          "select analyte_id, rt_expected from public.analyte_column_rt where column_id = $1",
+          [colId],
+        );
+        const m = new Map<string, number>();
+        for (const cr of colRts) m.set(cr.analyte_id, Number(cr.rt_expected));
+        colRtByColumn.set(colId, m);
+      }
+    }
+    // Map run_id -> column-specific RT map for quick lookup.
+    const runColRtMap = new Map<string, Map<string, number>>();
+    for (const r of runs) {
+      if (r.column_id && colRtByColumn.has(r.column_id)) {
+        runColRtMap.set(r.id, colRtByColumn.get(r.column_id)!);
+      }
+    }
     const runIds = runs.map((r) => r.id);
     const peaks = await db.many<any>(
       "select id, rt, mz, run_id from public.peaks where run_id = any($1::uuid[])",
       [runIds]);
     let annotated = 0;
     for (const p of peaks) {
+      const colRtMap = runColRtMap.get(p.run_id);
       let bestScore = Infinity; let bestA: any = null;
       for (const a of analytes) {
-        const dRt = Math.abs(p.rt - Number(a.rt_expected));
+        // Use column-specific RT if available, otherwise the default.
+        const aRt = colRtMap?.get(a.id) ?? Number(a.rt_expected);
+        const dRt = Math.abs(p.rt - aRt);
         if (dRt > data.rtTolMin) continue;
         const dPpm = p.mz != null
           ? Math.abs((Number(p.mz) - Number(a.mz)) / Number(a.mz)) * 1e6 : 999;

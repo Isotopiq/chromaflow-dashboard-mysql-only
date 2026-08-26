@@ -1,18 +1,28 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo } from "react";
-import { useQueries } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useLab } from "@/lib/store";
-import { getRunEIC } from "@/lib/lab.functions";
+import { getRunEIC, getAnalyteColumnRts, setAnalyteColumnRt, deleteAnalyteColumnRt } from "@/lib/lab.functions";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ArrowLeft, Plus, Trash2 } from "lucide-react";
 import { AnalyteComparePanel } from "@/components/analyte-compare-panel";
 import { ChromatogramPlot } from "@/components/chromatogram-plot";
 import { monoisotopicMass, mzFromFormula } from "@/lib/chem";
 import { ago } from "@/lib/time";
-import type { Run, Column as LabColumn, Method } from "@/lib/lab-types";
+import { toast } from "sonner";
+import type { Run, Column as LabColumn, Method, AnalyteColumnRt } from "@/lib/lab-types";
 
 export const Route = createFileRoute("/_shell/analytes/$analyteId")({
   component: AnalyteDetail,
@@ -108,6 +118,8 @@ function AnalyteDetail() {
         />
       )}
 
+      <ColumnRtManager analyteId={analyte.id} defaultRt={analyte.rtExpected} />
+
       <AllRunsXICGrid
         analyteName={analyte.name}
         mz={targetMz}
@@ -122,6 +134,206 @@ function AnalyteDetail() {
 type RunLite = Run;
 type ColumnLite = LabColumn;
 type MethodLite = Method;
+
+// ---------------------------------------------------------------------------
+// Per-column RT manager
+// ---------------------------------------------------------------------------
+
+function ColumnRtManager({ analyteId, defaultRt }: { analyteId: string; defaultRt: number }) {
+  const { columns } = useLab();
+  const qc = useQueryClient();
+  const getFn = useServerFn(getAnalyteColumnRts);
+  const setFn = useServerFn(setAnalyteColumnRt);
+  const deleteFn = useServerFn(deleteAnalyteColumnRt);
+
+  const [rts, setRts] = useState<AnalyteColumnRt[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedColumnId, setSelectedColumnId] = useState<string>("");
+  const [rtValue, setRtValue] = useState<string>("");
+  const [notes, setNotes] = useState<string>("");
+  const [saving, setSaving] = useState(false);
+
+  // Load per-column RTs on mount.
+  useMemo(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await getFn({ data: { analyteId } });
+        if (!cancelled) setRts(data as AnalyteColumnRt[]);
+      } catch (e) {
+        console.error("Failed to load column RTs", e);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [analyteId]);
+
+  const usedColumnIds = new Set(rts.map((r) => r.columnId));
+  const availableColumns = columns.filter((c) => !usedColumnIds.has(c.id));
+
+  async function handleAdd() {
+    if (!selectedColumnId) {
+      toast.error("Select a column first.");
+      return;
+    }
+    const rt = parseFloat(rtValue);
+    if (!Number.isFinite(rt) || rt < 0 || rt > 120) {
+      toast.error("RT must be 0–120 min.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await setFn({ data: { analyteId, columnId: selectedColumnId, rtExpected: rt, notes } });
+      const updated = await getFn({ data: { analyteId } });
+      setRts(updated as AnalyteColumnRt[]);
+      setSelectedColumnId("");
+      setRtValue("");
+      setNotes("");
+      qc.invalidateQueries({ queryKey: ["lab"] });
+      toast.success("Column RT saved.");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed to save column RT.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete(id: string) {
+    try {
+      await deleteFn({ data: { id } });
+      setRts((prev) => prev.filter((r) => r.id !== id));
+      qc.invalidateQueries({ queryKey: ["lab"] });
+      toast.success("Column RT removed.");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed to delete column RT.");
+    }
+  }
+
+  async function handleUpdateRt(r: AnalyteColumnRt, newRt: string) {
+    const rt = parseFloat(newRt);
+    if (!Number.isFinite(rt) || rt < 0 || rt > 120) return;
+    try {
+      await setFn({ data: { analyteId: r.analyteId, columnId: r.columnId, rtExpected: rt, notes: r.notes } });
+      setRts((prev) => prev.map((x) => x.id === r.id ? { ...x, rtExpected: rt } : x));
+      qc.invalidateQueries({ queryKey: ["lab"] });
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed to update RT.");
+    }
+  }
+
+  return (
+    <Card className="border-border bg-card p-4">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+            Per-column retention time
+          </div>
+          <div className="mt-1 text-sm font-medium">
+            Default RT: <span className="font-mono">{defaultRt.toFixed(2)} min</span>
+            {rts.length > 0 && (
+              <span className="ml-2 text-muted-foreground">
+                · {rts.length} column override{rts.length === 1 ? "" : "s"}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Existing overrides */}
+      {loading ? (
+        <div className="mt-3 text-xs text-muted-foreground">Loading…</div>
+      ) : rts.length === 0 ? (
+        <div className="mt-3 rounded-md border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
+          No per-column RT overrides yet. The default RT ({defaultRt.toFixed(2)} min) is used for all columns.
+        </div>
+      ) : (
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-border text-[10px] uppercase tracking-wider text-muted-foreground">
+                <th className="pb-2 text-left font-medium">Column</th>
+                <th className="pb-2 text-left font-medium">RT (min)</th>
+                <th className="pb-2 text-left font-medium">Notes</th>
+                <th className="pb-2 w-10"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {rts.map((r) => (
+                <tr key={r.id} className="border-b border-border/50">
+                  <td className="py-2 font-medium">{r.columnName}</td>
+                  <td className="py-2">
+                    <Input
+                      className="h-7 w-24 font-mono text-xs"
+                      defaultValue={r.rtExpected.toFixed(2)}
+                      onBlur={(e) => {
+                        const v = e.target.value.trim();
+                        if (v && parseFloat(v) !== r.rtExpected) handleUpdateRt(r, v);
+                      }}
+                    />
+                  </td>
+                  <td className="py-2 text-muted-foreground">{r.notes || "—"}</td>
+                  <td className="py-2 text-right">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                      onClick={() => handleDelete(r.id)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Add new override */}
+      {availableColumns.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-border pt-3">
+          <div className="space-y-1">
+            <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">Column</Label>
+            <Select value={selectedColumnId} onValueChange={setSelectedColumnId}>
+              <SelectTrigger className="h-8 w-48 text-xs">
+                <SelectValue placeholder="Select column…" />
+              </SelectTrigger>
+              <SelectContent>
+                {availableColumns.map((c) => (
+                  <SelectItem key={c.id} value={c.id} className="text-xs">
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">RT (min)</Label>
+            <Input
+              className="h-8 w-24 font-mono text-xs"
+              value={rtValue}
+              onChange={(e) => setRtValue(e.target.value)}
+              placeholder={defaultRt.toFixed(2)}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">Notes</Label>
+            <Input
+              className="h-8 w-40 text-xs"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="optional"
+            />
+          </div>
+          <Button size="sm" className="h-8" disabled={saving || !selectedColumnId} onClick={handleAdd}>
+            <Plus className="mr-1 h-3.5 w-3.5" /> Add
+          </Button>
+        </div>
+      )}
+    </Card>
+  );
+}
 
 function AllRunsXICGrid({
   analyteName,

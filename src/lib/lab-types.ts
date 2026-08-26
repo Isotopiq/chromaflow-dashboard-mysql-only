@@ -80,6 +80,16 @@ export type Column = {
   manufacturer: string;
 };
 
+export type AnalyteColumnRt = {
+  id: string;
+  analyteId: string;
+  columnId: string;
+  columnName: string;
+  rtExpected: number;
+  notes: string;
+  updatedAt: string;
+};
+
 export type Analyte = {
   id: string;
   name: string;
@@ -89,6 +99,7 @@ export type Analyte = {
   class: string;
   createdBy?: string | null;
   librarySource?: string | null;
+  columnRts?: AnalyteColumnRt[];
 };
 
 export type Batch = {

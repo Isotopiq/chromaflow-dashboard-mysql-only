@@ -402,6 +402,11 @@ function LibraryTab() {
                     </TableCell>
                     <TableCell className="font-mono text-muted-foreground">
                       {a.rtExpected.toFixed(2)}
+                      {a.columnRts && a.columnRts.length > 0 && (
+                        <span className="ml-1 text-[9px] text-primary" title={`${a.columnRts.length} column-specific RT override${a.columnRts.length === 1 ? "" : "s"}`}>
+                          (+{a.columnRts.length})
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Badge variant={isUser ? "default" : "outline"} className="text-[10px]">
