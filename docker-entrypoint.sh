@@ -62,7 +62,27 @@ echo "[entrypoint] starting PostgreSQL ..."
 touch /tmp/pg.log
 chown postgres:postgres /tmp/pg.log
 # Use start -w to wait for startup, and -o to pass port.
-su-exec postgres pg_ctl -D "$PG_DATA" -l /tmp/pg.log -o "-p $PG_PORT" -w start
+if ! su-exec postgres pg_ctl -D "$PG_DATA" -l /tmp/pg.log -o "-p $PG_PORT" -w start 2>&1; then
+  # PostgreSQL failed to start — likely WAL corruption from an unclean
+  # shutdown (container killed without graceful stop). Try resetting WAL.
+  echo "[entrypoint] PostgreSQL failed to start. Checking log..."
+  cat /tmp/pg.log 2>/dev/null | tail -10
+  if grep -q "could not locate a valid checkpoint record\|invalid record length\|PANIC" /tmp/pg.log 2>/dev/null; then
+    echo "[entrypoint] WAL corruption detected — running pg_resetwal ..."
+    su-exec postgres pg_resetwal -f "$PG_DATA" 2>&1
+    echo "[entrypoint] retrying PostgreSQL start ..."
+    rm -f /tmp/pg.log && touch /tmp/pg.log && chown postgres:postgres /tmp/pg.log
+    su-exec postgres pg_ctl -D "$PG_DATA" -l /tmp/pg.log -o "-p $PG_PORT" -w start 2>&1 || {
+      echo "[entrypoint] PostgreSQL still failed after WAL reset. Log:"
+      cat /tmp/pg.log 2>/dev/null || true
+      exit 1
+    }
+  else
+    echo "[entrypoint] Non-WAL failure. Log:"
+    cat /tmp/pg.log 2>/dev/null || true
+    exit 1
+  fi
+fi
 
 # Wait for PostgreSQL to be ready (belt + suspenders)
 echo "[entrypoint] waiting for PostgreSQL ..."
