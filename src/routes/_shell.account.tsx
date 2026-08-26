@@ -15,6 +15,7 @@ import {
   updateMyPassword,
 } from "@/lib/account.functions";
 import { createUploadUrl, loadAll } from "@/lib/lab.functions";
+import { AvatarCropper } from "@/components/avatar-cropper";
 
 export const Route = createFileRoute("/_shell/account")({ component: AccountPage });
 
@@ -40,6 +41,7 @@ function AccountPage() {
   const [savingEmail, setSavingEmail] = useState(false);
   const [savingPwd, setSavingPwd] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -114,23 +116,32 @@ function AccountPage() {
     }
   };
 
-  const onPickFile = async (file: File) => {
+  const onPickFile = (file: File) => {
     if (!file.type.startsWith("image/")) {
       toast.error("Please pick an image file");
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("Image must be under 5 MB");
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("Image must be under 10 MB");
       return;
     }
+    // Read the file and open the cropper dialog
+    const reader = new FileReader();
+    reader.onload = () => setCropSrc(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const onCropConfirm = async (blob: Blob) => {
+    setCropSrc(null);
     setUploading(true);
     try {
+      const file = new File([blob], "avatar.png", { type: "image/png" });
       const up = await uploadFn({
         data: { filename: file.name, bucket: "avatars" },
       });
       const put = await fetch(up.signedUrl, {
         method: "PUT",
-        headers: { "Content-Type": file.type || "application/octet-stream" },
+        headers: { "Content-Type": "image/png" },
         body: file,
       });
       if (!put.ok) throw new Error(`Upload failed (${put.status})`);
@@ -210,7 +221,7 @@ function AccountPage() {
                 </Button>
               )}
               <span className="text-[11px] text-muted-foreground">
-                PNG/JPG, up to 5 MB.
+                PNG/JPG, up to 10 MB. You can crop after selecting.
               </span>
             </div>
 
@@ -294,6 +305,17 @@ function AccountPage() {
           </div>
         </div>
       </Card>
+
+      {/* Avatar cropper dialog */}
+      <AvatarCropper
+        open={!!cropSrc}
+        imageSrc={cropSrc}
+        onCancel={() => {
+          setCropSrc(null);
+          if (fileRef.current) fileRef.current.value = "";
+        }}
+        onConfirm={onCropConfirm}
+      />
     </div>
   );
 }
