@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useLocation } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLab } from "@/lib/store";
@@ -60,6 +60,11 @@ export const Route = createFileRoute("/_shell/analytes")({
 });
 
 function Analytes() {
+  const location = useLocation();
+  // If we're on /analytes/$analyteId, render only the child outlet.
+  const isDetail = /^\/analytes\/[^/]+$/.test(location.pathname);
+  if (isDetail) return <Outlet />;
+
   const { analytes } = useLab();
   const userOwned = analytes.filter((a) => a.librarySource === "user").length;
 

@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useLocation } from "@tanstack/react-router";
 import { useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQueryClient } from "@tanstack/react-query";
@@ -39,6 +39,10 @@ export const Route = createFileRoute("/_shell/batches")({
 });
 
 function Batches() {
+  const location = useLocation();
+  const isDetail = /^\/batches\/[^/]+$/.test(location.pathname);
+  if (isDetail) return <Outlet />;
+
   const { batches, runs, users } = useLab();
   const removeBatchLocal = useLab((s) => s.removeBatchLocal);
   const removeRunLocal = useLab((s) => s.removeRunLocal);
