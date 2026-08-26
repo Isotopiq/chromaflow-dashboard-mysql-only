@@ -11,6 +11,7 @@ import {
   Shield,
   Activity,
   UserCog,
+  TrendingUp,
 } from "lucide-react";
 import logoLightUrl from "@/assets/isotopiq-logo-light.png";
 import logoDarkUrl from "@/assets/isotopiq-logo-dark.png";
@@ -65,6 +66,10 @@ const groups: Array<{
   {
     label: "Reporting",
     items: [{ title: "Reports", url: "/reports", icon: FileText }],
+  },
+  {
+    label: "Quantitation",
+    items: [{ title: "Calibration & QC", url: "/quant", icon: TrendingUp }],
   },
   {
     label: "Settings",

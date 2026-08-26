@@ -421,3 +421,166 @@ create policy "invite_codes: admin write" on public.invite_codes for all
 -- =====================================================================
 -- Done. Storage objects live in your S3-compatible bucket (no SQL needed).
 -- =====================================================================
+
+-- =====================================================================
+-- 7. Notifications
+-- =====================================================================
+create table if not exists public.notifications (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid references public.app_users(id) on delete cascade not null,
+  kind        text not null check (kind in ('column_eol','batch_review','run_failed','run_parsed','calibration_drift','qc_fail','system','mention')),
+  title       text not null,
+  body        text,
+  link        text,
+  read_at     timestamptz,
+  created_at  timestamptz not null default now()
+);
+create index if not exists notifications_user_unread_idx
+  on public.notifications(user_id) where read_at is null;
+create index if not exists notifications_user_created_idx
+  on public.notifications(user_id, created_at desc);
+
+alter table public.notifications enable row level security;
+drop policy if exists "notifications: owner read"   on public.notifications;
+drop policy if exists "notifications: owner update" on public.notifications;
+drop policy if exists "notifications: owner insert" on public.notifications;
+create policy "notifications: owner read"
+  on public.notifications for select
+  using (user_id = public.current_app_user());
+create policy "notifications: owner update"
+  on public.notifications for update
+  using (user_id = public.current_app_user())
+  with check (user_id = public.current_app_user());
+create policy "notifications: owner insert"
+  on public.notifications for insert
+  with check (user_id = public.current_app_user() or public.current_app_is_admin());
+
+-- Helper: create a notification for a user (admin context, bypasses RLS).
+-- Deduplicates: if an unread notification of the same kind + link exists,
+-- it updates the body/timestamp instead of inserting a duplicate.
+create or replace function public.create_notification(
+  _user_id uuid,
+  _kind    text,
+  _title   text,
+  _body    text,
+  _link    text
+) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare
+  existing_id uuid;
+  new_id uuid;
+begin
+  -- Check for an existing unread notification of the same kind + link
+  select id into existing_id
+    from public.notifications
+   where user_id = _user_id
+     and kind = _kind
+     and link = _link
+     and read_at is null
+   order by created_at desc
+   limit 1;
+
+  if existing_id is not null then
+    update public.notifications
+      set title = _title, body = _body, created_at = now()
+      where id = existing_id;
+    return existing_id;
+  end if;
+
+  insert into public.notifications (user_id, kind, title, body, link)
+    values (_user_id, _kind, _title, _body, _link)
+    returning id into new_id;
+  return new_id;
+end $$;
+
+-- =====================================================================
+-- Done.
+-- =====================================================================
+
+-- =====================================================================
+-- 8. Quantitation & calibration
+-- =====================================================================
+
+-- Calibration standards: known-concentration samples linked to analytes + peaks
+create table if not exists public.calibration_standards (
+  id               uuid primary key default gen_random_uuid(),
+  analyte_id       uuid references public.analytes(id) on delete cascade not null,
+  run_id           uuid references public.runs(id) on delete cascade not null,
+  peak_id          uuid references public.peaks(id) on delete cascade,
+  concentration    double precision not null,
+  concentration_unit text default 'ng/mL',
+  response         double precision,
+  response_type    text default 'area' check (response_type in ('area','height')),
+  level            int,
+  excluded         boolean default false,
+  created_by       uuid references public.app_users(id) on delete set null,
+  created_at       timestamptz not null default now()
+);
+create index if not exists cal_std_analyte_idx on public.calibration_standards(analyte_id);
+create index if not exists cal_std_run_idx on public.calibration_standards(run_id);
+
+alter table public.calibration_standards enable row level security;
+drop policy if exists "cal_std: read all"   on public.calibration_standards;
+drop policy if exists "cal_std: write auth" on public.calibration_standards;
+create policy "cal_std: read all" on public.calibration_standards for select using (true);
+create policy "cal_std: write auth" on public.calibration_standards for all
+  using (created_by = public.current_app_user() or public.current_app_is_admin() or created_by is null)
+  with check (true);
+
+-- Calibration curves: fitted model per analyte (optionally per batch/method)
+create table if not exists public.calibration_curves (
+  id            uuid primary key default gen_random_uuid(),
+  analyte_id    uuid references public.analytes(id) on delete cascade not null,
+  batch_id      uuid references public.batches(id) on delete set null,
+  method_id     uuid references public.methods(id) on delete set null,
+  name          text default '',
+  model_type    text default 'linear' check (model_type in ('linear','weighted_linear','quad')),
+  weighting     text default 'none' check (weighting in ('none','1/x','1/x2')),
+  slope         double precision,
+  intercept     double precision,
+  r_squared     double precision,
+  lod           double precision,
+  loq           double precision,
+  lod_n         int default 3,
+  loq_n         int default 10,
+  range_low     double precision,
+  range_high    double precision,
+  created_by    uuid references public.app_users(id) on delete set null,
+  created_at    timestamptz not null default now()
+);
+create index if not exists cal_curve_analyte_idx on public.calibration_curves(analyte_id);
+
+alter table public.calibration_curves enable row level security;
+drop policy if exists "cal_curve: read all"   on public.calibration_curves;
+drop policy if exists "cal_curve: write auth" on public.calibration_curves;
+create policy "cal_curve: read all" on public.calibration_curves for select using (true);
+create policy "cal_curve: write auth" on public.calibration_curves for all
+  using (created_by = public.current_app_user() or public.current_app_is_admin() or created_by is null)
+  with check (true);
+
+-- QC samples: quality control checks against a calibration curve
+create table if not exists public.qc_samples (
+  id             uuid primary key default gen_random_uuid(),
+  curve_id       uuid references public.calibration_curves(id) on delete cascade not null,
+  run_id         uuid references public.runs(id) on delete cascade not null,
+  peak_id        uuid references public.peaks(id) on delete cascade,
+  expected_conc  double precision not null,
+  measured_conc  double precision,
+  accuracy_pct   double precision,
+  passed         boolean,
+  acceptance_pct double precision default 15,
+  created_at     timestamptz not null default now()
+);
+create index if not exists qc_curve_idx on public.qc_samples(curve_id);
+
+alter table public.qc_samples enable row level security;
+drop policy if exists "qc: read all"   on public.qc_samples;
+drop policy if exists "qc: write auth" on public.qc_samples;
+create policy "qc: read all" on public.qc_samples for select using (true);
+create policy "qc: write auth" on public.qc_samples for all
+  using (true)
+  with check (true);
+
+-- =====================================================================
+-- Done.
+-- =====================================================================

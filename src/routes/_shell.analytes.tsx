@@ -38,10 +38,10 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Download, Pencil, Plus, Trash2, Upload } from "lucide-react";
+import { Download, Pencil, Plus, Trash2, Upload, FileJson, FileText } from "lucide-react";
 import { useRef } from "react";
 import { toast } from "sonner";
-import { addAnalyte, updateAnalyte, deleteAnalyte } from "@/lib/lab.functions";
+import { addAnalyte, updateAnalyte, deleteAnalyte, exportAnalytes, importAnalytes } from "@/lib/lab.functions";
 import { monoisotopicMass, mzFromFormula } from "@/lib/chem";
 import type { Analyte } from "@/lib/lab-types";
 import {
@@ -104,6 +104,9 @@ function LibraryTab() {
   const addFn = useServerFn(addAnalyte);
   const updateFn = useServerFn(updateAnalyte);
   const deleteFn = useServerFn(deleteAnalyte);
+  const exportFn = useServerFn(exportAnalytes);
+  const importFn = useServerFn(importAnalytes);
+  const jsonImportRef = useRef<HTMLInputElement>(null);
   const qc = useQueryClient();
 
   const [editing, setEditing] = useState<Analyte | null>(null);
@@ -221,6 +224,95 @@ function LibraryTab() {
             }}
             addFn={addFn}
           />
+          {/* JSON import */}
+          <input
+            ref={jsonImportRef}
+            type="file"
+            accept=".json"
+            className="hidden"
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              try {
+                const text = await file.text();
+                const parsed = JSON.parse(text);
+                if (!Array.isArray(parsed)) throw new Error("Invalid JSON: expected array");
+                const res = await importFn({ data: { analytes: parsed, upsert: true } });
+                toast.success(`Imported: ${res.inserted} new, ${res.updated} updated, ${res.skipped} skipped`);
+                qc.invalidateQueries({ queryKey: ["lab"] });
+              } catch (err: any) {
+                toast.error(err?.message ?? "JSON import failed");
+              }
+              if (jsonImportRef.current) jsonImportRef.current.value = "";
+            }}
+          />
+          <Button size="sm" variant="outline" onClick={() => jsonImportRef.current?.click()}>
+            <Upload className="mr-1 h-3.5 w-3.5" /> JSON
+          </Button>
+          {/* Export buttons */}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={async () => {
+              try {
+                const res = await exportFn({ data: { format: "json" } });
+                const blob = new Blob([res.data], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = "analytes.json";
+                a.click();
+                URL.revokeObjectURL(url);
+                toast.success("Exported JSON");
+              } catch (err: any) {
+                toast.error(err?.message ?? "Export failed");
+              }
+            }}
+          >
+            <FileJson className="mr-1 h-3.5 w-3.5" /> JSON
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={async () => {
+              try {
+                const res = await exportFn({ data: { format: "msp" } });
+                const blob = new Blob([res.data], { type: "text/plain" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = "analytes.msp";
+                a.click();
+                URL.revokeObjectURL(url);
+                toast.success("Exported MSP");
+              } catch (err: any) {
+                toast.error(err?.message ?? "Export failed");
+              }
+            }}
+          >
+            <FileText className="mr-1 h-3.5 w-3.5" /> MSP
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={async () => {
+              try {
+                const res = await exportFn({ data: { format: "csv" } });
+                const blob = new Blob([res.data], { type: "text/csv" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = "analytes.csv";
+                a.click();
+                URL.revokeObjectURL(url);
+                toast.success("Exported CSV");
+              } catch (err: any) {
+                toast.error(err?.message ?? "Export failed");
+              }
+            }}
+          >
+            <Download className="mr-1 h-3.5 w-3.5" /> CSV
+          </Button>
           <Dialog open={creating} onOpenChange={setCreating}>
             <DialogTrigger asChild>
               <Button size="sm">

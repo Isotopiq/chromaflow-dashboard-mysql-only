@@ -28,6 +28,8 @@ type State = {
     currentUser: User;
   }) => void;
   upsertMethodLocal: (m: Method) => void;
+  removeMethodLocal: (id: string) => void;
+  archiveMethodLocal: (id: string) => void;
   upsertColumnLocal: (c: Column) => void;
   removeColumnLocal: (id: string) => void;
   upsertBatchLocal: (b: Batch) => void;
@@ -70,6 +72,14 @@ export const useLab = create<State>((set) => ({
       methods: s.methods.some((x) => x.id === m.id)
         ? s.methods.map((x) => (x.id === m.id ? m : x))
         : [m, ...s.methods],
+    })),
+  removeMethodLocal: (id) =>
+    set((s) => ({ methods: s.methods.filter((m) => m.id !== id) })),
+  archiveMethodLocal: (id) =>
+    set((s) => ({
+      methods: s.methods.map((m) =>
+        m.id === id ? { ...m, status: "archived" as const } : m,
+      ),
     })),
   upsertColumnLocal: (c) =>
     set((s) => ({

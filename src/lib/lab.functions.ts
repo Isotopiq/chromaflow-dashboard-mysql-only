@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireAuth } from "@/lib/auth-middleware";
 import { withAdmin } from "@/db/index.server";
+import { notify } from "@/lib/notifications.functions";
 import {
   createSignedUploadUrl,
   createSignedDownloadUrl,
@@ -97,6 +98,64 @@ export const upsertMethod = createServerFn({ method: "POST" })
       );
     }
     return mapMethod(row);
+  });
+
+// ---- Method delete / archive ----
+export const deleteMethod = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) =>
+    z.object({ methodId: z.string(), force: z.boolean().default(false) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { userId, isAdmin, db } = context as {
+      userId: string; email: string; isAdmin: boolean;
+      db: import("@/db/index.server").Db;
+    };
+    const existing = await db.maybe<any>(
+      "select id, created_by from public.methods where id = $1",
+      [data.methodId],
+    );
+    if (!existing) return { ok: true, missing: true };
+    if (existing.created_by && existing.created_by !== userId && !isAdmin)
+      throw new Error("You can only delete methods you created.");
+    const refs = await db.maybe<any>(
+      "select id from public.runs where method_id = $1 limit 1",
+      [data.methodId],
+    );
+    if (refs && !data.force)
+      throw new Error(
+        "Method is still referenced by runs. Use force=true to unlink runs and delete, or archive instead.",
+      );
+    if (data.force) {
+      await db.query(
+        "update public.runs set method_id = null where method_id = $1",
+        [data.methodId],
+      );
+    }
+    await db.query("delete from public.methods where id = $1", [data.methodId]);
+    return { ok: true };
+  });
+
+export const archiveMethod = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) => z.object({ methodId: z.string() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { userId, isAdmin, db } = context as {
+      userId: string; email: string; isAdmin: boolean;
+      db: import("@/db/index.server").Db;
+    };
+    const existing = await db.maybe<any>(
+      "select id, created_by from public.methods where id = $1",
+      [data.methodId],
+    );
+    if (!existing) return { ok: true, missing: true };
+    if (existing.created_by && existing.created_by !== userId && !isAdmin)
+      throw new Error("You can only archive methods you created.");
+    await db.query(
+      "update public.methods set status = 'archived', updated_at = now() where id = $1",
+      [data.methodId],
+    );
+    return { ok: true };
   });
 
 // ---- Columns ----
@@ -202,6 +261,17 @@ export const upsertBatch = createServerFn({ method: "POST" })
     }
     const runs = await db.many<{ id: string }>(
       "select id from public.runs where batch_id=$1", [row.id]);
+
+    // ---- Notification: batch ready for review ----
+    if (row.status === "review") {
+      await notify(
+        db, userId, "batch_review",
+        `Batch "${row.name}" ready for review`,
+        `Project: ${row.project || "—"}. ${runs.length} run(s) attached.`,
+        `/batches`,
+      );
+    }
+
     return mapBatch(row, runs.map((r) => r.id));
   });
 
@@ -314,6 +384,105 @@ export const deleteAnalyte = createServerFn({ method: "POST" })
     await db.query("update public.peaks set analyte_id = null where analyte_id = $1", [data.id]);
     await db.query("delete from public.analytes where id = $1", [data.id]);
     return { ok: true };
+  });
+
+// ---- Analyte bulk import/export ----
+const AnalyteImportRow = z.object({
+  name: z.string().min(1).max(200),
+  formula: z.string().max(200).optional().nullable(),
+  mz: z.number().optional().nullable(),
+  rtExpected: z.number().optional().nullable(),
+  librarySource: z.string().max(200).optional().nullable(),
+});
+
+export const importAnalytes = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) =>
+    z.object({
+      analytes: z.array(AnalyteImportRow).min(1).max(5000),
+      upsert: z.boolean().default(false),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { userId, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
+    let inserted = 0;
+    let updated = 0;
+    let skipped = 0;
+    for (const a of data.analytes) {
+      // Check for existing by name
+      const existing = await db.maybe<{ id: string }>(
+        "select id from public.analytes where name = $1",
+        [a.name],
+      );
+      if (existing) {
+        if (data.upsert) {
+          await db.query(
+            `update public.analytes
+               set formula = coalesce($1, formula),
+                   mz = coalesce($2, mz),
+                   rt_expected = coalesce($3, rt_expected),
+                   library_source = coalesce($4, library_source)
+             where id = $5`,
+            [a.formula ?? null, a.mz ?? null, a.rtExpected ?? null, a.librarySource ?? null, existing.id],
+          );
+          updated++;
+        } else {
+          skipped++;
+        }
+      } else {
+        await db.query(
+          `insert into public.analytes (name, formula, mz, rt_expected, library_source, created_by)
+           values ($1, $2, $3, $4, $5, $6)`,
+          [a.name, a.formula ?? null, a.mz ?? null, a.rtExpected ?? null, a.librarySource ?? null, userId],
+        );
+        inserted++;
+      }
+    }
+    return { inserted, updated, skipped, total: data.analytes.length };
+  });
+
+export const exportAnalytes = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) =>
+    z.object({
+      format: z.enum(["json", "csv", "msp"]).default("json"),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
+    const rows = await db.many<any>(
+      "select name, formula, mz, rt_expected, library_source from public.analytes order by name",
+    );
+    if (data.format === "json") {
+      return {
+        format: "json",
+        data: JSON.stringify(rows.map((r) => ({
+          name: r.name,
+          formula: r.formula ?? "",
+          mz: r.mz != null ? Number(r.mz) : null,
+          rtExpected: r.rt_expected != null ? Number(r.rt_expected) : null,
+          librarySource: r.library_source ?? "",
+        })), null, 2),
+      };
+    }
+    if (data.format === "csv") {
+      const header = "name,formula,mz,rt_expected,library_source";
+      const lines = rows.map((r) =>
+        `"${r.name}","${r.formula ?? ""}",${r.mz ?? ""},${r.rt_expected ?? ""},"${r.library_source ?? ""}"`,
+      );
+      return { format: "csv", data: [header, ...lines].join("\n") };
+    }
+    // MSP format (NIST MS Search)
+    const mspLines: string[] = [];
+    for (const r of rows) {
+      mspLines.push(`Name: ${r.name}`);
+      if (r.formula) mspLines.push(`Formula: ${r.formula}`);
+      if (r.mz != null) mspLines.push(`MW: ${Math.round(Number(r.mz))}`);
+      if (r.rt_expected != null) mspLines.push(`RT: ${Number(r.rt_expected).toFixed(2)}`);
+      if (r.library_source) mspLines.push(`Comment: source=${r.library_source}`);
+      mspLines.push("");
+    }
+    return { format: "msp", data: mspLines.join("\n") };
   });
 
 // ---- Runs ----
@@ -432,6 +601,33 @@ export const createRun = createServerFn({ method: "POST" })
       // Auto-annotation is best-effort; never fail the upload because of it.
     }
 
+    // ---- Notification: run parsed ----
+    await notify(
+      db, userId, "run_parsed",
+      `Run "${data.name}" uploaded`,
+      `${peakRows.length} peaks detected${peakRows.length > 0 ? " and auto-annotated" : ""}.`,
+      `/runs/${run.id}`,
+    );
+
+    // ---- Notification: column nearing EOL ----
+    if (data.columnId) {
+      const col = await db.maybe<any>(
+        "select name, used_injections, rated_injections from public.columns where id = $1",
+        [data.columnId],
+      );
+      if (col && col.rated_injections > 0) {
+        const pct = (Number(col.used_injections) / Number(col.rated_injections)) * 100;
+        if (pct >= 90) {
+          await notify(
+            db, userId, "column_eol",
+            `Column "${col.name}" nearing end of life`,
+            `${col.used_injections}/${col.rated_injections} injections used (${pct.toFixed(0)}%). Consider replacing soon.`,
+            `/columns/${data.columnId}`,
+          );
+        }
+      }
+    }
+
     return mapRun(run, peakRows.map(mapPeak).sort((a: any, b: any) => a.rt - b.rt));
   });
 
@@ -470,6 +666,67 @@ export const annotatePeak = createServerFn({ method: "POST" })
       );
     }
     return { ok: true, analyteName: label };
+  });
+
+// ---- MS2 spectra ----
+export const getRunMS2Spectra = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) =>
+    z.object({
+      runId: z.string().uuid(),
+      rt: z.number().optional(),
+      precursorMz: z.number().optional(),
+      rtTol: z.number().optional(),
+      ppmTol: z.number().optional(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
+    const run = await db.maybe<any>(
+      "select file_path, scans_blob_path from public.runs where id = $1",
+      [data.runId],
+    );
+    if (!run) throw new Error("Run not found");
+    // MS2 blob path: replace .scans.bin with .ms2.bin
+    const ms2Path = (run.scans_blob_path || "").replace(/\.scans\.bin$/, ".ms2.bin");
+    if (!ms2Path.endsWith(".ms2.bin")) return { spectra: [], hasMS2: false };
+
+    // Read MS2 blob from storage
+    const { getObject } = await import("@/lib/storage.server");
+    let blob: Uint8Array | null = null;
+    try {
+      blob = await getObject(ms2Path);
+    } catch {
+      return { spectra: [], hasMS2: false };
+    }
+    if (!blob || blob.length < 8) return { spectra: [], hasMS2: false };
+
+    // Parse and return metadata (without sending full blob to client)
+    const { unpackMS2Scans } = await import("@/lib/eic");
+    const scans = unpackMS2Scans(blob);
+
+    // If specific RT + m/z requested, return that spectrum
+    if (data.rt != null && data.precursorMz != null) {
+      const { extractMS2Spectrum } = await import("@/lib/eic");
+      const spec = extractMS2Spectrum(
+        blob,
+        data.rt,
+        data.precursorMz,
+        data.rtTol ?? 0.2,
+        data.ppmTol ?? 20,
+      );
+      return { hasMS2: true, spectrum: spec, scanCount: scans.length };
+    }
+
+    // Otherwise return summary list of all MS2 scans
+    const summary = scans.map((s) => ({
+      rt: s.rt,
+      precursorMz: s.precursorMz,
+      collisionEnergy: s.collisionEnergy,
+      peakCount: s.mz.length,
+      basePeak: s.mz.length > 0 ? s.mz[0] : 0,
+    }));
+    return { hasMS2: true, spectra: summary, scanCount: scans.length };
   });
 
 const UnassignInput = z.object({
@@ -892,12 +1149,12 @@ export const addManualPeak = createServerFn({ method: "POST" })
   });
 
 // ---- Delete run ----
-async function deleteRunInternal(db: import("@/db/index.server").Db, userId: string, runId: string) {
+async function deleteRunInternal(db: import("@/db/index.server").Db, userId: string, runId: string, isAdmin = false) {
   const run = await db.maybe<any>(
     "select id, uploaded_by, file_path, scans_blob_path from public.runs where id=$1",
     [runId]);
   if (!run) return { ok: true, missing: true };
-  if (run.uploaded_by && run.uploaded_by !== userId)
+  if (run.uploaded_by && run.uploaded_by !== userId && !isAdmin)
     throw new Error("You don't have permission to delete this run.");
   const paths = [run.file_path, run.scans_blob_path].filter(
     (p): p is string => typeof p === "string" && p.length > 0);
@@ -911,24 +1168,24 @@ export const deleteRun = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => z.object({ runId: z.string() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { userId, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
-    return deleteRunInternal(db, userId, data.runId);
+    const { userId, isAdmin, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
+    return deleteRunInternal(db, userId, data.runId, isAdmin);
   });
 
 export const deleteBatch = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => z.object({ batchId: z.string(), deleteRuns: z.boolean().default(false) }).parse(d))
   .handler(async ({ data, context }) => {
-    const { userId, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
+    const { userId, isAdmin, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
     const batch = await db.maybe<any>(
       "select id, owner_id from public.batches where id=$1", [data.batchId]);
     if (!batch) return { ok: true, missing: true };
-    if (batch.owner_id && batch.owner_id !== userId)
+    if (batch.owner_id && batch.owner_id !== userId && !isAdmin)
       throw new Error("You don't have permission to delete this batch.");
     if (data.deleteRuns) {
       const runs = await db.many<any>(
         "select id from public.runs where batch_id=$1", [data.batchId]);
-      for (const r of runs) await deleteRunInternal(db, userId, r.id);
+      for (const r of runs) await deleteRunInternal(db, userId, r.id, isAdmin);
     } else {
       await db.query(
         "update public.runs set batch_id=null where batch_id=$1", [data.batchId]);

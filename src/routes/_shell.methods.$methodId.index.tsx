@@ -1,4 +1,5 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
 import { useLab } from "@/lib/store";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -13,7 +14,20 @@ import {
 } from "@/components/ui/table";
 import { ChromatogramPlot } from "@/components/chromatogram-plot";
 import { StatusDot } from "@/components/status-dot";
-import { ArrowLeft, GitBranch, Edit3 } from "lucide-react";
+import { ArrowLeft, GitBranch, Edit3, Trash2, Archive } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { deleteMethod, archiveMethod } from "@/lib/lab.functions";
 import type { Method } from "@/lib/lab-types";
 
 export const Route = createFileRoute("/_shell/methods/$methodId/")({
@@ -55,9 +69,56 @@ function MethodDetailGate() {
 }
 
 function MethodDetail({ method }: { method: Method }) {
-  const { columns, runs } = useLab();
+  const { columns, runs, currentUser, removeMethodLocal, archiveMethodLocal } = useLab();
+  const deleteFn = useServerFn(deleteMethod);
+  const archiveFn = useServerFn(archiveMethod);
+  const nav = useNavigate();
+  const [showDelete, setShowDelete] = useState(false);
+  const [showArchive, setShowArchive] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [archiving, setArchiving] = useState(false);
+
   const column = columns.find((c) => c.id === method.columnId);
   const methodRuns = runs.filter((r) => r.methodId === method.id);
+  const isAdmin = currentUser?.role === "admin";
+  const canModify = isAdmin || !method.createdBy || method.createdBy === currentUser?.id;
+
+  const confirmDelete = async () => {
+    setDeleting(true);
+    try {
+      const res = await deleteFn({ data: { methodId: method.id, force: true } });
+      if (res.missing) {
+        toast.info("Method no longer exists");
+      } else {
+        removeMethodLocal(method.id);
+        toast.success(`Method "${method.name}" deleted`);
+      }
+      nav({ to: "/methods" });
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to delete method");
+    } finally {
+      setDeleting(false);
+      setShowDelete(false);
+    }
+  };
+
+  const confirmArchive = async () => {
+    setArchiving(true);
+    try {
+      const res = await archiveFn({ data: { methodId: method.id } });
+      if (res.missing) {
+        toast.info("Method no longer exists");
+      } else {
+        archiveMethodLocal(method.id);
+        toast.success(`Method "${method.name}" archived`);
+      }
+      setShowArchive(false);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to archive method");
+    } finally {
+      setArchiving(false);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -82,14 +143,33 @@ function MethodDetail({ method }: { method: Method }) {
           </div>
         </div>
         <div className="flex gap-2">
+          {method.status !== "archived" && canModify && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowArchive(true)}
+            >
+              <Archive className="mr-1 h-3.5 w-3.5" /> Archive
+            </Button>
+          )}
+          {canModify && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-destructive hover:text-destructive"
+              onClick={() => setShowDelete(true)}
+            >
+              <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
+            </Button>
+          )}
           <Button asChild variant="outline" size="sm">
             <Link to="/methods/$methodId/history" params={{ methodId: method.id }}>
-              <GitBranch className="mr-1 h-3.5 w-3.5" /> Revision history
+              <GitBranch className="mr-1 h-3.5 w-3.5" /> History
             </Link>
           </Button>
           <Button asChild size="sm">
             <Link to="/methods/$methodId/edit" params={{ methodId: method.id }}>
-              <Edit3 className="mr-1 h-3.5 w-3.5" /> Edit method
+              <Edit3 className="mr-1 h-3.5 w-3.5" /> Edit
             </Link>
           </Button>
         </div>
@@ -194,6 +274,58 @@ function MethodDetail({ method }: { method: Method }) {
           </div>
         </Card>
       )}
+
+      {/* Delete confirmation */}
+      <AlertDialog open={showDelete} onOpenChange={setShowDelete}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete method "{method.name}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {methodRuns.length > 0 ? (
+                <>
+                  This method is linked to {methodRuns.length} run(s).
+                  Deleting will unlink those runs (their method reference will be cleared).
+                  This cannot be undone.
+                </>
+              ) : (
+                <>This will permanently delete the method. This cannot be undone.</>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              onClick={confirmDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Archive confirmation */}
+      <AlertDialog open={showArchive} onOpenChange={setShowArchive}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Archive method "{method.name}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The method will be marked as archived. You can still find it by filtering.
+              This can be undone by editing the method status.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={archiving}
+              onClick={confirmArchive}
+            >
+              {archiving ? "Archiving…" : "Archive"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

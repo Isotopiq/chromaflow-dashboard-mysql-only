@@ -163,13 +163,13 @@ function RunsList() {
 
     try {
       const text = await file.text();
-      const parsed = await new Promise<{ summary: WorkerRunSummary; scansBlob: Uint8Array }>(
+      const parsed = await new Promise<{ summary: WorkerRunSummary; scansBlob: Uint8Array; ms2Blob: Uint8Array }>(
         (resolve, reject) => {
           const w = workerRef.current!;
           const handler = (e: MessageEvent) => {
             if (e.data?.id !== id) return;
             w.removeEventListener("message", handler);
-            if (e.data.ok) resolve({ summary: e.data.summary, scansBlob: e.data.scansBlob });
+            if (e.data.ok) resolve({ summary: e.data.summary, scansBlob: e.data.scansBlob, ms2Blob: e.data.ms2Blob });
             else reject(new Error(e.data.error || "Parse failed"));
           };
           w.addEventListener("message", handler);
@@ -179,10 +179,13 @@ function RunsList() {
 
       updateJob(id, { status: "uploading" });
 
-      const [rawUrl, scansUrl] = await Promise.all([
+      const [rawUrl, scansUrl, ms2Url] = await Promise.all([
         createUploadUrlFn({ data: { filename: file.name, bucket: "raw-runs" } }),
         createUploadUrlFn({
           data: { filename: file.name, bucket: "raw-runs", suffix: ".scans.bin" },
+        }),
+        createUploadUrlFn({
+          data: { filename: file.name, bucket: "raw-runs", suffix: ".ms2.bin" },
         }),
       ]);
 
@@ -192,6 +195,12 @@ function RunsList() {
       const blobFile = new Blob([parsed.scansBlob as BlobPart], { type: "application/octet-stream" });
       const upScans = await fetch(scansUrl.signedUrl, { method: "PUT", body: blobFile });
       if (!upScans.ok) throw new Error(`Scans upload failed: ${upScans.status}`);
+
+      // Upload MS2 blob if present
+      if (parsed.ms2Blob.length > 8) {
+        const ms2File = new Blob([parsed.ms2Blob as BlobPart], { type: "application/octet-stream" });
+        await fetch(ms2Url.signedUrl, { method: "PUT", body: ms2File }).catch(() => {});
+      }
 
       updateJob(id, { status: "saving" });
 

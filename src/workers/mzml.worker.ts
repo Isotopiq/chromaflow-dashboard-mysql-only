@@ -37,6 +37,7 @@ export type WorkerRunSummary = {
   msLevel: 1;
   scanCount: number;
   truncated: boolean;
+  ms2Count: number;
 };
 
 // ---------- decode helpers ----------
@@ -505,9 +506,55 @@ function packScans(
   return deflate(new Uint8Array(buf));
 }
 
+// ---------- MS2 scans blob format (little-endian) ----------
+//   u32 magic = 0x53434E32  ("SCN2")
+//   u32 numScans
+//   per scan:
+//     f32 rt
+//     f32 precursorMz
+//     f32 collisionEnergy
+//     u32 n
+//     f32[n] mz
+//     f32[n] intensity
+
+type MS2Scan = {
+  rt: number;
+  precursorMz: number;
+  collisionEnergy: number;
+  mz: Float32Array;
+  intens: Float32Array;
+};
+
+function packMS2Scans(scans: MS2Scan[]): Uint8Array {
+  let total = 8;
+  for (const s of scans) total += 4 + 4 + 4 + 4 + s.mz.byteLength + s.intens.byteLength;
+  const buf = new ArrayBuffer(total);
+  const dv = new DataView(buf);
+  let o = 0;
+  dv.setUint32(o, 0x53434e32, true);
+  o += 4;
+  dv.setUint32(o, scans.length, true);
+  o += 4;
+  for (const s of scans) {
+    dv.setFloat32(o, s.rt, true);
+    o += 4;
+    dv.setFloat32(o, s.precursorMz, true);
+    o += 4;
+    dv.setFloat32(o, s.collisionEnergy, true);
+    o += 4;
+    dv.setUint32(o, s.mz.length, true);
+    o += 4;
+    new Float32Array(buf, o, s.mz.length).set(s.mz);
+    o += s.mz.byteLength;
+    new Float32Array(buf, o, s.intens.length).set(s.intens);
+    o += s.intens.byteLength;
+  }
+  return deflate(new Uint8Array(buf));
+}
+
 // ---------- mzML/mzXML parse ----------
 
-async function parseMzML(text: string): Promise<{ summary: WorkerRunSummary; scansBlob: Uint8Array }> {
+async function parseMzML(text: string): Promise<{ summary: WorkerRunSummary; scansBlob: Uint8Array; ms2Blob: Uint8Array }> {
   const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_" });
   const doc = parser.parse(text);
   const isMzXml = !!doc?.mzXML;
@@ -517,25 +564,93 @@ async function parseMzML(text: string): Promise<{ summary: WorkerRunSummary; sca
   const tic: number[] = [];
   const bpc: number[] = [];
   const scans: Array<{ rt: number; mz: Float32Array; intens: Float32Array }> = [];
+  const ms2Scans: MS2Scan[] = [];
 
   let ionMode: "positive" | "negative" = "positive";
   let ionDetected = false;
   let truncated = false;
   let pointBudget = 12_000_000;
 
+  // Helper: extract precursor m/z and collision energy from an mzML spectrum
+  function getPrecursorMz(s: any): { precursorMz: number; ce: number } {
+    let precursorMz = 0;
+    let ce = 0;
+    const prec = s?.precursorList?.precursor;
+    const precList = Array.isArray(prec) ? prec : prec ? [prec] : [];
+    for (const p of precList) {
+      const ion = p?.selectedIonList?.selectedIon;
+      const ionList = Array.isArray(ion) ? ion : ion ? [ion] : [];
+      for (const si of ionList) {
+        const cv = Array.isArray(si?.cvParam) ? si.cvParam : [si?.cvParam].filter(Boolean);
+        for (const c of cv) {
+          if (c?.["@_accession"] === "MS:1000040" || c?.["@_accession"] === "MS:1000744") {
+            precursorMz = parseFloat(c["@_value"]);
+          }
+        }
+      }
+      // Collision energy from activation
+      const act = p?.activation;
+      const actCv = Array.isArray(act?.cvParam) ? act.cvParam : [act?.cvParam].filter(Boolean);
+      for (const c of actCv) {
+        if (c?.["@_accession"] === "MS:1000045") {
+          ce = parseFloat(c["@_value"]);
+        }
+      }
+    }
+    return { precursorMz, ce };
+  }
+
   const specs: any[] = isMzXml
     ? (() => {
         const acc: any[] = [];
+        const ms2Acc: any[] = [];
         const walk = (s: any) => {
           if (!s) return;
           const arr = Array.isArray(s) ? s : [s];
           for (const sc of arr) {
             const lvl = parseInt(sc?.["@_msLevel"] ?? "1", 10);
             if (lvl === 1) acc.push(sc);
+            else if (lvl === 2) ms2Acc.push(sc);
             if (sc?.scan) walk(sc.scan);
           }
         };
         walk(root?.msRun?.scan);
+        // Process mzXML MS2 scans
+        for (const sc of ms2Acc) {
+          const t = sc?.["@_retentionTime"] ?? "";
+          const m = String(t).match(/PT?([0-9.]+)S?/i);
+          const rt2 = m ? parseFloat(m[1]) / 60 : 0;
+          const precursorMz = parseFloat(sc?.["precursorMz"]?.["#text"] ?? sc?.["@_precursorMz"] ?? "0");
+          const peaks = sc?.peaks;
+          const peaksList = Array.isArray(peaks) ? peaks : peaks ? [peaks] : [];
+          if (peaksList.length === 0) continue;
+          const readNode = (node: any) => {
+            const raw = typeof node === "string" ? node : (node?.["#text"] ?? "");
+            const precision: 32 | 64 = (parseInt(node?.["@_precision"] ?? "32", 10) === 64 ? 64 : 32) as 32 | 64;
+            const compressed = (node?.["@_compressionType"] ?? "none") !== "none";
+            const byteOrder = String(node?.["@_byteOrder"] ?? "network").toLowerCase();
+            const littleEndian = byteOrder === "little";
+            return raw ? b64ToFloat(raw, precision, compressed, littleEndian) : new Float32Array(0);
+          };
+          const flat = readNode(peaksList[0]);
+          const half = flat.length >>> 1;
+          const mzArr2 = new Float32Array(half);
+          const intArr2 = new Float32Array(half);
+          for (let i = 0; i < half; i++) {
+            mzArr2[i] = flat[i * 2];
+            intArr2[i] = flat[i * 2 + 1];
+          }
+          const kept2 = mzArr2.length > 0 ? centroidAndThreshold(mzArr2, intArr2) : { mz: mzArr2, intens: intArr2 };
+          if (kept2.mz.length > 0 && ms2Scans.length < 5000) {
+            ms2Scans.push({
+              rt: +rt2.toFixed(4),
+              precursorMz,
+              collisionEnergy: 0,
+              mz: kept2.mz,
+              intens: kept2.intens,
+            });
+          }
+        }
         return acc;
       })()
     : (() => {
@@ -587,7 +702,32 @@ async function parseMzML(text: string): Promise<{ summary: WorkerRunSummary; sca
     } else {
       const cv = Array.isArray(s?.cvParam) ? s.cvParam : [s?.cvParam].filter(Boolean);
       const msLevel = cv.find((c: any) => c?.["@_accession"] === "MS:1000511");
-      if (msLevel && parseInt(msLevel["@_value"], 10) !== 1) continue;
+      const msLevelVal = msLevel ? parseInt(msLevel["@_value"], 10) : 1;
+
+      // Collect MS2 scans separately
+      if (msLevelVal === 2) {
+        rt = getRetentionTime(s);
+        const bdl = s?.binaryDataArrayList?.binaryDataArray;
+        const arrs = Array.isArray(bdl) ? bdl : bdl ? [bdl] : [];
+        const { mz, intensity } = pickArrays(arrs);
+        if (mz && intensity) {
+          mzArr = b64ToFloat(mz.raw, mz.precision, mz.compressed);
+          intArr = b64ToFloat(intensity.raw, intensity.precision, intensity.compressed);
+        }
+        const { precursorMz, ce } = getPrecursorMz(s);
+        const kept2 = mzArr.length > 0 ? centroidAndThreshold(mzArr, intArr) : { mz: mzArr, intens: intArr };
+        if (kept2.mz.length > 0 && ms2Scans.length < 5000) {
+          ms2Scans.push({
+            rt: +rt.toFixed(4),
+            precursorMz,
+            collisionEnergy: ce,
+            mz: kept2.mz,
+            intens: kept2.intens,
+          });
+        }
+        continue;
+      }
+      if (msLevelVal !== 1) continue;
       if (!ionDetected) {
         const m = detectIonMode(s);
         if (m) {
@@ -685,18 +825,20 @@ async function parseMzML(text: string): Promise<{ summary: WorkerRunSummary; sca
     msLevel: 1,
     scanCount: scans.length,
     truncated,
+    ms2Count: ms2Scans.length,
   };
   const scansBlob = packScans(scans);
-  return { summary, scansBlob };
+  const ms2Blob = packMS2Scans(ms2Scans);
+  return { summary, scansBlob, ms2Blob };
 }
 
 self.onmessage = async (e: MessageEvent) => {
   const { id, text } = e.data as { id: string; text: string };
   try {
-    const { summary, scansBlob } = await parseMzML(text);
+    const { summary, scansBlob, ms2Blob } = await parseMzML(text);
     (self as unknown as Worker).postMessage(
-      { id, ok: true, summary, scansBlob },
-      [scansBlob.buffer],
+      { id, ok: true, summary, scansBlob, ms2Blob },
+      [scansBlob.buffer, ms2Blob.buffer],
     );
   } catch (err: any) {
     (self as unknown as Worker).postMessage({ id, ok: false, error: err?.message ?? String(err) });

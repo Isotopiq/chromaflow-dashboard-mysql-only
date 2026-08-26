@@ -23,6 +23,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { ChromatogramPlot } from "@/components/chromatogram-plot";
 import { PeakTable } from "@/components/peak-table";
+import { MS2Viewer } from "@/components/ms2-viewer";
+import { SystemSuitability } from "@/components/system-suitability";
 import { ago } from "@/lib/time";
 import { toast } from "sonner";
 import { getRunEIC, getRunEICBatch, deleteRun, addManualPeak, unassignPeaks } from "@/lib/lab.functions";
@@ -987,6 +989,20 @@ function RunDetail() {
           ) : (
             <div className="mt-4 text-xs text-muted-foreground">Select a peak to annotate.</div>
           )}
+        </Card>
+
+        {/* MS2 spectra viewer */}
+        <Card className="border-border bg-card p-4">
+          <MS2Viewer
+            runId={run.id}
+            peakRt={effectiveSelected?.rt}
+            peakMz={effectiveSelected?.mz}
+          />
+        </Card>
+
+        {/* System suitability */}
+        <Card className="border-border bg-card p-4">
+          <SystemSuitability peaks={run.peaks} />
         </Card>
       </div>
     </div>
