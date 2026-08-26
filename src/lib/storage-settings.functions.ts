@@ -1,7 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireAuth } from "@/lib/auth-middleware";
-import { withAdmin } from "@/db/index.server";
 
 function requireAdmin(isAdmin: boolean) {
   if (!isAdmin) throw new Response("Forbidden — admin only", { status: 403 });
@@ -13,14 +12,12 @@ function requireAdmin(isAdmin: boolean) {
 export const getStorageSettings = createServerFn({ method: "GET" })
   .middleware([requireAuth])
   .handler(async ({ context }) => {
-    const { isAdmin } = context as { isAdmin: boolean };
+    const { isAdmin, db } = context as { isAdmin: boolean; db: import("@/db/index.server").Db };
     requireAdmin(isAdmin);
 
     let row: any = null;
     try {
-      row = await withAdmin((db) =>
-        db.maybe<any>("select * from public.storage_settings where id = 1"),
-      );
+      row = await db.maybe<any>("select * from public.storage_settings where id = 1");
     } catch (e) {
       console.warn("[storage-settings] DB read failed:", (e as Error)?.message);
     }
