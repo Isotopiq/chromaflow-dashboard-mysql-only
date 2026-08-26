@@ -19,6 +19,8 @@ services:
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
+    networks:
+      - chroma_net
     # Exposed on a unique host port so it won't collide with other Postgres
     # instances on the host. Comment this out if you don't need host access
     # (the app talks to it over the internal Docker network as `postgres`).
@@ -42,6 +44,8 @@ services:
   migrate:
     image: postgres:17-alpine
     restart: "no"
+    networks:
+      - chroma_net
     depends_on:
       postgres:
         condition: service_healthy
@@ -69,6 +73,8 @@ services:
     image: ddlidded/chroma-lab:latest
     pull_policy: always
     restart: unless-stopped
+    networks:
+      - chroma_net
     ports:
       - "29473:29473"
     volumes:
@@ -135,6 +141,9 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+
+networks:
+  chroma_net:
 
 volumes:
   postgres_data:
