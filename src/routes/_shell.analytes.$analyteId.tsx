@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useLab } from "@/lib/store";
@@ -154,7 +154,7 @@ function ColumnRtManager({ analyteId, defaultRt }: { analyteId: string; defaultR
   const [saving, setSaving] = useState(false);
 
   // Load per-column RTs on mount.
-  useMemo(() => {
+  useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
@@ -167,7 +167,7 @@ function ColumnRtManager({ analyteId, defaultRt }: { analyteId: string; defaultR
       }
     })();
     return () => { cancelled = true; };
-  }, [analyteId]);
+  }, [analyteId, getFn]);
 
   const usedColumnIds = new Set(rts.map((r) => r.columnId));
   const availableColumns = columns.filter((c) => !usedColumnIds.has(c.id));
