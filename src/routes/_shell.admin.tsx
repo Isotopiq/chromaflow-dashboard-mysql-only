@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { Component, useEffect, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -52,6 +52,7 @@ import {
   testStorageConnection,
 } from "@/lib/storage-settings.functions";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -97,7 +98,9 @@ function Admin() {
           <BrandingTab />
         </TabsContent>
         <TabsContent value="storage" className="mt-4">
-          <StorageTab />
+          <StorageErrorBoundary>
+            <StorageTab />
+          </StorageErrorBoundary>
         </TabsContent>
         <TabsContent value="audit" className="mt-4">
           <AuditTab />
@@ -609,6 +612,33 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 // ============================================================
 // Storage settings (S3 / local filesystem)
 // ============================================================
+class StorageErrorBoundary extends Component<
+  { children: React.ReactNode },
+  { hasError: boolean; message: string }
+> {
+  state = { hasError: false, message: "" };
+  static getDerivedStateFromError(err: unknown) {
+    const msg = err instanceof Response
+      ? `Request failed (HTTP ${err.status})`
+      : err instanceof Error ? err.message : "Failed to load storage settings";
+    return { hasError: true, message: msg };
+  }
+  componentDidCatch(err: unknown) { console.error("StorageTab error:", err); }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <Card className="border-destructive/40 bg-destructive/5 p-4">
+          <div className="flex items-center gap-2 text-xs">
+            <AlertTriangle className="h-4 w-4 text-destructive" />
+            <span>{this.state.message}</span>
+          </div>
+        </Card>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function StorageTab() {
   const getFn = useServerFn(getStorageSettings);
   const setFn = useServerFn(setStorageSettings);
@@ -617,7 +647,18 @@ function StorageTab() {
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["storage-settings"],
-    queryFn: () => getFn(),
+    queryFn: async () => {
+      try {
+        return await getFn();
+      } catch (e: any) {
+        // Response objects from requireAuth/requireAdmin don't have .message
+        if (e instanceof Response) {
+          throw new Error(`Storage settings request failed (HTTP ${e.status})`);
+        }
+        throw e;
+      }
+    },
+    retry: false,
   });
 
   const [bucket, setBucket] = useState("");

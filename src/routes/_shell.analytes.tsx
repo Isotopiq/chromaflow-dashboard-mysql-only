@@ -38,7 +38,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Download, Pencil, Plus, Trash2, Upload, FileJson, FileText } from "lucide-react";
+import { Download, Pencil, Plus, Trash2, Upload, FileJson, FileText, ChevronLeft, ChevronRight } from "lucide-react";
 import { useRef } from "react";
 import { toast } from "sonner";
 import { addAnalyte, updateAnalyte, deleteAnalyte, exportAnalytes, importAnalytes } from "@/lib/lab.functions";
@@ -118,18 +118,34 @@ function LibraryTab() {
   const [creating, setCreating] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
+  const [search, setSearch] = useState("");
 
   const sorted = useMemo(
     () =>
-      [...analytes].sort((a, b) => {
-        // user-owned first, then alphabetical
-        const ao = a.librarySource === "user" ? 0 : 1;
-        const bo = b.librarySource === "user" ? 0 : 1;
-        if (ao !== bo) return ao - bo;
-        return a.name.localeCompare(b.name);
-      }),
-    [analytes],
+      [...analytes]
+        .filter((a) => {
+          if (!search.trim()) return true;
+          const q = search.toLowerCase().trim();
+          return (
+            a.name.toLowerCase().includes(q) ||
+            (a.formula ?? "").toLowerCase().includes(q)
+          );
+        })
+        .sort((a, b) => {
+          // user-owned first, then alphabetical
+          const ao = a.librarySource === "user" ? 0 : 1;
+          const bo = b.librarySource === "user" ? 0 : 1;
+          if (ao !== bo) return ao - bo;
+          return a.name.localeCompare(b.name);
+        }),
+    [analytes, search],
   );
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
+  const currentPage = Math.min(page, totalPages - 1);
+  const paginated = sorted.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
 
   const selectable = useMemo(
     () =>
@@ -182,8 +198,14 @@ function LibraryTab() {
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
-          <span>
-            Add compounds, edit library entries, or open a compound to compare it across columns.
+          <Input
+            placeholder="Search compounds…"
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(0); }}
+            className="h-7 w-48 text-xs"
+          />
+          <span className="text-muted-foreground">
+            {sorted.length} total
           </span>
           {selected.size > 0 && (
             <AlertDialog>
@@ -368,7 +390,7 @@ function LibraryTab() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {sorted.map((a) => {
+              {paginated.map((a) => {
                 const mass = a.formula ? monoisotopicMass(a.formula) : null;
                 const mzPos = a.formula ? mzFromFormula(a.formula, "[M+H]+") : null;
                 const mzNeg = a.formula ? mzFromFormula(a.formula, "[M-H]-") : null;
@@ -502,6 +524,52 @@ function LibraryTab() {
           </Table>
         </div>
       </Card>
+
+      {/* Pagination */}
+      {sorted.length > pageSize && (
+        <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+          <div className="flex items-center gap-2">
+            <span>Rows per page</span>
+            <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); setPage(0); }}>
+              <SelectTrigger className="h-7 w-20 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="10">10</SelectItem>
+                <SelectItem value="25">25</SelectItem>
+                <SelectItem value="50">50</SelectItem>
+                <SelectItem value="100">100</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center gap-2">
+            <span>
+              {currentPage * pageSize + 1}–{Math.min((currentPage + 1) * pageSize, sorted.length)} of {sorted.length}
+            </span>
+            <Button
+              size="icon"
+              variant="outline"
+              className="h-7 w-7"
+              disabled={currentPage === 0}
+              onClick={() => setPage(currentPage - 1)}
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </Button>
+            <span className="font-mono">
+              {currentPage + 1} / {totalPages}
+            </span>
+            <Button
+              size="icon"
+              variant="outline"
+              className="h-7 w-7"
+              disabled={currentPage >= totalPages - 1}
+              onClick={() => setPage(currentPage + 1)}
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
