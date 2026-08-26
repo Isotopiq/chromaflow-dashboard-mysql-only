@@ -144,6 +144,29 @@ create policy "columns: write auth" on public.columns for all
   using (owner_id = public.current_app_user() or public.current_app_is_admin() or owner_id is null)
   with check (true);
 
+-- ---- column_service_events ----
+-- Tracks guard changes, maintenance, resets, and installs for columns.
+create table if not exists public.column_service_events (
+  id                uuid primary key default gen_random_uuid(),
+  column_id         uuid not null references public.columns(id) on delete cascade,
+  kind              text not null check (kind in ('reset','guard_change','maintenance','install')),
+  injections_before int  default 0,
+  injections_after  int  default 0,
+  reset_usage       boolean default false,
+  serial            text default '',
+  notes             text default '',
+  performed_by      uuid references public.app_users(id) on delete set null,
+  created_at        timestamptz not null default now()
+);
+create index if not exists column_service_events_column_idx on public.column_service_events(column_id);
+alter table public.column_service_events enable row level security;
+drop policy if exists "column_service_events: read all"   on public.column_service_events;
+drop policy if exists "column_service_events: write auth" on public.column_service_events;
+create policy "column_service_events: read all" on public.column_service_events for select using (true);
+create policy "column_service_events: write auth" on public.column_service_events for all
+  using (true)
+  with check (true);
+
 -- ---- methods ----
 create table if not exists public.methods (
   id              uuid primary key default gen_random_uuid(),
