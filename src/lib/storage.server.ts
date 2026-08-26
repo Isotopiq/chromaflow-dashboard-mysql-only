@@ -7,16 +7,18 @@
 //
 // Uses a single bucket; the legacy bucket name is stored as a folder prefix
 // (raw-runs/, reports/, branding/, avatars/).
-import {
-  S3Client,
-  GetObjectCommand,
-  PutObjectCommand,
-  DeleteObjectsCommand,
-} from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
+
+// AWS SDK imports are deferred to runtime so Rollup does not bundle the
+// entire SDK into the Nitro server when S3 is not configured (the common
+// case for self-hosted / Easypanel deployments). This dramatically reduces
+// build time and bundle size.
+type S3ClientLike = {
+  send: (cmd: unknown) => Promise<{ Body?: unknown }>;
+};
+type S3ClientCtor = new (opts: unknown) => S3ClientLike;
 
 const endpoint = process.env.S3_ENDPOINT;
 const region = process.env.S3_REGION || "us-east-1";
@@ -40,20 +42,43 @@ if (usingLocalStorage) {
 
 declare global {
   // eslint-disable-next-line no-var
-  var __chromaS3Client: S3Client | undefined;
+  var __chromaS3Client: S3ClientLike | undefined;
 }
 
-export const s3: S3Client =
-  globalThis.__chromaS3Client ??
-  (globalThis.__chromaS3Client = new S3Client({
-    region,
-    endpoint,
-    forcePathStyle: !!endpoint, // for MinIO / R2 / non-AWS S3 endpoints
-    credentials:
-      accessKeyId && secretAccessKey
-        ? { accessKeyId, secretAccessKey }
-        : undefined,
-  }));
+let _s3Promise: Promise<S3ClientLike> | null = null;
+
+/** Lazily create (and cache) the S3 client only when S3 is configured. */
+async function getS3(): Promise<S3ClientLike> {
+  if (globalThis.__chromaS3Client) return globalThis.__chromaS3Client;
+  if (_s3Promise) return _s3Promise;
+  _s3Promise = (async () => {
+    const { S3Client } = await import("@aws-sdk/client-s3");
+    const client = new S3Client({
+      region,
+      endpoint,
+      forcePathStyle: !!endpoint,
+      credentials:
+        accessKeyId && secretAccessKey
+          ? { accessKeyId, secretAccessKey }
+          : undefined,
+    }) as unknown as S3ClientLike;
+    globalThis.__chromaS3Client = client;
+    return client;
+  })();
+  return _s3Promise;
+}
+
+/** Lazily import AWS SDK command classes + presigner only when needed. */
+async function getS3Commands() {
+  const [
+    { GetObjectCommand, PutObjectCommand, DeleteObjectsCommand },
+    { getSignedUrl },
+  ] = await Promise.all([
+    import("@aws-sdk/client-s3"),
+    import("@aws-sdk/s3-request-presigner"),
+  ]);
+  return { GetObjectCommand, PutObjectCommand, DeleteObjectsCommand, getSignedUrl };
+}
 
 export const BUCKET = bucket ?? "";
 
@@ -149,12 +174,14 @@ export async function createSignedUploadUrl(
     };
   }
 
+  const { PutObjectCommand, getSignedUrl } = await getS3Commands();
+  const client = await getS3();
   const cmd = new PutObjectCommand({
     Bucket: BUCKET,
     Key: key,
     ContentType: contentType,
   });
-  const url = await getSignedUrl(s3, cmd, { expiresIn: expiresInSeconds });
+  const url = await getSignedUrl(client as any, cmd, { expiresIn: expiresInSeconds });
   return { url, key };
 }
 
@@ -172,11 +199,13 @@ export async function createSignedDownloadUrl(
     return `/api/asset?key=${encodeURIComponent(key)}`;
   }
 
+  const { GetObjectCommand, getSignedUrl } = await getS3Commands();
+  const client = await getS3();
   const cmd = new GetObjectCommand({
     Bucket: BUCKET,
     Key: key,
   });
-  return getSignedUrl(s3, cmd, { expiresIn: expiresInSeconds });
+  return getSignedUrl(client as any, cmd, { expiresIn: expiresInSeconds });
 }
 
 /** Public URL for buckets that are exposed via CDN. */
@@ -201,7 +230,9 @@ export async function downloadObject(b: BucketName, path: string): Promise<Uint8
     return fs.readFile(localPath(key));
   }
 
-  const out = await s3.send(new GetObjectCommand({
+  const { GetObjectCommand } = await getS3Commands();
+  const client = await getS3();
+  const out = await client.send(new GetObjectCommand({
     Bucket: BUCKET,
     Key: key,
   }));
@@ -257,7 +288,9 @@ export async function removeObjects(b: BucketName, paths: string[]): Promise<voi
     return;
   }
 
-  await s3
+  const { DeleteObjectsCommand } = await getS3Commands();
+  const client = await getS3();
+  await client
     .send(new DeleteObjectsCommand({
       Bucket: BUCKET,
       Delete: { Objects: paths.map((p) => ({ Key: objectKey(b, p) })) },
