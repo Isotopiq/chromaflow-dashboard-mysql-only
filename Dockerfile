@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 # Production image for CHROMA.LAB (TanStack Start + Vite).
-# Serves the built app via `vite preview` on port 29473.
+# Self-contained: bundles PostgreSQL + the SSR app in one container.
 
 # ---------- deps ----------
 FROM oven/bun:1.3.3-alpine AS deps
@@ -20,21 +20,46 @@ ENV NODE_ENV=production \
     ROLLUP_NO_NATIVE=1
 RUN bun run build
 
-# ---------- runtime ----------
+# ---------- runtime (self-contained: bun + postgres) ----------
 FROM oven/bun:1.3.3-alpine AS runtime
 WORKDIR /app
+
+# Install PostgreSQL 17 + extensions into the bun/alpine image.
+RUN apk add --no-cache \
+    postgresql17 \
+    postgresql17-client \
+    postgresql17-contrib \
+    su-exec \
+    wget
+
+# Create postgres user if it doesn't exist (alpine image may not have it).
+RUN id postgres >/dev/null 2>&1 || adduser -D -u 70 postgres
+
+# PostgreSQL needs /run/postgresql for its socket directory.
+RUN mkdir -p /run/postgresql && chown postgres:postgres /run/postgresql
+
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=29473 \
     NITRO_HOST=0.0.0.0 \
-    NITRO_PORT=29473
+    NITRO_PORT=29473 \
+    PG_DATA=/app/data/pgdata \
+    PG_PORT_INTERNAL=5432
+
 # Nitro emits a fully self-contained Node SSR bundle under dist/.
 COPY --from=builder /app/dist ./dist
-# Directory for local file uploads (logos, favicons, etc.) when S3 is not
-# configured. Mounted as a volume in docker-compose for persistence.
-RUN mkdir -p /app/data/uploads
+# Schema + seed for auto-migration on startup.
+COPY chroma_lab_full_schema.sql /app/schema.sql
+COPY seed_common_analytes.sql /app/seed.sql
+# Entrypoint script that starts postgres + app together.
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
+
+# Persistent data: postgres + uploads share /app/data.
+RUN mkdir -p /app/data/uploads /app/data/pgdata && \
+    chown -R postgres:postgres /app/data/pgdata
+
 EXPOSE 29473
-# Run the SSR server. `vite preview` would only serve the static client
-# bundle and break /api routes + server functions (causing the app to hang
-# on "Loading…" because /api/public/config returns HTML instead of JSON).
-CMD ["bun", "dist/server/index.mjs"]
+
+# The entrypoint initializes postgres, runs migrations, then starts the app.
+CMD ["/app/docker-entrypoint.sh"]
