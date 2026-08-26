@@ -170,6 +170,7 @@ function EditMethod() {
               <SelectContent>
                 <SelectItem value="ESI+">ESI +</SelectItem>
                 <SelectItem value="ESI-">ESI −</SelectItem>
+                <SelectItem value="ESI±">ESI ± (polarity switching)</SelectItem>
                 <SelectItem value="APCI+">APCI +</SelectItem>
                 <SelectItem value="APCI-">APCI −</SelectItem>
               </SelectContent>

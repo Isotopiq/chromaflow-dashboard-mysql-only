@@ -1,11 +1,12 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useLab, useUpsertMethod } from "@/lib/store";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -13,9 +14,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Trash2 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Plus, Trash2, Upload, FileUp } from "lucide-react";
 import { toast } from "sonner";
 import type { GradientStep, Method } from "@/lib/lab-types";
+import {
+  parseMethodFile,
+  buildFieldList,
+  type ParsedMethodFile,
+  type ImportableField,
+} from "@/lib/method-import";
 
 export const Route = createFileRoute("/_shell/methods/new")({
   component: NewMethod,
@@ -41,6 +56,78 @@ function NewMethod() {
     { time: 12, pctB: 95, flow: 0.4 },
     { time: 14, pctB: 95, flow: 0.4 },
   ]);
+
+  // --- Method file import state ---
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [parsedFile, setParsedFile] = useState<ParsedMethodFile | null>(null);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [selectedFields, setSelectedFields] = useState<Set<ImportableField>>(new Set());
+  const [parsing, setParsing] = useState(false);
+
+  async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setParsing(true);
+    try {
+      const parsed = await parseMethodFile(file);
+      setParsedFile(parsed);
+      const fields = buildFieldList(parsed);
+      // Default: select all fields
+      setSelectedFields(new Set(fields.map((f) => f.key)));
+      setImportDialogOpen(true);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to parse method file");
+    } finally {
+      setParsing(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  function applyImport() {
+    if (!parsedFile) return;
+    const p = parsedFile;
+
+    if (selectedFields.has("name") && p.name) setName(p.name);
+    if (selectedFields.has("mobilePhaseA") && p.mobilePhaseA) setMpA(p.mobilePhaseA);
+    if (selectedFields.has("mobilePhaseB") && p.mobilePhaseB) setMpB(p.mobilePhaseB);
+    if (selectedFields.has("flowRate") && p.flowRate != null) setFlow(p.flowRate);
+    if (selectedFields.has("columnTemp") && p.columnTempC != null) setTemp(p.columnTempC);
+    if (selectedFields.has("injectionVolume") && p.injectionVolumeUl != null) setInj(p.injectionVolumeUl);
+    if (selectedFields.has("gradient") && p.gradient.length > 0) {
+      setGradient(p.gradient.map((g) => ({ time: g.time, pctB: g.pctB, flow: g.flow })));
+    }
+    if (selectedFields.has("notes")) {
+      const noteParts: string[] = [];
+      if (p.runTimeMin != null) noteParts.push(`Run time: ${p.runTimeMin} min`);
+      if (p.instrument) noteParts.push(`Instrument: ${p.instrument}`);
+      if (p.sampleTempC != null) noteParts.push(`Sample temp: ${p.sampleTempC} °C`);
+      if (p.pressureLimitBar != null) noteParts.push(`Pressure limit: ${p.pressureLimitBar} bar`);
+      if (noteParts.length > 0) setNotes(noteParts.join("\n"));
+    }
+
+    // Guess modality from solvent names
+    if (p.mobilePhaseB && /acn|acetonitrile/i.test(p.mobilePhaseB)) {
+      // HILIC typically starts high %B (ACN), RP starts low
+      if (p.gradient.length > 0 && p.gradient[0].pctB > 80) {
+        setModality("HILIC-MS");
+      } else {
+        setModality("RP-LC-MS");
+      }
+    }
+
+    toast.success(`Imported ${selectedFields.size} field${selectedFields.size === 1 ? "" : "s"} from method file`);
+    setImportDialogOpen(false);
+    setParsedFile(null);
+  }
+
+  function toggleField(key: ImportableField) {
+    setSelectedFields((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
 
   const submit = async () => {
     if (!name.trim()) return toast.error("Name required");
@@ -85,6 +172,35 @@ function NewMethod() {
           Capture chromatographic and MS parameters. You can attach runs and revise later.
         </p>
       </div>
+
+      {/* Import from instrument method file */}
+      <Card className="border-primary/30 bg-primary/5 p-4">
+        <div className="flex items-center gap-3">
+          <FileUp className="h-5 w-5 text-primary" />
+          <div className="flex-1">
+            <div className="text-sm font-medium">Import from instrument method file</div>
+            <div className="text-xs text-muted-foreground">
+              Upload a Chromeleon <span className="font-mono">.meth</span> file to pre-fill fields. You choose which data to keep.
+            </div>
+          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".meth,.xml,.txt"
+            onChange={handleFileSelected}
+            className="hidden"
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={parsing}
+          >
+            <Upload className="mr-1 h-3.5 w-3.5" />
+            {parsing ? "Parsing…" : "Choose file"}
+          </Button>
+        </div>
+      </Card>
 
       <Card className="border-border bg-card p-5">
         <div className="grid gap-4 sm:grid-cols-2">
@@ -171,6 +287,7 @@ function NewMethod() {
               <SelectContent>
                 <SelectItem value="ESI+">ESI +</SelectItem>
                 <SelectItem value="ESI-">ESI −</SelectItem>
+                <SelectItem value="ESI±">ESI ± (polarity switching)</SelectItem>
                 <SelectItem value="APCI+">APCI +</SelectItem>
                 <SelectItem value="APCI-">APCI −</SelectItem>
               </SelectContent>
@@ -263,6 +380,46 @@ function NewMethod() {
           <Button onClick={submit}>Create method</Button>
         </div>
       </Card>
+
+      {/* Import field selection dialog */}
+      <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Import method fields</DialogTitle>
+            <DialogDescription>
+              Select which values to import from the instrument method file. Unchecked fields will keep their current values.
+            </DialogDescription>
+          </DialogHeader>
+          {parsedFile && (
+            <div className="max-h-[400px] space-y-2 overflow-y-auto">
+              {buildFieldList(parsedFile).map((field) => (
+                <label
+                  key={field.key}
+                  className="flex cursor-pointer items-start gap-3 rounded-md border border-border p-3 hover:bg-accent/30"
+                >
+                  <Checkbox
+                    checked={selectedFields.has(field.key)}
+                    onCheckedChange={() => toggleField(field.key)}
+                    className="mt-0.5"
+                  />
+                  <div className="flex-1">
+                    <div className="text-sm font-medium">{field.label}</div>
+                    <div className="text-xs text-muted-foreground">{field.value}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setImportDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={applyImport} disabled={selectedFields.size === 0}>
+              Import {selectedFields.size} field{selectedFields.size === 1 ? "" : "s"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

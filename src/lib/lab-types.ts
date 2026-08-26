@@ -54,7 +54,7 @@ export type Method = {
   columnTemp: number;
   injectionVolume: number;
   detector: string;
-  msIonization: "ESI+" | "ESI-" | "APCI+" | "APCI-";
+  msIonization: "ESI+" | "ESI-" | "ESI±" | "APCI+" | "APCI-";
   msScanRange: [number, number];
   notes: string;
   createdBy: string;
