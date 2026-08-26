@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -46,6 +46,11 @@ import {
   listInviteCodes,
   revokeInviteCode,
 } from "@/lib/branding.functions";
+import {
+  getStorageSettings,
+  setStorageSettings,
+  testStorageConnection,
+} from "@/lib/storage-settings.functions";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   AlertDialog,
@@ -70,7 +75,7 @@ function Admin() {
         <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Admin</div>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">Administration</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Manage users, roles, invite codes, branding, and review the audit trail.
+          Manage users, roles, invite codes, branding, storage, and review the audit trail.
         </p>
       </div>
 
@@ -79,6 +84,7 @@ function Admin() {
           <TabsTrigger value="users">Users & roles</TabsTrigger>
           <TabsTrigger value="invites">Invite codes</TabsTrigger>
           <TabsTrigger value="branding">Branding</TabsTrigger>
+          <TabsTrigger value="storage">Storage</TabsTrigger>
           <TabsTrigger value="audit">Audit log</TabsTrigger>
         </TabsList>
         <TabsContent value="users" className="mt-4">
@@ -89,6 +95,9 @@ function Admin() {
         </TabsContent>
         <TabsContent value="branding" className="mt-4">
           <BrandingTab />
+        </TabsContent>
+        <TabsContent value="storage" className="mt-4">
+          <StorageTab />
         </TabsContent>
         <TabsContent value="audit" className="mt-4">
           <AuditTab />
@@ -593,6 +602,266 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     <div className="flex flex-col gap-1">
       <span className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</span>
       {children}
+    </div>
+  );
+}
+
+// ============================================================
+// Storage settings (S3 / local filesystem)
+// ============================================================
+function StorageTab() {
+  const getFn = useServerFn(getStorageSettings);
+  const setFn = useServerFn(setStorageSettings);
+  const testFn = useServerFn(testStorageConnection);
+  const qc = useQueryClient();
+
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: ["storage-settings"],
+    queryFn: () => getFn(),
+  });
+
+  const [bucket, setBucket] = useState("");
+  const [endpoint, setEndpoint] = useState("");
+  const [region, setRegion] = useState("");
+  const [accessKeyId, setAccessKeyId] = useState("");
+  const [secretAccessKey, setSecretAccessKey] = useState("");
+  const [publicUrlBase, setPublicUrlBase] = useState("");
+  const [forcePathStyle, setForcePathStyle] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; reason?: string; keyCount?: number } | null>(null);
+  const synced = useRef(false);
+
+  // Sync form fields when data loads.
+  useEffect(() => {
+    if (data && !synced.current) {
+      synced.current = true;
+      setBucket(data.db.bucket ?? "");
+      setEndpoint(data.db.endpoint ?? "");
+      setRegion(data.db.region ?? "");
+      setAccessKeyId(data.db.accessKeyId ?? "");
+      setSecretAccessKey(data.db.secretAccessKey ?? "");
+      setPublicUrlBase(data.db.publicUrlBase ?? "");
+      setForcePathStyle(data.db.forcePathStyle ?? false);
+    }
+  }, [data]);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await setFn({
+        data: {
+          bucket: bucket.trim() || "",
+          endpoint: endpoint.trim() || "",
+          region: region.trim() || "",
+          accessKeyId: accessKeyId.trim() || "",
+          secretAccessKey: secretAccessKey.trim() || "",
+          publicUrlBase: publicUrlBase.trim() || "",
+          forcePathStyle,
+        },
+      });
+      toast.success("Storage settings saved. New uploads will use the updated config.");
+      qc.invalidateQueries({ queryKey: ["storage-settings"] });
+      synced.current = false;
+      refetch();
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const testConnection = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const result = await testFn();
+      setTestResult(result as any);
+      if (result.ok) {
+        toast.success(`Connection OK — ${result.keyCount ?? 0} keys in bucket`);
+      } else {
+        toast.error(result.reason ?? "Connection failed");
+      }
+    } catch (e: any) {
+      setTestResult({ ok: false, reason: e?.message ?? "Connection failed" });
+      toast.error(e?.message ?? "Connection failed");
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const eff = data?.effective;
+  const envCfg = data?.env;
+
+  return (
+    <div className="flex flex-col gap-4">
+      {error && (
+        <Card className="flex items-center gap-2 border-destructive/40 bg-destructive/5 p-3 text-xs">
+          <AlertTriangle className="h-4 w-4 text-destructive" />
+          <span>{(error as any)?.message ?? "Failed to load storage settings"}</span>
+        </Card>
+      )}
+
+      {/* Current effective config */}
+      <Card className="flex items-start gap-3 border-primary/30 bg-primary/5 p-4">
+        <Shield className="h-4 w-4 text-primary" />
+        <div className="text-xs">
+          <div className="font-medium">Current configuration</div>
+          <p className="mt-0.5 text-muted-foreground">
+            {isLoading ? "Loading…" : eff?.usingLocalStorage ? (
+              <>Using <span className="font-mono">local filesystem</span> at <span className="font-mono">{eff?.localStorageDir ?? "/app/data/uploads"}</span>. No S3 bucket configured.</>
+            ) : (
+              <>Using S3 bucket <span className="font-mono">{eff?.bucket}</span>{eff?.endpoint ? ` at ${eff.endpoint}` : ""} (region: {eff?.region}).</>
+            )}
+          </p>
+        </div>
+      </Card>
+
+      {/* S3 settings form */}
+      <Card className="border-border bg-card p-5">
+        <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+          S3-compatible storage
+        </div>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Override the environment variables (S3_BUCKET, etc.) from the admin panel.
+          Leave a field empty to clear the override and fall back to the env var.
+          Secrets are masked after saving — re-enter to change.
+        </p>
+
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-xs">Bucket name</Label>
+            <Input
+              value={bucket}
+              onChange={(e) => setBucket(e.target.value)}
+              placeholder={envCfg?.bucket ?? "(from env: not set)"}
+              className="h-8 text-xs"
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-xs">Region</Label>
+            <Input
+              value={region}
+              onChange={(e) => setRegion(e.target.value)}
+              placeholder={envCfg?.region ?? "us-east-1"}
+              className="h-8 text-xs"
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-xs">Endpoint (optional)</Label>
+            <Input
+              value={endpoint}
+              onChange={(e) => setEndpoint(e.target.value)}
+              placeholder={envCfg?.endpoint ?? "https://s3.amazonaws.com"}
+              className="h-8 text-xs"
+            />
+            <p className="text-[10px] text-muted-foreground">
+              For R2/MinIO/etc. Leave empty for AWS S3.
+            </p>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-xs">Public URL base (optional)</Label>
+            <Input
+              value={publicUrlBase}
+              onChange={(e) => setPublicUrlBase(e.target.value)}
+              placeholder={envCfg?.publicUrlBase ?? "https://cdn.example.com"}
+              className="h-8 text-xs"
+            />
+            <p className="text-[10px] text-muted-foreground">
+              CDN front for public object URLs.
+            </p>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-xs">Access key ID</Label>
+            <Input
+              value={accessKeyId}
+              onChange={(e) => setAccessKeyId(e.target.value)}
+              placeholder={envCfg?.accessKeyId ?? "(from env: not set)"}
+              className="h-8 text-xs font-mono"
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-xs">Secret access key</Label>
+            <Input
+              type="password"
+              value={secretAccessKey}
+              onChange={(e) => setSecretAccessKey(e.target.value)}
+              placeholder={envCfg?.secretAccessKey ?? "(from env: not set)"}
+              className="h-8 text-xs font-mono"
+            />
+          </div>
+        </div>
+
+        <div className="mt-4 flex items-center gap-2">
+          <Checkbox
+            id="force-path-style"
+            checked={forcePathStyle}
+            onCheckedChange={(c) => setForcePathStyle(c === true)}
+          />
+          <Label htmlFor="force-path-style" className="text-xs">
+            Force path-style URLs (required for MinIO and some R2 setups)
+          </Label>
+        </div>
+
+        <div className="mt-5 flex items-center gap-2">
+          <Button size="sm" onClick={save} disabled={saving}>
+            {saving ? "Saving…" : "Save settings"}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={testConnection}
+            disabled={testing || eff?.usingLocalStorage}
+          >
+            {testing ? "Testing…" : "Test connection"}
+          </Button>
+          {eff?.usingLocalStorage && (
+            <span className="text-[10px] text-muted-foreground">
+              Test is only available when S3 is configured.
+            </span>
+          )}
+        </div>
+
+        {testResult && (
+          <div className={`mt-3 rounded-md border p-3 text-xs ${testResult.ok ? "border-[color:var(--peak-annotated)]/40 bg-[color:var(--peak-annotated)]/5" : "border-destructive/40 bg-destructive/5"}`}>
+            {testResult.ok ? (
+              <span>Connection successful — {testResult.keyCount ?? 0} keys found in bucket.</span>
+            ) : (
+              <span>Connection failed: {testResult.reason}</span>
+            )}
+          </div>
+        )}
+      </Card>
+
+      {/* Env var reference */}
+      <Card className="border-border bg-card p-4">
+        <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+          Environment variable fallbacks
+        </div>
+        <p className="mt-1 text-[10px] text-muted-foreground">
+          These are read from the container environment. DB settings above override them.
+        </p>
+        <div className="mt-3 grid gap-2 text-[11px] font-mono">
+          <EnvRow label="S3_BUCKET" value={envCfg?.bucket} />
+          <EnvRow label="S3_ENDPOINT" value={envCfg?.endpoint} />
+          <EnvRow label="S3_REGION" value={envCfg?.region} />
+          <EnvRow label="S3_ACCESS_KEY_ID" value={envCfg?.accessKeyId} />
+          <EnvRow label="S3_SECRET_ACCESS_KEY" value={envCfg?.secretAccessKey} />
+          <EnvRow label="S3_PUBLIC_URL_BASE" value={envCfg?.publicUrlBase} />
+          <EnvRow label="S3_FORCE_PATH_STYLE" value={envCfg?.forcePathStyle ? "true" : "false"} />
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function EnvRow({ label, value }: { label: string; value: string | null | undefined }) {
+  return (
+    <div className="flex items-center justify-between gap-2 border-b border-border/50 pb-1">
+      <span className="text-muted-foreground">{label}</span>
+      <span className={value ? "text-foreground" : "text-muted-foreground/50"}>
+        {value ?? "(not set)"}
+      </span>
     </div>
   );
 }

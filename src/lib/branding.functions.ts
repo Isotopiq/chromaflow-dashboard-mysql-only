@@ -13,7 +13,7 @@ async function resolveBrandingUrl(
     return await createSignedDownloadUrl("branding", path, 60 * 60 * 24);
   } catch {
     // Fall back to a constructed public URL if signing fails (e.g. no creds).
-    return publicUrl("branding", path);
+    return await publicUrl("branding", path);
   }
 }
 

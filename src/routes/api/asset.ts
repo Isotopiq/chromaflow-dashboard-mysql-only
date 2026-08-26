@@ -5,7 +5,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
-import { LOCAL_STORAGE_DIR, usingLocalStorage } from "@/lib/storage.server";
+import { LOCAL_STORAGE_DIR } from "@/lib/storage.server";
+import { resolveStorageConfig } from "@/lib/storage.server";
 
 // Allowlist of content types for common image/favicon formats.
 function contentTypeFor(key: string): string {
@@ -34,7 +35,8 @@ export const Route = createFileRoute("/api/asset")({
   server: {
     handlers: {
       GET: async ({ request }) => {
-        if (!usingLocalStorage) {
+        const cfg = await resolveStorageConfig();
+        if (cfg.bucket) {
           return Response.json({ error: "Local storage is not enabled" }, { status: 400 });
         }
         const url = new URL(request.url);

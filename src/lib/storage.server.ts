@@ -1,9 +1,11 @@
 // S3-compatible object storage layer with local filesystem fallback.
 //
-// When S3_BUCKET is set, all operations go to S3 (or any S3-compatible
-// endpoint like R2 / MinIO). When S3_BUCKET is NOT set, files are stored on
-// the local filesystem under LOCAL_STORAGE_DIR (default /app/data/uploads)
-// and served by the app itself via /api/_uploads/* and /api/_upload.
+// Configuration precedence (highest to lowest):
+//   1. Database (storage_settings table — set via admin UI)
+//   2. Environment variables (S3_BUCKET, S3_ENDPOINT, etc.)
+//
+// When no bucket is configured via either source, files are stored on the
+// local filesystem under LOCAL_STORAGE_DIR and served by the app itself.
 //
 // Uses a single bucket; the legacy bucket name is stored as a folder prefix
 // (raw-runs/, reports/, branding/, avatars/).
@@ -20,24 +22,110 @@ type S3ClientLike = {
 };
 type S3ClientCtor = new (opts: unknown) => S3ClientLike;
 
-const endpoint = process.env.S3_ENDPOINT;
-const region = process.env.S3_REGION || "us-east-1";
-const accessKeyId = process.env.S3_ACCESS_KEY_ID;
-const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY;
-const bucket = process.env.S3_BUCKET;
-const publicBase = process.env.S3_PUBLIC_URL_BASE; // optional CDN/base URL
+// ---- Resolved storage configuration ----
+interface StorageConfig {
+  bucket: string | null;
+  endpoint: string | null;
+  region: string;
+  accessKeyId: string | null;
+  secretAccessKey: string | null;
+  publicBase: string | null;
+  forcePathStyle: boolean;
+}
+
+// ---- Env-var defaults (read once at module load) ----
+const ENV = {
+  endpoint: process.env.S3_ENDPOINT || null,
+  region: process.env.S3_REGION || "us-east-1",
+  accessKeyId: process.env.S3_ACCESS_KEY_ID || null,
+  secretAccessKey: process.env.S3_SECRET_ACCESS_KEY || null,
+  bucket: process.env.S3_BUCKET || null,
+  publicBase: process.env.S3_PUBLIC_URL_BASE || null,
+  forcePathStyle:
+    (process.env.S3_FORCE_PATH_STYLE ?? "").toLowerCase() === "true",
+};
+
+// ---- Config cache ----
+// The resolved config is cached in-process and re-read from the DB when:
+//   - the cache is empty (first use)
+//   - invalidateStorageCache() is called (after admin saves new settings)
+let _configPromise: Promise<StorageConfig> | null = null;
+
+/** Read storage settings from the DB (admin overrides) and merge with env vars. */
+async function loadConfigFromDB(): Promise<Partial<StorageConfig>> {
+  try {
+    // Dynamic import to avoid circular dependency at module load time.
+    const { withAdmin } = await import("@/db/index.server");
+    const row = await withAdmin((db) =>
+      db.maybe<any>("select * from public.storage_settings where id = 1"),
+    );
+    if (!row) return {};
+    const trim = (v: any) => (typeof v === "string" ? v.trim() || null : null);
+    return {
+      bucket: trim(row.s3_bucket),
+      endpoint: trim(row.s3_endpoint),
+      region: trim(row.s3_region) ?? undefined,
+      accessKeyId: trim(row.s3_access_key_id),
+      secretAccessKey: trim(row.s3_secret_access_key),
+      publicBase: trim(row.s3_public_url_base),
+      forcePathStyle: row.s3_force_path_style ?? undefined,
+    };
+  } catch {
+    // DB not ready or table doesn't exist yet — fall back to env only.
+    return {};
+  }
+}
+
+/** Resolve the effective storage configuration (DB overrides env). */
+export async function resolveStorageConfig(): Promise<StorageConfig> {
+  if (!_configPromise) {
+    _configPromise = (async () => {
+      const db = await loadConfigFromDB();
+      const cfg: StorageConfig = {
+        bucket: db.bucket ?? ENV.bucket,
+        endpoint: db.endpoint ?? ENV.endpoint,
+        region: db.region ?? ENV.region,
+        accessKeyId: db.accessKeyId ?? ENV.accessKeyId,
+        secretAccessKey: db.secretAccessKey ?? ENV.secretAccessKey,
+        publicBase: db.publicBase ?? ENV.publicBase,
+        forcePathStyle: db.forcePathStyle ?? ENV.forcePathStyle,
+      };
+      if (!cfg.bucket) {
+        console.info(
+          `[storage] No bucket configured — using local filesystem at ${LOCAL_STORAGE_DIR}`,
+        );
+      }
+      return cfg;
+    })();
+  }
+  return _configPromise;
+}
+
+/**
+ * Invalidate the cached storage config + S3 client. Called after admin
+ * saves new storage settings so the next operation picks up the changes.
+ */
+export function invalidateStorageCache(): void {
+  _configPromise = null;
+  globalThis.__chromaS3Client = undefined;
+  _s3Promise = null;
+}
 
 // ---- Local filesystem fallback ----
 export const LOCAL_STORAGE_DIR =
   process.env.LOCAL_STORAGE_DIR || "/app/data/uploads";
-export const usingLocalStorage = !bucket;
+
+/**
+ * Synchronous check using env vars only. Used for the initial log line and
+ * for code paths that haven't been converted to async yet. The async
+ * `resolveStorageConfig()` is the source of truth at runtime.
+ */
+export const usingLocalStorage = !ENV.bucket;
 
 if (usingLocalStorage) {
   console.info(
-    `[storage] S3_BUCKET not set — using local filesystem at ${LOCAL_STORAGE_DIR}`,
+    `[storage] S3_BUCKET env not set — will check DB settings on first use (local fallback: ${LOCAL_STORAGE_DIR})`,
   );
-} else if (!bucket) {
-  console.warn("[storage] S3_BUCKET is not set");
 }
 
 declare global {
@@ -47,19 +135,20 @@ declare global {
 
 let _s3Promise: Promise<S3ClientLike> | null = null;
 
-/** Lazily create (and cache) the S3 client only when S3 is configured. */
+/** Lazily create (and cache) the S3 client using the resolved config. */
 async function getS3(): Promise<S3ClientLike> {
   if (globalThis.__chromaS3Client) return globalThis.__chromaS3Client;
   if (_s3Promise) return _s3Promise;
   _s3Promise = (async () => {
+    const cfg = await resolveStorageConfig();
     const { S3Client } = await import("@aws-sdk/client-s3");
     const client = new S3Client({
-      region,
-      endpoint,
-      forcePathStyle: !!endpoint,
+      region: cfg.region || "us-east-1",
+      endpoint: cfg.endpoint || undefined,
+      forcePathStyle: cfg.forcePathStyle,
       credentials:
-        accessKeyId && secretAccessKey
-          ? { accessKeyId, secretAccessKey }
+        cfg.accessKeyId && cfg.secretAccessKey
+          ? { accessKeyId: cfg.accessKeyId, secretAccessKey: cfg.secretAccessKey }
           : undefined,
     }) as unknown as S3ClientLike;
     globalThis.__chromaS3Client = client;
@@ -80,7 +169,19 @@ async function getS3Commands() {
   return { GetObjectCommand, PutObjectCommand, DeleteObjectsCommand, getSignedUrl };
 }
 
-export const BUCKET = bucket ?? "";
+/** Resolve the bucket name from the effective config. */
+async function getBucket(): Promise<string> {
+  const cfg = await resolveStorageConfig();
+  return cfg.bucket ?? "";
+}
+
+/** Resolve whether local storage is in effect (no bucket configured). */
+async function isLocal(): Promise<boolean> {
+  const cfg = await resolveStorageConfig();
+  return !cfg.bucket;
+}
+
+export const BUCKET = ENV.bucket ?? "";
 
 export type BucketName = "raw-runs" | "reports" | "branding" | "avatars";
 
@@ -165,7 +266,7 @@ export async function createSignedUploadUrl(
 ): Promise<{ url: string; key: string }> {
   const key = objectKey(b, path);
 
-  if (usingLocalStorage) {
+  if (await isLocal()) {
     // Return an app-internal upload endpoint URL with a signed token.
     const token = signUploadToken(key, contentType);
     return {
@@ -176,8 +277,9 @@ export async function createSignedUploadUrl(
 
   const { PutObjectCommand, getSignedUrl } = await getS3Commands();
   const client = await getS3();
+  const bucket = await getBucket();
   const cmd = new PutObjectCommand({
-    Bucket: BUCKET,
+    Bucket: bucket,
     Key: key,
     ContentType: contentType,
   });
@@ -193,7 +295,7 @@ export async function createSignedDownloadUrl(
 ): Promise<string> {
   const key = objectKey(b, path);
 
-  if (usingLocalStorage) {
+  if (await isLocal()) {
     // Local files are served by the app directly — no signing needed since
     // the app controls access. Return the internal serve URL.
     return `/api/asset?key=${encodeURIComponent(key)}`;
@@ -201,39 +303,53 @@ export async function createSignedDownloadUrl(
 
   const { GetObjectCommand, getSignedUrl } = await getS3Commands();
   const client = await getS3();
+  const bucket = await getBucket();
   const cmd = new GetObjectCommand({
-    Bucket: BUCKET,
+    Bucket: bucket,
     Key: key,
   });
   return getSignedUrl(client as any, cmd, { expiresIn: expiresInSeconds });
 }
 
 /** Public URL for buckets that are exposed via CDN. */
-export function publicUrl(b: BucketName, path: string | null | undefined): string | null {
+export async function publicUrl(b: BucketName, path: string | null | undefined): Promise<string | null> {
   if (!path) return null;
   const key = objectKey(b, path);
 
-  if (usingLocalStorage) {
+  if (await isLocal()) {
     return `/api/asset?key=${encodeURIComponent(key)}`;
   }
 
-  if (publicBase) return `${publicBase.replace(/\/+$/, "")}/${key}`;
-  if (endpoint) return `${endpoint.replace(/\/+$/, "")}/${BUCKET}/${key}`;
-  return `https://${BUCKET}.s3.${region}.amazonaws.com/${key}`;
+  const cfg = await resolveStorageConfig();
+  const bucket = cfg.bucket ?? "";
+  if (cfg.publicBase) return `${cfg.publicBase.replace(/\/+$/, "")}/${key}`;
+  if (cfg.endpoint) return `${cfg.endpoint.replace(/\/+$/, "")}/${bucket}/${key}`;
+  return `https://${bucket}.s3.${cfg.region}.amazonaws.com/${key}`;
+}
+
+/** Synchronous publicUrl using env-only config (for backward compat). */
+export function publicUrlSync(b: BucketName, path: string | null | undefined): string | null {
+  if (!path) return null;
+  const key = objectKey(b, path);
+  if (!ENV.bucket) return `/api/asset?key=${encodeURIComponent(key)}`;
+  if (ENV.publicBase) return `${ENV.publicBase.replace(/\/+$/, "")}/${key}`;
+  if (ENV.endpoint) return `${ENV.endpoint.replace(/\/+$/, "")}/${ENV.bucket}/${key}`;
+  return `https://${ENV.bucket}.s3.${ENV.region}.amazonaws.com/${key}`;
 }
 
 /** Server-side download (used for parsing EIC blobs). */
 export async function downloadObject(b: BucketName, path: string): Promise<Uint8Array> {
   const key = objectKey(b, path);
 
-  if (usingLocalStorage) {
+  if (await isLocal()) {
     return fs.readFile(localPath(key));
   }
 
   const { GetObjectCommand } = await getS3Commands();
   const client = await getS3();
+  const bucket = await getBucket();
   const out = await client.send(new GetObjectCommand({
-    Bucket: BUCKET,
+    Bucket: bucket,
     Key: key,
   }));
   const body = out.Body as any;
@@ -279,7 +395,7 @@ export async function downloadObject(b: BucketName, path: string): Promise<Uint8
 export async function removeObjects(b: BucketName, paths: string[]): Promise<void> {
   if (paths.length === 0) return;
 
-  if (usingLocalStorage) {
+  if (await isLocal()) {
     for (const p of paths) {
       const key = objectKey(b, p);
       await fs.unlink(localPath(key)).catch(() => undefined);
@@ -290,9 +406,10 @@ export async function removeObjects(b: BucketName, paths: string[]): Promise<voi
 
   const { DeleteObjectsCommand } = await getS3Commands();
   const client = await getS3();
+  const bucket = await getBucket();
   await client
     .send(new DeleteObjectsCommand({
-      Bucket: BUCKET,
+      Bucket: bucket,
       Delete: { Objects: paths.map((p) => ({ Key: objectKey(b, p) })) },
     }))
     .catch(() => undefined);

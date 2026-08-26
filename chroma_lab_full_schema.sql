@@ -423,6 +423,32 @@ create policy "invite_codes: admin write" on public.invite_codes for all
 -- =====================================================================
 
 -- =====================================================================
+-- 7. Storage settings (admin-configurable S3 via the UI)
+-- =====================================================================
+create table if not exists public.storage_settings (
+  id                   int primary key default 1,
+  s3_endpoint          text,
+  s3_region            text,
+  s3_bucket            text,
+  s3_access_key_id     text,
+  s3_secret_access_key text,
+  s3_public_url_base   text,
+  s3_force_path_style  boolean not null default false,
+  updated_at           timestamptz not null default now(),
+  updated_by           uuid references public.app_users(id) on delete set null,
+  constraint storage_singleton check (id = 1)
+);
+insert into public.storage_settings (id) values (1) on conflict (id) do nothing;
+alter table public.storage_settings enable row level security;
+drop policy if exists "storage: admin read"  on public.storage_settings;
+drop policy if exists "storage: admin write" on public.storage_settings;
+create policy "storage: admin read"  on public.storage_settings for select
+  using (public.current_app_is_admin() or public.has_role(public.current_app_user(),'admin'));
+create policy "storage: admin write" on public.storage_settings for all
+  using (public.current_app_is_admin() or public.has_role(public.current_app_user(),'admin'))
+  with check (public.current_app_is_admin() or public.has_role(public.current_app_user(),'admin'));
+
+-- =====================================================================
 -- 7. Notifications
 -- =====================================================================
 create table if not exists public.notifications (
