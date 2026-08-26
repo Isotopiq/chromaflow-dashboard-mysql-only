@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { Component, useEffect, useMemo, useState } from "react";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useLab } from "@/lib/store";
@@ -118,7 +118,7 @@ function AnalyteDetail() {
         />
       )}
 
-      <ColumnRtManager analyteId={analyte.id} defaultRt={analyte.rtExpected} />
+      <SafeColumnRtManager analyteId={analyte.id} defaultRt={analyte.rtExpected} />
 
       <AllRunsXICGrid
         analyteName={analyte.name}
@@ -136,8 +136,40 @@ type ColumnLite = LabColumn;
 type MethodLite = Method;
 
 // ---------------------------------------------------------------------------
-// Per-column RT manager
+// Per-column RT manager (with error boundary so it never crashes the page)
 // ---------------------------------------------------------------------------
+
+class ColumnRtErrorBoundary extends Component<
+  { children: React.ReactNode },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(err: unknown) { console.error("ColumnRtManager error:", err); }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <Card className="border-border bg-card p-4">
+          <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+            Per-column retention time
+          </div>
+          <div className="mt-2 text-xs text-muted-foreground">
+            Could not load per-column RT overrides. The default RT is being used.
+          </div>
+        </Card>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function SafeColumnRtManager(props: { analyteId: string; defaultRt: number }) {
+  return (
+    <ColumnRtErrorBoundary>
+      <ColumnRtManager {...props} />
+    </ColumnRtErrorBoundary>
+  );
+}
 
 function ColumnRtManager({ analyteId, defaultRt }: { analyteId: string; defaultRt: number }) {
   const { columns } = useLab();
@@ -167,7 +199,8 @@ function ColumnRtManager({ analyteId, defaultRt }: { analyteId: string; defaultR
       }
     })();
     return () => { cancelled = true; };
-  }, [analyteId, getFn]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analyteId]);
 
   const usedColumnIds = new Set(rts.map((r) => r.columnId));
   const availableColumns = columns.filter((c) => !usedColumnIds.has(c.id));

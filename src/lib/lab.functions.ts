@@ -386,7 +386,7 @@ export const deleteAnalyte = createServerFn({ method: "POST" })
   });
 
 // ---- Analyte per-column RT ----
-export const getAnalyteColumnRts = createServerFn({ method: "GET" })
+export const getAnalyteColumnRts = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => z.object({ analyteId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
