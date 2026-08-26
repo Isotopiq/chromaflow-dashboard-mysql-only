@@ -6,7 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import logoAsset from "@/assets/Isotopiq-Logo.png.asset.json";
+import logoLightUrl from "@/assets/isotopiq-logo-light.png";
+import logoDarkUrl from "@/assets/isotopiq-logo-dark.png";
 import { useBranding } from "@/lib/use-branding";
 import { useTheme } from "@/components/theme-provider";
 
@@ -17,9 +18,11 @@ function LoginPage() {
   const nav = useNavigate();
   const { data: branding } = useBranding();
   const { theme } = useTheme();
+  // Baked-in theme-aware fallback; branding overrides take precedence.
+  const defaultLogo = theme === "light" ? logoLightUrl : logoDarkUrl;
   const themedLogo =
     theme === "light" ? branding?.webLogoLightUrl : branding?.webLogoDarkUrl;
-  const logoSrc = themedLogo || branding?.webLogoUrl || logoAsset.url;
+  const logoSrc = themedLogo || branding?.webLogoUrl || defaultLogo;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);

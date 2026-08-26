@@ -2,6 +2,11 @@ import "./lib/error-capture";
 
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
+import { bootstrapAdminFromEnv } from "./lib/bootstrap.server";
+
+// Create the first admin from ADMIN_EMAIL/ADMIN_PASSWORD env vars on boot.
+// Idempotent — safe to leave set across restarts.
+void bootstrapAdminFromEnv();
 
 type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;

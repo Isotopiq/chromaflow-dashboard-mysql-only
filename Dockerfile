@@ -30,6 +30,9 @@ ENV NODE_ENV=production \
     NITRO_PORT=29473
 # Nitro emits a fully self-contained Node SSR bundle under dist/.
 COPY --from=builder /app/dist ./dist
+# Directory for local file uploads (logos, favicons, etc.) when S3 is not
+# configured. Mounted as a volume in docker-compose for persistence.
+RUN mkdir -p /app/data/uploads
 EXPOSE 29473
 # Run the SSR server. `vite preview` would only serve the static client
 # bundle and break /api routes + server functions (causing the app to hang

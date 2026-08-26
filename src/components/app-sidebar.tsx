@@ -12,7 +12,8 @@ import {
   Activity,
   UserCog,
 } from "lucide-react";
-import logoAsset from "@/assets/Isotopiq-Logo.png.asset.json";
+import logoLightUrl from "@/assets/isotopiq-logo-light.png";
+import logoDarkUrl from "@/assets/isotopiq-logo-dark.png";
 import {
   Sidebar,
   SidebarContent,
@@ -83,9 +84,11 @@ export function AppSidebar() {
   const isAdmin = currentUser?.role === "admin";
   const { data: branding } = useBranding();
   const { theme } = useTheme();
+  // Baked-in theme-aware fallback; branding overrides take precedence.
+  const defaultLogo = theme === "light" ? logoLightUrl : logoDarkUrl;
   const themedLogo =
     theme === "light" ? branding?.webLogoLightUrl : branding?.webLogoDarkUrl;
-  const logoSrc = themedLogo || branding?.webLogoUrl || logoAsset.url;
+  const logoSrc = themedLogo || branding?.webLogoUrl || defaultLogo;
   const appName = branding?.appName?.trim() || "CHROMA.LAB";
 
   const isActive = (url: string) =>
@@ -102,7 +105,7 @@ export function AppSidebar() {
             alt={appName}
             className="h-8 w-auto shrink-0 object-contain"
           />
-          {!collapsed && logoSrc === logoAsset.url && (
+          {!collapsed && logoSrc === defaultLogo && (
             <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
               Method Dev Platform
             </span>

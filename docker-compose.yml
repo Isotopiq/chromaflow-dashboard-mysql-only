@@ -1,7 +1,65 @@
+# =====================================================================
 # Easypanel-compatible Compose file for CHROMA.LAB.
-# Set the environment variables below in Easypanel's Environment tab.
+# Brings up its own Postgres, runs schema migrations, then serves the app.
+#
+# Ports (chosen to avoid conflicts with other Docker services on the host):
+#   - chroma-lab  (frontend + backend SSR):  host 29473 -> container 29473
+#   - postgres    (database):                host 29474 -> container 5432
+#
+# The app is a single Nitro SSR process that serves both the React frontend
+# and the /api/* backend from one port (29473). There is no separate
+# frontend/backend process to split.
+#
+# Override any of these in Easypanel's Environment tab. If you change
+# POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB you MUST also set
+# DATABASE_URL to match (see .env.example).
+# =====================================================================
 
 services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    # Exposed on a unique host port so it won't collide with other Postgres
+    # instances on the host. Comment this out if you don't need host access
+    # (the app talks to it over the internal Docker network as `postgres`).
+    ports:
+      - "29474:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-chroma}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-chroma}
+      POSTGRES_DB: ${POSTGRES_DB:-chroma_lab}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-chroma} -d ${POSTGRES_DB:-chroma_lab}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # One-shot migration runner. Re-runs on every deploy; the schema and seed
+  # SQL are idempotent so this is safe to repeat.
+  migrate:
+    image: postgres:17-alpine
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-chroma}
+    volumes:
+      - ./chroma_lab_full_schema.sql:/schema.sql:ro
+      - ./seed_common_analytes.sql:/seed.sql:ro
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        set -e
+        echo "[migrate] applying schema…"
+        psql -v ON_ERROR_STOP=1 -h postgres -U "${POSTGRES_USER:-chroma}" -d "${POSTGRES_DB:-chroma_lab}" -f /schema.sql
+        echo "[migrate] applying seed…"
+        psql -v ON_ERROR_STOP=1 -h postgres -U "${POSTGRES_USER:-chroma}" -d "${POSTGRES_DB:-chroma_lab}" -f /seed.sql
+        echo "[migrate] done."
+
   chroma-lab:
     build:
       context: .
@@ -10,6 +68,15 @@ services:
     restart: unless-stopped
     ports:
       - "29473:29473"
+    volumes:
+      # Persists locally-uploaded files (logos, favicons, etc.) across
+      # restarts when S3 is not configured.
+      - uploads_data:/app/data/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0
@@ -23,10 +90,26 @@ services:
       JWT_SECRET: ${JWT_SECRET:-}
       BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN:-}
 
-      # ---- Postgres ----
-      DATABASE_URL: ${DATABASE_URL:-}
+      # ---- First admin (created idempotently on startup) ----
+      # Set ADMIN_EMAIL + ADMIN_PASSWORD and the app will create the first
+      # admin user automatically on boot (no need to call the bootstrap API).
+      # If the user already exists, only the admin role is ensured.
+      # Leave unset to use the POST /api/public/bootstrap-admin endpoint instead.
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ADMIN_DISPLAY_NAME: ${ADMIN_DISPLAY_NAME:-}
+
+      # ---- Postgres (defaults to the bundled postgres service) ----
+      # If you change POSTGRES_USER/PASSWORD/DB above, set DATABASE_URL to match,
+      # e.g. postgres://<user>:<pass>@postgres:5432/<db>
+      DATABASE_URL: ${DATABASE_URL:-postgres://chroma:chroma@postgres:5432/chroma_lab}
+      DATABASE_SSL: ${DATABASE_SSL:-false}
+      DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-10}
 
       # ---- S3-compatible storage ----
+      # When S3_BUCKET is unset, the app stores uploads (logos, favicons,
+      # etc.) on the local filesystem under LOCAL_STORAGE_DIR and serves
+      # them via /api/asset. Set S3_* to use external S3/R2/MinIO instead.
       S3_ENDPOINT: ${S3_ENDPOINT:-}
       S3_REGION: ${S3_REGION:-us-east-1}
       S3_BUCKET: ${S3_BUCKET:-}
@@ -34,6 +117,7 @@ services:
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
       S3_PUBLIC_URL_BASE: ${S3_PUBLIC_URL_BASE:-}
       S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-false}
+      LOCAL_STORAGE_DIR: ${LOCAL_STORAGE_DIR:-/app/data/uploads}
 
       # ---- SMTP ----
       SMTP_HOST: ${SMTP_HOST:-}
@@ -48,3 +132,7 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+
+volumes:
+  postgres_data:
+  uploads_data:
