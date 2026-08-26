@@ -61,10 +61,13 @@ services:
         echo "[migrate] done."
 
   chroma-lab:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: chroma-lab:latest
+    # Pre-built image on Docker Hub — avoids slow on-server builds.
+    # To build from source instead, replace the next two lines with:
+    #   build:
+    #     context: .
+    #     dockerfile: Dockerfile
+    image: ddlidded/chroma-lab:latest
+    pull_policy: always
     restart: unless-stopped
     ports:
       - "29473:29473"
