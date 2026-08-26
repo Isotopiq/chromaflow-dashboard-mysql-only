@@ -29,10 +29,9 @@ export const loadAll = createServerFn({ method: "GET" })
   .middleware([requireAuth])
   .handler(async ({ context }) => {
     const { userId, email, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
-    const [data, currentUser] = await Promise.all([
-      fetchAllForUser(db),
-      getCurrentUserProfile(db, userId, email),
-    ]);
+    // Run sequentially — pg doesn't support concurrent queries on one client.
+    const data = await fetchAllForUser(db);
+    const currentUser = await getCurrentUserProfile(db, userId, email);
     return { ...data, currentUser };
   });
 

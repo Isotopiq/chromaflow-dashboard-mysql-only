@@ -147,14 +147,14 @@ export async function mapUser(profile: any, role: string): Promise<User> {
 
 // ---------- Bulk fetchers ----------
 export async function fetchAllForUser(db: Db) {
-  const [columns, methods, runs, peaks, batches, analytes] = await Promise.all([
-    db.many("select * from public.columns order by created_at desc"),
-    db.many("select * from public.methods order by updated_at desc"),
-    db.many("select * from public.runs order by acquired_at desc"),
-    db.many("select * from public.peaks"),
-    db.many("select * from public.batches order by started_at desc"),
-    db.many("select * from public.analytes order by name"),
-  ]);
+  // Run queries sequentially — pg doesn't support concurrent queries on a
+  // single client, which causes "client is already executing a query" errors.
+  const columns = await db.many("select * from public.columns order by created_at desc");
+  const methods = await db.many("select * from public.methods order by updated_at desc");
+  const runs = await db.many("select * from public.runs order by acquired_at desc");
+  const peaks = await db.many("select * from public.peaks");
+  const batches = await db.many("select * from public.batches order by started_at desc");
+  const analytes = await db.many("select * from public.analytes order by name");
 
   const peaksByRun = new Map<string, Peak[]>();
   for (const p of peaks) {
