@@ -24,8 +24,10 @@ services:
     ports:
       - "29473:29473"
     volumes:
-      # Persists BOTH the bundled PostgreSQL data and uploaded files.
-      - app_data:/app/data
+      # Bind mount to a host directory so data survives Easypanel redeploys.
+      # Named Docker volumes can be recreated by Easypanel on each deploy;
+      # a bind mount to a fixed host path is persistent.
+      - /var/lib/chroma-lab:/app/data
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0
@@ -82,6 +84,3 @@ services:
       timeout: 5s
       retries: 5
       start_period: 45s
-
-volumes:
-  app_data:

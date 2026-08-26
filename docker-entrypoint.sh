@@ -17,6 +17,9 @@ PG_DB="${POSTGRES_DB:-chroma_lab}"
 mkdir -p /run/postgresql
 chown postgres:postgres /run/postgresql
 
+# Ensure the uploads directory exists (bind mount may be empty on first deploy).
+mkdir -p /app/data/uploads
+
 # ---- 1. Initialize PostgreSQL data directory (first run only) ----
 if [ ! -d "$PG_DATA" ] || [ -z "$(ls -A "$PG_DATA" 2>/dev/null)" ]; then
   echo "[entrypoint] initializing PostgreSQL data dir at $PG_DATA ..."
