@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireAuth } from "@/lib/auth-middleware";
+import { invalidateStorageCache, resolveStorageConfig } from "@/lib/storage.server";
 
 function requireAdmin(isAdmin: boolean) {
   if (!isAdmin) throw new Response("Forbidden — admin only", { status: 403 });
@@ -174,7 +175,6 @@ export const setStorageSettings = createServerFn({ method: "POST" })
     }
 
     // Invalidate the in-process S3 client cache so new settings take effect.
-    const { invalidateStorageCache } = await import("@/lib/storage.server");
     invalidateStorageCache();
 
     return { ok: true };
@@ -189,7 +189,6 @@ export const testStorageConnection = createServerFn({ method: "POST" })
     requireAdmin(isAdmin);
 
     // Reload settings from DB + env, then try to create a client and list.
-    const { resolveStorageConfig } = await import("@/lib/storage.server");
     const cfg = await resolveStorageConfig();
 
     if (!cfg.bucket) {
