@@ -223,7 +223,7 @@ export async function getCurrentUserProfile(db: Db, userId: string, email: strin
     [userId],
   );
   const role =
-    roles.find((r) => r.role === "admin")?.role ?? roles[0]?.role ?? "developer";
+    roles.find((r) => r.role === "admin")?.role ?? roles[0]?.role ?? "user";
   return mapUser({ ...(profile ?? { id: userId }), email }, role);
 }
 
@@ -241,7 +241,7 @@ export async function listAllUsersAdmin(): Promise<User[]> {
     `);
     return Promise.all(rows.map((r) => {
       const rolesArr = (r.roles ?? "").split(",").filter(Boolean);
-      const role = rolesArr.includes("admin") ? "admin" : rolesArr[0] ?? "developer";
+      const role = rolesArr.includes("admin") ? "admin" : rolesArr[0] ?? "user";
       return mapUser(
         { id: r.id, email: r.email, display_name: r.display_name, avatar_url: r.avatar_url },
         role,

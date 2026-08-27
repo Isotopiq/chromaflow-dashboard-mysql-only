@@ -122,7 +122,7 @@ function UsersTab() {
   });
 
   const mut = useMutation({
-    mutationFn: (vars: { userId: string; role: "admin" | "developer" | "reviewer" }) =>
+    mutationFn: (vars: { userId: string; role: "admin" | "developer" | "reviewer" | "user" }) =>
       setRole({ data: vars }),
     onSuccess: () => {
       toast.success("Role updated");
@@ -136,11 +136,12 @@ function UsersTab() {
       <Card className="flex items-start gap-3 border-primary/30 bg-primary/5 p-4">
         <Shield className="h-4 w-4 text-primary" />
         <div className="text-xs">
-          <div className="font-medium">Three roles supported</div>
+          <div className="font-medium">Four roles supported</div>
           <p className="mt-0.5 text-muted-foreground">
-            <span className="font-mono">admin</span> — full access including user management.{" "}
-            <span className="font-mono">developer</span> — create/edit own methods, runs, columns.{" "}
-            <span className="font-mono">reviewer</span> — read-all with annotation rights.
+            <span className="font-mono">admin</span> — full access including user management and deleting anything.{" "}
+            <span className="font-mono">developer</span> — create/edit all methods, runs, and columns.{" "}
+            <span className="font-mono">reviewer</span> — read-all, annotate peaks, and review batches.{" "}
+            <span className="font-mono">user</span> — view all shared data, edit own profile only.
           </p>
         </div>
       </Card>
@@ -187,7 +188,7 @@ function UsersTab() {
                       onValueChange={(v) =>
                         mut.mutate({
                           userId: u.id,
-                          role: v as "admin" | "developer" | "reviewer",
+                          role: v as "admin" | "developer" | "reviewer" | "user",
                         })
                       }
                     >
@@ -198,6 +199,7 @@ function UsersTab() {
                         <SelectItem value="admin">Admin</SelectItem>
                         <SelectItem value="developer">Developer</SelectItem>
                         <SelectItem value="reviewer">Reviewer</SelectItem>
+                        <SelectItem value="user">User</SelectItem>
                       </SelectContent>
                     </Select>
                     <Badge variant="outline" className="text-[10px] capitalize">
@@ -916,7 +918,7 @@ function InvitesTab() {
   const createFn = useServerFn(createInviteCode);
   const revokeFn = useServerFn(revokeInviteCode);
   const qc = useQueryClient();
-  const [role, setRole] = useState<"admin" | "developer" | "reviewer">("developer");
+  const [role, setRole] = useState<"admin" | "developer" | "reviewer" | "user">("developer");
   const [expiresInDays, setExpiresInDays] = useState<string>("30");
   const [note, setNote] = useState("");
 
@@ -975,6 +977,7 @@ function InvitesTab() {
                 <SelectItem value="admin">Admin</SelectItem>
                 <SelectItem value="developer">Developer</SelectItem>
                 <SelectItem value="reviewer">Reviewer</SelectItem>
+                <SelectItem value="user">User</SelectItem>
               </SelectContent>
             </Select>
           </Field>

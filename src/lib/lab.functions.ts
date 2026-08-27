@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireAuth } from "@/lib/auth-middleware";
+import { requireAuth, requirePermission } from "@/lib/auth-middleware";
 import { withAdmin } from "@/db/index.server";
 import { notify } from "@/lib/notifications.functions";
 import {
@@ -65,7 +65,9 @@ export const upsertMethod = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => MethodInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { userId, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
+    const ctx = context as any;
+    requirePermission(ctx, "canEdit");
+    const { userId, db } = ctx;
     const msParams = {
       mobilePhaseA: data.mobilePhaseA,
       mobilePhaseB: data.mobilePhaseB,
@@ -106,10 +108,9 @@ export const deleteMethod = createServerFn({ method: "POST" })
     z.object({ methodId: z.string(), force: z.boolean().default(false) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    const { userId, isAdmin, db } = context as {
-      userId: string; email: string; isAdmin: boolean;
-      db: import("@/db/index.server").Db;
-    };
+    const ctx = context as any;
+    requirePermission(ctx, "canDelete");
+    const { userId, isAdmin, db } = ctx;
     const existing = await db.maybe<any>(
       "select id, created_by from public.methods where id = $1",
       [data.methodId],
@@ -175,7 +176,9 @@ export const upsertColumn = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => ColumnInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { userId, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
+    const ctx = context as any;
+    requirePermission(ctx, "canEdit");
+    const { userId, db } = ctx;
     let row;
     if (data.id) {
       row = await db.one(
@@ -203,7 +206,9 @@ export const deleteColumn = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => z.object({ id: z.string() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { userId, isAdmin, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
+    const ctx = context as any;
+    requirePermission(ctx, "canDelete");
+    const { userId, isAdmin, db } = ctx;
     const existing = await db.maybe<any>(
       "select id, owner_id from public.columns where id = $1", [data.id]);
     if (!existing) return { ok: true, missing: true };
@@ -241,7 +246,9 @@ export const upsertBatch = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => BatchInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { userId, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
+    const ctx = context as any;
+    requirePermission(ctx, "canEdit");
+    const { userId, db } = ctx;
     let row;
     if (data.id) {
       row = await db.one(
@@ -374,7 +381,9 @@ export const deleteAnalyte = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => z.object({ id: z.string() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { userId, isAdmin, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
+    const ctx = context as any;
+    requirePermission(ctx, "canDelete");
+    const { userId, isAdmin, db } = ctx;
     const existing = await db.maybe<any>(
       "select id, created_by from public.analytes where id = $1", [data.id]);
     if (!existing) return { ok: true, missing: true };
@@ -715,7 +724,9 @@ export const annotatePeak = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => AnnotateInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { userId, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
+    const ctx = context as any;
+    requirePermission(ctx, "canAnnotate");
+    const { userId, db } = ctx;
     // Resolve a display label so it survives reloads: explicit label > analyte name.
     let label = data.label ?? null;
     if (!label && data.analyteId) {
@@ -916,7 +927,7 @@ export const listAdminUsers = createServerFn({ method: "GET" })
 
 const SetRoleInput = z.object({
   userId: z.string().uuid(),
-  role: z.enum(["admin", "developer", "reviewer"]),
+  role: z.enum(["admin", "developer", "reviewer", "user"]),
 });
 export const setUserRole = createServerFn({ method: "POST" })
   .middleware([requireAuth])
@@ -1266,7 +1277,9 @@ export const deleteRun = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => z.object({ runId: z.string() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { userId, isAdmin, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
+    const ctx = context as any;
+    requirePermission(ctx, "canDelete");
+    const { userId, isAdmin, db } = ctx;
     return deleteRunInternal(db, userId, data.runId, isAdmin);
   });
 
@@ -1274,7 +1287,9 @@ export const deleteBatch = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => z.object({ batchId: z.string(), deleteRuns: z.boolean().default(false) }).parse(d))
   .handler(async ({ data, context }) => {
-    const { userId, isAdmin, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
+    const ctx = context as any;
+    requirePermission(ctx, "canDelete");
+    const { userId, isAdmin, db } = ctx;
     const batch = await db.maybe<any>(
       "select id, owner_id from public.batches where id=$1", [data.batchId]);
     if (!batch) return { ok: true, missing: true };

@@ -162,7 +162,7 @@ export const setBranding = createServerFn({ method: "POST" })
 
 // ---- Invite codes ----
 const CreateInviteInput = z.object({
-  role: z.enum(["admin", "developer", "reviewer"]).default("developer"),
+  role: z.enum(["admin", "developer", "reviewer", "user"]).default("developer"),
   expiresInDays: z.number().int().min(1).max(365).optional(),
   note: z.string().max(200).optional(),
 });

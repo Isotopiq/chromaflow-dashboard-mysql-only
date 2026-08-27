@@ -47,8 +47,13 @@ $$;
 -- 2. Roles
 -- =====================================================================
 do $$ begin
-  create type public.app_role as enum ('admin', 'developer', 'reviewer');
+  create type public.app_role as enum ('admin', 'developer', 'reviewer', 'user');
 exception when duplicate_object then null; end $$;
+
+-- Add 'user' to existing enum if the type already existed without it
+do $$ begin
+  alter type public.app_role add value if not exists 'user';
+exception when others then null; end $$;
 
 create table if not exists public.user_roles (
   id      uuid primary key default gen_random_uuid(),
