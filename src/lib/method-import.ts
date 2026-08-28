@@ -330,10 +330,44 @@ function parseMsScans(text: string): MsScan[] {
   for (let i = 0; i < expPositions.length; i++) {
     const start = expPositions[i].idx;
     const end = i + 1 < expPositions.length ? expPositions[i + 1].idx : text.length;
-    const section = text.slice(start, end);
+    const expSection = text.slice(start, end);
 
-    const scan = parseScanSection(section);
-    if (scan) scans.push(scan);
+    // Within each experiment, there may be:
+    //   1. A MasterScan (MS1) section
+    //   2. A "Data Dependent Properties" section with "Scan Event N" entries (ddMS2)
+    // Split the experiment into the MS1 part (before "Data Dependent" or "Scan Event")
+    // and each "Scan Event N" section.
+
+    // Find where the ddMS2 / data dependent section starts
+    const ddIdx = expSection.indexOf("Data Dependent");
+    const scanEventIdx = expSection.indexOf("Scan Event");
+
+    // The MS1 (MasterScan) section is from the experiment start to the
+    // data-dependent section (or scan events, whichever comes first)
+    const ms1End = [ddIdx, scanEventIdx].filter((x) => x >= 0).sort((a, b) => a - b)[0] ?? expSection.length;
+    const ms1Section = expSection.slice(0, ms1End);
+
+    // Parse the MS1 scan if it contains "MasterScan"
+    if (/MasterScan/i.test(ms1Section)) {
+      const scan = parseScanSection(ms1Section);
+      if (scan) scans.push(scan);
+    }
+
+    // Now parse each "Scan Event N" section within the data-dependent part
+    const ddSection = expSection.slice(ms1End);
+    const scanEventRe = /Scan\s+Event\s+(\d+)/g;
+    const eventPositions: { idx: number; num: number }[] = [];
+    while ((m = scanEventRe.exec(ddSection)) !== null) {
+      eventPositions.push({ idx: m.index, num: parseInt(m[1], 10) });
+    }
+
+    for (let j = 0; j < eventPositions.length; j++) {
+      const evStart = eventPositions[j].idx;
+      const evEnd = j + 1 < eventPositions.length ? eventPositions[j + 1].idx : ddSection.length;
+      const evSection = ddSection.slice(evStart, evEnd);
+      const scan = parseScanSection(evSection);
+      if (scan) scans.push(scan);
+    }
   }
 
   return scans;
