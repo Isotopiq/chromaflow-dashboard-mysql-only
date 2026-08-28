@@ -14,9 +14,18 @@ import {
 } from "@/components/ui/table";
 import { ChromatogramPlot } from "@/components/chromatogram-plot";
 import { StatusDot } from "@/components/status-dot";
-import { ArrowLeft, GitBranch, Edit3, Trash2, Archive, Download } from "lucide-react";
+import { ArrowLeft, GitBranch, Edit3, Trash2, Archive, Download, Save, Plus, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,7 +37,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { deleteMethod, archiveMethod, downloadMethodFile } from "@/lib/lab.functions";
-import type { Method } from "@/lib/lab-types";
+import { useUpsertMethod } from "@/lib/store";
+import type { Method, MsScan } from "@/lib/lab-types";
 
 export const Route = createFileRoute("/_shell/methods/$methodId/")({
   component: MethodDetailGate,
@@ -69,20 +79,30 @@ function MethodDetailGate() {
 }
 
 function MethodDetail({ method }: { method: Method }) {
-  const { columns, runs, currentUser, removeMethodLocal, archiveMethodLocal } = useLab();
+  const { columns, runs, currentUser, removeMethodLocal, archiveMethodLocal, upsertMethodLocal } = useLab();
   const deleteFn = useServerFn(deleteMethod);
   const archiveFn = useServerFn(archiveMethod);
   const downloadFn = useServerFn(downloadMethodFile);
+  const upsertMethod = useUpsertMethod();
   const nav = useNavigate();
   const [showDelete, setShowDelete] = useState(false);
   const [showArchive, setShowArchive] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [archiving, setArchiving] = useState(false);
 
+  // Editable MS scan state
+  const [editingScans, setEditingScans] = useState(false);
+  const [scanDraft, setScanDraft] = useState<MsScan[]>(method.msScans ?? []);
+  const [savingScans, setSavingScans] = useState(false);
+
   const column = columns.find((c) => c.id === method.columnId);
   const methodRuns = runs.filter((r) => r.methodId === method.id);
   const isAdmin = currentUser?.role === "admin";
   const canModify = isAdmin || !method.createdBy || method.createdBy === currentUser?.id;
+
+  function updateScan(index: number, patch: Partial<MsScan>) {
+    setScanDraft((prev) => prev.map((s, j) => (j === index ? { ...s, ...patch } : s)));
+  }
 
   const confirmDelete = async () => {
     setDeleting(true);
@@ -272,93 +292,239 @@ function MethodDetail({ method }: { method: Method }) {
       </div>
 
       {/* MS Scan Definitions */}
-      {method.msScans && method.msScans.length > 0 && (
+      {((method.msScans && method.msScans.length > 0) || editingScans) && (
         <Card className="border-border bg-card p-4">
-          <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
-            MS Scan Definitions ({method.msScans.length})
+          <div className="flex items-center justify-between">
+            <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+              MS Scan Definitions {editingScans ? `(${scanDraft.length})` : `(${method.msScans?.length ?? 0})`}
+            </div>
+            <div className="flex gap-2">
+              {editingScans ? (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7"
+                    disabled={savingScans}
+                    onClick={() => {
+                      setScanDraft(method.msScans ?? []);
+                      setEditingScans(false);
+                    }}
+                  >
+                    <X className="mr-1 h-3 w-3" /> Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="h-7"
+                    disabled={savingScans}
+                    onClick={async () => {
+                      setSavingScans(true);
+                      try {
+                        const saved = await upsertMethod({ ...method, msScans: scanDraft } as any);
+                        upsertMethodLocal(saved);
+                        setEditingScans(false);
+                        toast.success("MS scans updated");
+                      } catch (e: any) {
+                        toast.error(e?.message ?? "Save failed");
+                      } finally {
+                        setSavingScans(false);
+                      }
+                    }}
+                  >
+                    <Save className="mr-1 h-3 w-3" /> {savingScans ? "Saving…" : "Save"}
+                  </Button>
+                </>
+              ) : (
+                canModify && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7"
+                    onClick={() => {
+                      setScanDraft(method.msScans ?? []);
+                      setEditingScans(true);
+                    }}
+                  >
+                    <Edit3 className="mr-1 h-3 w-3" /> Edit scans
+                  </Button>
+                )
+              )}
+            </div>
           </div>
+
           <div className="mt-3 space-y-3">
-            {method.msScans.map((scan, i) => (
+            {(editingScans ? scanDraft : method.msScans ?? []).map((scan, i) => (
               <div key={i} className="rounded-md border border-border p-3">
                 <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-[10px]">{scan.scanType}</Badge>
-                  <span className="text-sm font-medium">{scan.experimentName || `Scan ${i + 1}`}</span>
-                  {scan.startTimeMin != null && scan.endTimeMin != null && (
+                  {editingScans ? (
+                    <Select
+                      value={scan.scanType}
+                      onValueChange={(v) => updateScan(i, { scanType: v as MsScan["scanType"] })}
+                    >
+                      <SelectTrigger className="h-7 w-32 text-[10px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="MS1">MS1</SelectItem>
+                        <SelectItem value="ddMS2">ddMS2</SelectItem>
+                        <SelectItem value="tSIM">tSIM</SelectItem>
+                        <SelectItem value="tMS2">tMS2</SelectItem>
+                        <SelectItem value="PRM">PRM</SelectItem>
+                        <SelectItem value="AllIons">AllIons</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Badge variant="outline" className="text-[10px]">{scan.scanType}</Badge>
+                  )}
+                  {editingScans ? (
+                    <Input
+                      value={scan.experimentName}
+                      onChange={(e) => updateScan(i, { experimentName: e.target.value })}
+                      className="h-7 flex-1 text-sm"
+                      placeholder="Experiment name"
+                    />
+                  ) : (
+                    <span className="text-sm font-medium">{scan.experimentName || `Scan ${i + 1}`}</span>
+                  )}
+                  {scan.startTimeMin != null && scan.endTimeMin != null && !editingScans && (
                     <span className="text-[10px] text-muted-foreground">
                       {scan.startTimeMin}–{scan.endTimeMin} min
                     </span>
                   )}
-                </div>
-                <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-3">
-                  {scan.orbitrapResolution != null && (
-                    <div><span className="text-muted-foreground">Resolution:</span> {scan.orbitrapResolution}</div>
-                  )}
-                  {scan.scanRangeMz && (
-                    <div><span className="text-muted-foreground">Scan range:</span> {scan.scanRangeMz[0]}–{scan.scanRangeMz[1]} m/z</div>
-                  )}
-                  {scan.agcTarget && (
-                    <div><span className="text-muted-foreground">AGC target:</span> {scan.agcTarget}</div>
-                  )}
-                  {scan.microscans != null && (
-                    <div><span className="text-muted-foreground">Microscans:</span> {scan.microscans}</div>
-                  )}
-                  {scan.rfLensPct != null && (
-                    <div><span className="text-muted-foreground">RF lens:</span> {scan.rfLensPct}%</div>
-                  )}
-                  {scan.maxInjectionTimeMode && (
-                    <div><span className="text-muted-foreground">IT mode:</span> {scan.maxInjectionTimeMode}</div>
-                  )}
-                  {scan.maxInjectionTimeMs != null && (
-                    <div><span className="text-muted-foreground">Max IT:</span> {scan.maxInjectionTimeMs} ms</div>
-                  )}
-                  {scan.dataType && (
-                    <div><span className="text-muted-foreground">Data type:</span> {scan.dataType}</div>
-                  )}
-                  {scan.polarity && (
-                    <div><span className="text-muted-foreground">Polarity:</span> {scan.polarity}</div>
-                  )}
-                  {scan.sourceFragmentation != null && (
-                    <div><span className="text-muted-foreground">Source frag:</span> {scan.sourceFragmentation ? "On" : "Off"}</div>
-                  )}
-                  {scan.isolationWindow && (
-                    <div><span className="text-muted-foreground">Isolation:</span> {scan.isolationWindow}</div>
-                  )}
-                  {scan.isolationWindowMz != null && (
-                    <div><span className="text-muted-foreground">Isolation window:</span> {scan.isolationWindowMz} m/z</div>
-                  )}
-                  {scan.maxMultiplexedIons != null && (
-                    <div><span className="text-muted-foreground">Max multiplex:</span> {scan.maxMultiplexedIons}</div>
-                  )}
-                  {scan.intensityThreshold != null && (
-                    <div><span className="text-muted-foreground">Min intensity:</span> {scan.intensityThreshold}</div>
-                  )}
-                  {scan.dynamicExclusionMode && (
-                    <div><span className="text-muted-foreground">Dyn. exclusion:</span> {scan.dynamicExclusionMode}</div>
-                  )}
-                  {scan.isotopeExclusion && (
-                    <div><span className="text-muted-foreground">Isotope excl:</span> {scan.isotopeExclusion}</div>
-                  )}
-                  {scan.precursorSelectionRange && (
-                    <div><span className="text-muted-foreground">Precursor range:</span> {scan.precursorSelectionRange[0]}–{scan.precursorSelectionRange[1]} m/z</div>
+                  {editingScans && (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7"
+                      onClick={() => setScanDraft(scanDraft.filter((_, j) => j !== i))}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
                   )}
                 </div>
-                {scan.extraParams && scan.extraParams.length > 0 && (
-                  <details className="mt-2">
-                    <summary className="cursor-pointer text-[10px] text-muted-foreground">
-                      Extra parameters ({scan.extraParams.length})
-                    </summary>
-                    <div className="mt-1 grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-3">
-                      {scan.extraParams.map((p, j) => (
-                        <div key={j}>
-                          <span className="text-muted-foreground">{p.key}:</span> {p.value}
-                        </div>
-                      ))}
+
+                {editingScans ? (
+                  <EditableScanFields scan={scan} index={i} updateScan={updateScan} />
+                ) : (
+                  <>
+                    <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-3">
+                      {scan.orbitrapResolution != null && (
+                        <div><span className="text-muted-foreground">Resolution:</span> {scan.orbitrapResolution}</div>
+                      )}
+                      {scan.scanRangeMz && (
+                        <div><span className="text-muted-foreground">Scan range:</span> {scan.scanRangeMz[0]}–{scan.scanRangeMz[1]} m/z</div>
+                      )}
+                      {scan.agcTarget && (
+                        <div><span className="text-muted-foreground">AGC target:</span> {scan.agcTarget}</div>
+                      )}
+                      {scan.microscans != null && (
+                        <div><span className="text-muted-foreground">Microscans:</span> {scan.microscans}</div>
+                      )}
+                      {scan.rfLensPct != null && (
+                        <div><span className="text-muted-foreground">RF lens:</span> {scan.rfLensPct}%</div>
+                      )}
+                      {scan.maxInjectionTimeMode && (
+                        <div><span className="text-muted-foreground">IT mode:</span> {scan.maxInjectionTimeMode}</div>
+                      )}
+                      {scan.maxInjectionTimeMs != null && (
+                        <div><span className="text-muted-foreground">Max IT:</span> {scan.maxInjectionTimeMs} ms</div>
+                      )}
+                      {scan.dataType && (
+                        <div><span className="text-muted-foreground">Data type:</span> {scan.dataType}</div>
+                      )}
+                      {scan.polarity && (
+                        <div><span className="text-muted-foreground">Polarity:</span> {scan.polarity}</div>
+                      )}
+                      {scan.sourceFragmentation != null && (
+                        <div><span className="text-muted-foreground">Source frag:</span> {scan.sourceFragmentation ? "On" : "Off"}</div>
+                      )}
+                      {scan.isolationWindow && (
+                        <div><span className="text-muted-foreground">Isolation:</span> {scan.isolationWindow}</div>
+                      )}
+                      {scan.isolationWindowMz != null && (
+                        <div><span className="text-muted-foreground">Isolation window:</span> {scan.isolationWindowMz} m/z</div>
+                      )}
+                      {scan.maxMultiplexedIons != null && (
+                        <div><span className="text-muted-foreground">Max multiplex:</span> {scan.maxMultiplexedIons}</div>
+                      )}
+                      {scan.intensityThreshold != null && (
+                        <div><span className="text-muted-foreground">Min intensity:</span> {scan.intensityThreshold}</div>
+                      )}
+                      {scan.dynamicExclusionMode && (
+                        <div><span className="text-muted-foreground">Dyn. exclusion:</span> {scan.dynamicExclusionMode}</div>
+                      )}
+                      {scan.isotopeExclusion && (
+                        <div><span className="text-muted-foreground">Isotope excl:</span> {scan.isotopeExclusion}</div>
+                      )}
+                      {scan.precursorSelectionRange && (
+                        <div><span className="text-muted-foreground">Precursor range:</span> {scan.precursorSelectionRange[0]}–{scan.precursorSelectionRange[1]} m/z</div>
+                      )}
                     </div>
-                  </details>
+                    {scan.extraParams && scan.extraParams.length > 0 && (
+                      <details className="mt-2">
+                        <summary className="cursor-pointer text-[10px] text-muted-foreground">
+                          Extra parameters ({scan.extraParams.length})
+                        </summary>
+                        <div className="mt-1 grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-3">
+                          {scan.extraParams.map((p, j) => (
+                            <div key={j}>
+                              <span className="text-muted-foreground">{p.key}:</span> {p.value}
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    )}
+                  </>
                 )}
               </div>
             ))}
           </div>
+
+          {editingScans && (
+            <div className="mt-3">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7"
+                onClick={() => setScanDraft([
+                  ...scanDraft,
+                  {
+                    scanType: "MS1",
+                    experimentName: "New Scan",
+                    startTimeMin: null,
+                    endTimeMin: null,
+                    orbitrapResolution: null,
+                    scanRangeMz: null,
+                    agcTarget: null,
+                    microscans: null,
+                    rfLensPct: null,
+                    maxInjectionTimeMode: null,
+                    maxInjectionTimeMs: null,
+                    dataType: null,
+                    polarity: null,
+                    sourceFragmentation: null,
+                    lockMassInjection: null,
+                    scanDescription: null,
+                    isolationOffset: null,
+                    isolationWindow: null,
+                    isolationWindowMz: null,
+                    multiplexIonsEnabled: null,
+                    maxMultiplexedIons: null,
+                    reportedMass: null,
+                    turboTmt: null,
+                    scanRangeMode: null,
+                    intensityThreshold: null,
+                    dynamicExclusionMode: null,
+                    isotopeExclusion: null,
+                    precursorSelectionRange: null,
+                    extraParams: [],
+                  },
+                ])}
+              >
+                <Plus className="mr-1 h-3 w-3" /> Add scan
+              </Button>
+            </div>
+          )}
         </Card>
       )}
 
@@ -454,6 +620,188 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
     <div>
       <dt className="text-[10px] uppercase tracking-widest text-muted-foreground">{label}</dt>
       <dd className="mt-0.5 font-mono text-xs">{value}</dd>
+    </div>
+  );
+}
+
+function EditableScanFields({
+  scan,
+  index,
+  updateScan,
+}: {
+  scan: MsScan;
+  index: number;
+  updateScan: (index: number, patch: Partial<MsScan>) => void;
+}) {
+  const numField = (
+    label: string,
+    key: keyof MsScan,
+    step = "0.1",
+  ) => (
+    <div>
+      <Label className="text-[10px] text-muted-foreground">{label}</Label>
+      <Input
+        type="number"
+        step={step}
+        value={scan[key] as number ?? ""}
+        onChange={(e) => {
+          const v = e.target.value === "" ? null : +e.target.value;
+          updateScan(index, { [key]: v } as any);
+        }}
+        className="mt-0.5 h-7 text-xs"
+      />
+    </div>
+  );
+
+  const textField = (
+    label: string,
+    key: keyof MsScan,
+  ) => (
+    <div>
+      <Label className="text-[10px] text-muted-foreground">{label}</Label>
+      <Input
+        value={(scan[key] as string) ?? ""}
+        onChange={(e) => updateScan(index, { [key]: e.target.value || null } as any)}
+        className="mt-0.5 h-7 text-xs"
+      />
+    </div>
+  );
+
+  const selectField = (
+    label: string,
+    key: keyof MsScan,
+    options: string[],
+  ) => (
+    <div>
+      <Label className="text-[10px] text-muted-foreground">{label}</Label>
+      <Select
+        value={(scan[key] as string) ?? ""}
+        onValueChange={(v) => updateScan(index, { [key]: v } as any)}
+      >
+        <SelectTrigger className="mt-0.5 h-7 text-xs">
+          <SelectValue placeholder="—" />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((o) => (
+            <SelectItem key={o} value={o}>{o}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+
+  return (
+    <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-3">
+      {numField("Start time (min)", "startTimeMin")}
+      {numField("End time (min)", "endTimeMin")}
+      {numField("Resolution", "orbitrapResolution", "1000")}
+      <div>
+        <Label className="text-[10px] text-muted-foreground">Scan range low (m/z)</Label>
+        <Input
+          type="number"
+          value={scan.scanRangeMz?.[0] ?? ""}
+          onChange={(e) => {
+            const lo = e.target.value === "" ? null : +e.target.value;
+            const hi = scan.scanRangeMz?.[1] ?? null;
+            updateScan(index, { scanRangeMz: lo != null && hi != null ? [lo, hi] : null });
+          }}
+          className="mt-0.5 h-7 text-xs"
+        />
+      </div>
+      <div>
+        <Label className="text-[10px] text-muted-foreground">Scan range high (m/z)</Label>
+        <Input
+          type="number"
+          value={scan.scanRangeMz?.[1] ?? ""}
+          onChange={(e) => {
+            const hi = e.target.value === "" ? null : +e.target.value;
+            const lo = scan.scanRangeMz?.[0] ?? null;
+            updateScan(index, { scanRangeMz: lo != null && hi != null ? [lo, hi] : null });
+          }}
+          className="mt-0.5 h-7 text-xs"
+        />
+      </div>
+      {selectField("AGC target", "agcTarget", ["Standard", "High", "Low"])}
+      {numField("Microscans", "microscans", "1")}
+      {numField("RF lens (%)", "rfLensPct", "1")}
+      {selectField("Max IT mode", "maxInjectionTimeMode", ["Auto", "Custom"])}
+      {numField("Max IT (ms)", "maxInjectionTimeMs", "1")}
+      {selectField("Data type", "dataType", ["Profile", "Centroid"])}
+      {selectField("Polarity", "polarity", ["Both", "Positive", "Negative"])}
+      {selectField("Source fragmentation", "sourceFragmentation", ["False", "True"])}
+      {textField("Scan description", "scanDescription")}
+      {/* ddMS2-specific */}
+      {textField("Isolation offset", "isolationOffset")}
+      {textField("Isolation window", "isolationWindow")}
+      {numField("Isolation window (m/z)", "isolationWindowMz", "0.1")}
+      {numField("Max multiplexed ions", "maxMultiplexedIons", "1")}
+      {numField("Min intensity", "intensityThreshold", "100")}
+      {textField("Dynamic exclusion", "dynamicExclusionMode")}
+      {textField("Isotope exclusion", "isotopeExclusion")}
+      <div>
+        <Label className="text-[10px] text-muted-foreground">Precursor range low (m/z)</Label>
+        <Input
+          type="number"
+          value={scan.precursorSelectionRange?.[0] ?? ""}
+          onChange={(e) => {
+            const lo = e.target.value === "" ? null : +e.target.value;
+            const hi = scan.precursorSelectionRange?.[1] ?? null;
+            updateScan(index, { precursorSelectionRange: lo != null && hi != null ? [lo, hi] : null });
+          }}
+          className="mt-0.5 h-7 text-xs"
+        />
+      </div>
+      <div>
+        <Label className="text-[10px] text-muted-foreground">Precursor range high (m/z)</Label>
+        <Input
+          type="number"
+          value={scan.precursorSelectionRange?.[1] ?? ""}
+          onChange={(e) => {
+            const hi = e.target.value === "" ? null : +e.target.value;
+            const lo = scan.precursorSelectionRange?.[0] ?? null;
+            updateScan(index, { precursorSelectionRange: lo != null && hi != null ? [lo, hi] : null });
+          }}
+          className="mt-0.5 h-7 text-xs"
+        />
+      </div>
+      {textField("Reported mass", "reportedMass")}
+      {textField("Scan range mode", "scanRangeMode")}
+      {textField("TurboTMT", "turboTmt")}
+
+      {/* Extra params */}
+      {scan.extraParams && scan.extraParams.length > 0 && (
+        <div className="col-span-2 sm:col-span-3">
+          <details>
+            <summary className="cursor-pointer text-[10px] text-muted-foreground">
+              Extra parameters ({scan.extraParams.length})
+            </summary>
+            <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-1 sm:grid-cols-3">
+              {scan.extraParams.map((p, j) => (
+                <div key={j} className="flex items-center gap-1">
+                  <span className="text-[10px] text-muted-foreground shrink-0">{p.key}:</span>
+                  <Input
+                    value={p.value}
+                    onChange={(e) => {
+                      const next = [...scan.extraParams];
+                      next[j] = { ...p, value: e.target.value };
+                      updateScan(index, { extraParams: next });
+                    }}
+                    className="h-6 flex-1 text-[10px]"
+                  />
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-6 w-6 shrink-0"
+                    onClick={() => updateScan(index, { extraParams: scan.extraParams.filter((_, k) => k !== j) })}
+                  >
+                    <X className="h-2.5 w-2.5" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </details>
+        </div>
+      )}
     </div>
   );
 }
