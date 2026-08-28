@@ -301,26 +301,40 @@ export async function createSignedDownloadUrl(
     return `/api/asset?key=${encodeURIComponent(key)}`;
   }
 
-  // S3 mode: try S3 first, fall back to local filesystem if the object
-  // doesn't exist (e.g. files uploaded before S3 was configured).
+  // S3 mode: check if the object exists in S3 first. If it does, return
+  // a presigned URL. If not, fall back to local filesystem (e.g. files
+  // uploaded before S3 was configured).
   try {
-    const { GetObjectCommand, getSignedUrl } = await getS3Commands();
+    const { HeadObjectCommand, GetObjectCommand, getSignedUrl } = await getS3Commands();
     const client = await getS3();
     const bucket = await getBucket();
-    const cmd = new GetObjectCommand({
-      Bucket: bucket,
-      Key: key,
-    });
+
+    // Check if the object exists in S3
+    try {
+      await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+    } catch (headErr: any) {
+      // Object not found in S3 — try local fallback
+      const fp = localPath(key);
+      try {
+        await fs.access(fp);
+        return `/api/asset?key=${encodeURIComponent(key)}`;
+      } catch {
+        // Not in local either — generate S3 URL anyway (will 404 on access)
+      }
+    }
+
+    const cmd = new GetObjectCommand({ Bucket: bucket, Key: key });
     return await getSignedUrl(client as any, cmd, { expiresIn: expiresInSeconds });
-  } catch {
-    // S3 presign failed — check if the file exists locally as a fallback.
+  } catch (err) {
+    // S3 client construction or signing failed entirely — this is a real
+    // configuration error, not a missing object. Fall back to local if
+    // possible, otherwise rethrow so the error surfaces.
     const fp = localPath(key);
     try {
       await fs.access(fp);
       return `/api/asset?key=${encodeURIComponent(key)}`;
     } catch {
-      // Not in local either — return a placeholder that will 404.
-      return `/api/asset?key=${encodeURIComponent(key)}`;
+      throw err;
     }
   }
 }

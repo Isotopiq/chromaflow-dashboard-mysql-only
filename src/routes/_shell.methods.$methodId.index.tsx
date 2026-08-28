@@ -767,6 +767,8 @@ function EditableScanFields({
       {textField("Reported mass", "reportedMass")}
       {textField("Scan range mode", "scanRangeMode")}
       {textField("TurboTMT", "turboTmt")}
+      {selectField("Lock mass injection", "lockMassInjection", ["False", "True"])}
+      {selectField("Multiplex ions", "multiplexIonsEnabled", ["False", "True"])}
 
       {/* Extra params */}
       {scan.extraParams && scan.extraParams.length > 0 && (

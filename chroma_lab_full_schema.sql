@@ -212,10 +212,19 @@ create table if not exists public.batches (
   id          uuid primary key default gen_random_uuid(),
   name        text not null,
   project     text default '',
+  status      text default 'in_progress' check (status in ('in_progress','review','complete')),
+  notes       text default '',
   owner_id    uuid references public.app_users(id) on delete set null,
   started_at  timestamptz not null default now(),
   created_at  timestamptz not null default now()
 );
+-- Add columns to existing tables if they were created before this migration
+do $$ begin
+  alter table public.batches add column if not exists status text default 'in_progress' check (status in ('in_progress','review','complete'));
+exception when others then null; end $$;
+do $$ begin
+  alter table public.batches add column if not exists notes text default '';
+exception when others then null; end $$;
 alter table public.batches enable row level security;
 drop policy if exists "batches: read all"   on public.batches;
 drop policy if exists "batches: write auth" on public.batches;
@@ -286,10 +295,14 @@ create table if not exists public.runs (
   ms_level        smallint default 1,
   parsed_status   text default 'parsed' check (parsed_status in ('parsed','parsing','failed')),
   summary_json    jsonb default '{}'::jsonb,
+  notes           text default '',
   uploaded_by     uuid references public.app_users(id) on delete set null,
   acquired_at     timestamptz not null default now(),
   created_at      timestamptz not null default now()
 );
+do $$ begin
+  alter table public.runs add column if not exists notes text default '';
+exception when others then null; end $$;
 alter table public.runs enable row level security;
 drop policy if exists "runs: read all"   on public.runs;
 drop policy if exists "runs: write auth" on public.runs;
@@ -316,8 +329,12 @@ create table if not exists public.peaks (
   annotation_source text,
   confidence        double precision,
   manual            boolean default false,
+  notes             text default '',
   created_at        timestamptz not null default now()
 );
+do $$ begin
+  alter table public.peaks add column if not exists notes text default '';
+exception when others then null; end $$;
 create index if not exists peaks_run_idx     on public.peaks(run_id);
 create index if not exists peaks_analyte_idx on public.peaks(analyte_id);
 

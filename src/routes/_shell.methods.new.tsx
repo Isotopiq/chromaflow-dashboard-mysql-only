@@ -229,7 +229,14 @@ function NewMethod() {
       if (selectedFields.has("methodFile") && rawFile) {
         try {
           const fileData = await rawFile.arrayBuffer();
-          const base64 = btoa(String.fromCharCode(...new Uint8Array(fileData)));
+          // Encode to base64 in chunks to avoid call stack overflow
+          const bytes = new Uint8Array(fileData);
+          let binary = "";
+          const chunkSize = 0x8000; // 32KB chunks
+          for (let i = 0; i < bytes.length; i += chunkSize) {
+            binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize) as any);
+          }
+          const base64 = btoa(binary);
           await uploadMethodFile({
             data: {
               methodId: saved.id,

@@ -223,6 +223,8 @@ export const archiveMethod = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => z.object({ methodId: z.string() }).parse(d))
   .handler(async ({ data, context }) => {
+    const ctx = context as any;
+    requirePermission(ctx, "canEdit");
     const { userId, isAdmin, db } = context as {
       userId: string; email: string; isAdmin: boolean;
       db: import("@/db/index.server").Db;
