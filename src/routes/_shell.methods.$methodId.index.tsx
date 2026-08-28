@@ -14,6 +14,17 @@ import {
 } from "@/components/ui/table";
 import { ChromatogramPlot } from "@/components/chromatogram-plot";
 import { StatusDot } from "@/components/status-dot";
+import {
+  ResponsiveContainer,
+  ComposedChart,
+  Area,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+} from "recharts";
 import { ArrowLeft, GitBranch, Edit3, Trash2, Archive, Download, Save, Plus, X } from "lucide-react";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
@@ -238,6 +249,11 @@ function MethodDetail({ method }: { method: Method }) {
               ))}
             </TableBody>
           </Table>
+
+          {/* Gradient profile visualization */}
+          <div className="mt-4">
+            <GradientProfilePlot gradient={method.gradient} flowRate={method.flowRate} />
+          </div>
         </Card>
 
         <Card className="border-border bg-card p-4">
@@ -533,22 +549,31 @@ function MethodDetail({ method }: { method: Method }) {
         </Card>
       )}
 
-      {methodRuns.length > 0 && (
-        <Card className="border-border bg-card p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
-                Linked runs ({methodRuns.length})
-              </div>
-              <h2 className="text-sm font-semibold">Representative chromatogram overlay</h2>
+      {/* Chromatogram overlay from linked runs (always visible) */}
+      <Card className="border-border bg-card p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+              Linked runs ({methodRuns.length})
             </div>
+            <h2 className="text-sm font-semibold">Chromatogram overlay</h2>
+          </div>
+          {methodRuns.length > 0 && (
             <Button asChild size="sm" variant="outline">
               <Link to="/overlay">Open in workspace</Link>
             </Button>
-          </div>
-          <div className="mt-3">
+          )}
+        </div>
+        <div className="mt-3">
+          {methodRuns.length > 0 ? (
             <ChromatogramPlot runs={methodRuns} height={260} />
-          </div>
+          ) : (
+            <div className="flex h-[260px] items-center justify-center rounded-md border border-dashed border-border text-xs text-muted-foreground">
+              No runs linked to this method yet. Upload a run and select this method to see its chromatogram here.
+            </div>
+          )}
+        </div>
+        {methodRuns.length > 0 && (
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
             {methodRuns.map((r) => (
               <Link
@@ -562,8 +587,8 @@ function MethodDetail({ method }: { method: Method }) {
               </Link>
             ))}
           </div>
-        </Card>
-      )}
+        )}
+      </Card>
 
       {/* Delete confirmation */}
       <AlertDialog open={showDelete} onOpenChange={setShowDelete}>
@@ -625,6 +650,95 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
     <div>
       <dt className="text-[10px] uppercase tracking-widest text-muted-foreground">{label}</dt>
       <dd className="mt-0.5 font-mono text-xs">{value}</dd>
+    </div>
+  );
+}
+
+function GradientProfilePlot({
+  gradient,
+  flowRate,
+}: {
+  gradient: Array<{ time: number; pctB: number; flow: number }>;
+  flowRate: number;
+}) {
+  if (gradient.length === 0) return null;
+
+  // Build data points from gradient steps
+  const data = gradient.map((g) => ({
+    time: g.time,
+    pctB: g.pctB,
+    flow: g.flow || flowRate,
+  }));
+
+  return (
+    <div style={{ width: "100%", height: 200 }}>
+      <ResponsiveContainer>
+        <ComposedChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 20 }}>
+          <defs>
+            <linearGradient id="gradB" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="var(--chart-1)" stopOpacity={0.3} />
+              <stop offset="95%" stopColor="var(--chart-1)" stopOpacity={0.05} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid stroke="var(--border)" strokeDasharray="2 4" vertical={false} />
+          <XAxis
+            dataKey="time"
+            type="number"
+            domain={["dataMin", "dataMax"]}
+            tickFormatter={(v: number) => `${v.toFixed(1)}`}
+            stroke="var(--muted-foreground)"
+            tick={{ fontSize: 10, fontFamily: "var(--font-mono)" }}
+            label={{ value: "Time (min)", position: "insideBottom", offset: -2, fontSize: 10, fill: "var(--muted-foreground)" }}
+          />
+          <YAxis
+            yAxisId="left"
+            stroke="var(--chart-1)"
+            tick={{ fontSize: 10, fontFamily: "var(--font-mono)" }}
+            domain={[0, 100]}
+            tickFormatter={(v: number) => `${v}%`}
+            width={48}
+          />
+          <YAxis
+            yAxisId="right"
+            orientation="right"
+            stroke="var(--chart-2)"
+            tick={{ fontSize: 10, fontFamily: "var(--font-mono)" }}
+            tickFormatter={(v: number) => `${v.toFixed(1)}`}
+            width={48}
+          />
+          <Tooltip
+            contentStyle={{
+              background: "var(--popover)",
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              fontSize: 11,
+              fontFamily: "var(--font-mono)",
+            }}
+            labelFormatter={(v: number) => `${Number(v).toFixed(1)} min`}
+          />
+          <Area
+            yAxisId="left"
+            type="monotone"
+            dataKey="pctB"
+            stroke="var(--chart-1)"
+            strokeWidth={2}
+            fill="url(#gradB)"
+            name="%B"
+            isAnimationActive={false}
+          />
+          <Line
+            yAxisId="right"
+            type="monotone"
+            dataKey="flow"
+            stroke="var(--chart-2)"
+            strokeWidth={1.5}
+            dot={false}
+            name="Flow (mL/min)"
+            isAnimationActive={false}
+          />
+          <Legend wrapperStyle={{ fontSize: 10, fontFamily: "var(--font-mono)" }} />
+        </ComposedChart>
+      </ResponsiveContainer>
     </div>
   );
 }
