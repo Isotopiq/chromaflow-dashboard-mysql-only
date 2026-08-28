@@ -468,10 +468,19 @@ export const deleteAnalyte = createServerFn({ method: "POST" })
     requirePermission(ctx, "canDelete");
     const { userId, isAdmin, db } = ctx;
     const existing = await db.maybe<any>(
-      "select id, created_by from public.analytes where id = $1", [data.id]);
+      "select id, name, library_source, created_by from public.analytes where id = $1", [data.id]);
     if (!existing) return { ok: true, missing: true };
     if (existing.created_by && existing.created_by !== userId && !isAdmin)
       throw new Error("You can only delete compounds you created.");
+    // If this is a system-seeded analyte, record the deletion so it
+    // doesn't get re-seeded on the next deploy.
+    if (existing.library_source === "system") {
+      await db.query(
+        `insert into public.deleted_system_analytes (name) values ($1)
+         on conflict (name) do nothing`,
+        [existing.name],
+      );
+    }
     await db.query("update public.peaks set analyte_id = null where analyte_id = $1", [data.id]);
     await db.query("delete from public.analytes where id = $1", [data.id]);
     return { ok: true };

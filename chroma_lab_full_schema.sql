@@ -235,6 +235,13 @@ create table if not exists public.analytes (
   created_by     uuid references public.app_users(id) on delete set null,
   created_at     timestamptz not null default now()
 );
+
+-- Track system analytes deliberately deleted by users so they are
+-- not re-seeded on redeploy.
+create table if not exists public.deleted_system_analytes (
+  name        text primary key,
+  deleted_at  timestamptz not null default now()
+);
 alter table public.analytes enable row level security;
 drop policy if exists "analytes: read all"   on public.analytes;
 drop policy if exists "analytes: write auth" on public.analytes;

@@ -1,4 +1,10 @@
 -- Seed common LC-MS reference analytes (m/z computed for [M+H]+).
+-- Skips any system analytes that were deliberately deleted by the user.
+CREATE TABLE IF NOT EXISTS public.deleted_system_analytes (
+  name text primary key,
+  deleted_at timestamptz not null default now()
+);
+
 INSERT INTO public.analytes (name, formula, mz, rt_expected, library_source)
 SELECT v.name, v.formula, v.mz, v.rt_expected, 'system'
 FROM (VALUES
@@ -20,4 +26,7 @@ FROM (VALUES
 ) AS v(name, formula, mz, rt_expected)
 WHERE NOT EXISTS (
   SELECT 1 FROM public.analytes a WHERE a.name = v.name
+)
+AND NOT EXISTS (
+  SELECT 1 FROM public.deleted_system_analytes d WHERE d.name = v.name
 );
