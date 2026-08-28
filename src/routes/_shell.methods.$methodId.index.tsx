@@ -663,31 +663,20 @@ function GradientProfilePlot({
 }) {
   if (gradient.length === 0) return null;
 
-  // Build data points from gradient steps.
-  // Gradient steps are step-changes: the value at time T persists until the
-  // next step. We duplicate each interior point so stepAfter renders flat
-  // segments between steps and vertical jumps at step boundaries.
-  const raw = gradient.map((g) => ({
+  // Use raw gradient steps directly — stepAfter interpolation handles
+  // drawing flat segments between steps and vertical jumps at boundaries.
+  const data = gradient.map((g) => ({
     time: g.time,
     pctB: g.pctB,
     flow: g.flow || flowRate,
   }));
-  const data: typeof raw = [];
-  for (let i = 0; i < raw.length; i++) {
-    data.push(raw[i]);
-    if (i < raw.length - 1) {
-      // Insert a duplicate at the next step's time so the line stays flat
-      // until the jump.
-      data.push({ ...raw[i], time: raw[i + 1].time });
-    }
-  }
 
   // Compute a sensible flow Y-axis domain with padding
-  const flows = raw.map((g) => g.flow);
+  const flows = data.map((g) => g.flow);
   const minFlow = Math.min(...flows);
   const maxFlow = Math.max(...flows);
   const flowPad = Math.max((maxFlow - minFlow) * 0.5, 0.1);
-  const flowDomain = [Math.max(0, minFlow - flowPad), maxFlow + flowPad];
+  const flowDomain: [number, number] = [Math.max(0, minFlow - flowPad), maxFlow + flowPad];
 
   return (
     <div style={{ width: "100%", height: 200 }}>
@@ -703,6 +692,7 @@ function GradientProfilePlot({
           <XAxis
             dataKey="time"
             type="number"
+            data={data}
             domain={["dataMin", "dataMax"]}
             tickFormatter={(v: number) => `${v.toFixed(1)}`}
             stroke="var(--muted-foreground)"
@@ -738,23 +728,25 @@ function GradientProfilePlot({
           />
           <Area
             yAxisId="left"
-            type="stepAfter"
+            type="linear"
             dataKey="pctB"
             stroke="var(--chart-1)"
             strokeWidth={2}
             fill="url(#gradB)"
             name="%B"
             isAnimationActive={false}
+            connectNulls
           />
           <Line
             yAxisId="right"
-            type="stepAfter"
+            type="linear"
             dataKey="flow"
             stroke="var(--chart-2)"
             strokeWidth={1.5}
             dot={false}
             name="Flow (mL/min)"
             isAnimationActive={false}
+            connectNulls
           />
           <Legend wrapperStyle={{ fontSize: 10, fontFamily: "var(--font-mono)" }} />
         </ComposedChart>
