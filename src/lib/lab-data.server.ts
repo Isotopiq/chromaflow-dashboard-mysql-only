@@ -72,6 +72,8 @@ export function mapPeak(r: any): Peak {
     analyteName: r.analyte_name ?? undefined,
     confidence: r.confidence != null ? Number(r.confidence) : undefined,
     manual: r.manual === true,
+    r2: r.r2 != null ? Number(r.r2) : undefined,
+    asymmetry: r.asymmetry != null ? Number(r.asymmetry) : undefined,
     notes: r.notes ?? "",
   };
 }

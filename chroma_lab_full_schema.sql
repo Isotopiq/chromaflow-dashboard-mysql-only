@@ -330,10 +330,15 @@ create table if not exists public.peaks (
   confidence        double precision,
   manual            boolean default false,
   notes             text default '',
+  r2                double precision,
+  asymmetry         double precision,
   created_at        timestamptz not null default now()
 );
 do $$ begin
-  alter table public.peaks add column if not exists notes text default '';
+  alter table public.peaks add column if not exists r2 double precision;
+exception when others then null; end $$;
+do $$ begin
+  alter table public.peaks add column if not exists asymmetry double precision;
 exception when others then null; end $$;
 create index if not exists peaks_run_idx     on public.peaks(run_id);
 create index if not exists peaks_analyte_idx on public.peaks(analyte_id);

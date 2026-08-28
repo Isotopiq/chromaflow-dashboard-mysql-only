@@ -226,6 +226,8 @@ function RunsList() {
           mz: p.mz,
           mzLow: p.mzLow,
           mzHigh: p.mzHigh,
+          r2: p.r2,
+          asymmetry: p.asymmetry,
         })),
       };
 

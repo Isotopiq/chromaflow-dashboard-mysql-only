@@ -673,6 +673,8 @@ const RunInput = z.object({
     mz: z.number().nullable().optional(),
     mzLow: z.number().nullable().optional(),
     mzHigh: z.number().nullable().optional(),
+    r2: z.number().nullable().optional(),
+    asymmetry: z.number().nullable().optional(),
   })).max(1000),
 });
 
@@ -718,10 +720,11 @@ export const createRun = createServerFn({ method: "POST" })
     let peakRows: any[] = [];
     for (const p of data.peaks) {
       const r = await db.one<any>(
-        `insert into public.peaks (run_id, rt, area, height, fwhm, sn, mz, mz_low, mz_high)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning *`,
+        `insert into public.peaks (run_id, rt, area, height, fwhm, sn, mz, mz_low, mz_high, r2, asymmetry)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) returning *`,
         [run.id, p.rt, p.area, p.height, p.fwhm, p.sn,
-         p.mz ?? null, p.mzLow ?? null, p.mzHigh ?? null],
+         p.mz ?? null, p.mzLow ?? null, p.mzHigh ?? null,
+         p.r2 ?? null, p.asymmetry ?? null],
       );
       peakRows.push(r);
     }
