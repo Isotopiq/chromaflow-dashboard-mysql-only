@@ -15,7 +15,7 @@ import {
 import { ChromatogramPlot } from "@/components/chromatogram-plot";
 import { StatusDot } from "@/components/status-dot";
 import { ArrowLeft, GitBranch, Edit3, Trash2, Archive, Download, Save, Plus, X } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -94,6 +94,13 @@ function MethodDetail({ method }: { method: Method }) {
   const [editingScans, setEditingScans] = useState(false);
   const [scanDraft, setScanDraft] = useState<MsScan[]>(method.msScans ?? []);
   const [savingScans, setSavingScans] = useState(false);
+
+  // Sync scanDraft when method data loads or changes (e.g. after hydration)
+  useEffect(() => {
+    if (!editingScans) {
+      setScanDraft(method.msScans ?? []);
+    }
+  }, [method.msScans, editingScans]);
 
   const column = columns.find((c) => c.id === method.columnId);
   const methodRuns = runs.filter((r) => r.methodId === method.id);
@@ -335,19 +342,17 @@ function MethodDetail({ method }: { method: Method }) {
                   </Button>
                 </>
               ) : (
-                canModify && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7"
-                    onClick={() => {
-                      setScanDraft(method.msScans ?? []);
-                      setEditingScans(true);
-                    }}
-                  >
-                    <Edit3 className="mr-1 h-3 w-3" /> Edit scans
-                  </Button>
-                )
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7"
+                  onClick={() => {
+                    setScanDraft(method.msScans ?? []);
+                    setEditingScans(true);
+                  }}
+                >
+                  <Edit3 className="mr-1 h-3 w-3" /> Edit scans
+                </Button>
               )}
             </div>
           </div>
