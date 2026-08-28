@@ -663,25 +663,28 @@ function GradientProfilePlot({
 }) {
   if (gradient.length === 0) return null;
 
-  // Use raw gradient steps directly — stepAfter interpolation handles
-  // drawing flat segments between steps and vertical jumps at boundaries.
+  // Use raw gradient steps directly — linear interpolation draws straight
+  // lines between setpoints, which is how HPLC gradients ramp.
   const data = gradient.map((g) => ({
     time: g.time,
     pctB: g.pctB,
     flow: g.flow || flowRate,
   }));
 
-  // Compute a sensible flow Y-axis domain with padding
+  // Only show the flow overlay if flow actually changes across steps.
+  // When flow is constant (the common case), the flat line and second
+  // Y-axis just clutter the chart.
   const flows = data.map((g) => g.flow);
   const minFlow = Math.min(...flows);
   const maxFlow = Math.max(...flows);
+  const flowVaries = maxFlow - minFlow > 0.001;
   const flowPad = Math.max((maxFlow - minFlow) * 0.5, 0.1);
   const flowDomain: [number, number] = [Math.max(0, minFlow - flowPad), maxFlow + flowPad];
 
   return (
     <div style={{ width: "100%", height: 200 }}>
       <ResponsiveContainer>
-        <ComposedChart data={data} margin={{ top: 8, right: 56, left: 0, bottom: 20 }}>
+        <ComposedChart data={data} margin={{ top: 8, right: flowVaries ? 56 : 12, left: 0, bottom: 20 }}>
           <defs>
             <linearGradient id="gradB" x1="0" y1="0" x2="0" y2="1">
               <stop offset="5%" stopColor="var(--chart-1)" stopOpacity={0.3} />
@@ -707,15 +710,17 @@ function GradientProfilePlot({
             tickFormatter={(v: number) => `${v}%`}
             width={48}
           />
-          <YAxis
-            yAxisId="right"
-            orientation="right"
-            stroke="var(--chart-2)"
-            tick={{ fontSize: 10, fontFamily: "var(--font-mono)" }}
-            tickFormatter={(v: number) => `${v.toFixed(2)}`}
-            domain={flowDomain}
-            width={48}
-          />
+          {flowVaries && (
+            <YAxis
+              yAxisId="right"
+              orientation="right"
+              stroke="var(--chart-2)"
+              tick={{ fontSize: 10, fontFamily: "var(--font-mono)" }}
+              tickFormatter={(v: number) => `${v.toFixed(2)}`}
+              domain={flowDomain}
+              width={48}
+            />
+          )}
           <Tooltip
             contentStyle={{
               background: "var(--popover)",
@@ -737,17 +742,19 @@ function GradientProfilePlot({
             isAnimationActive={false}
             connectNulls
           />
-          <Line
-            yAxisId="right"
-            type="linear"
-            dataKey="flow"
-            stroke="var(--chart-2)"
-            strokeWidth={1.5}
-            dot={false}
-            name="Flow (mL/min)"
-            isAnimationActive={false}
-            connectNulls
-          />
+          {flowVaries && (
+            <Line
+              yAxisId="right"
+              type="linear"
+              dataKey="flow"
+              stroke="var(--chart-2)"
+              strokeWidth={1.5}
+              dot={false}
+              name="Flow (mL/min)"
+              isAnimationActive={false}
+              connectNulls
+            />
+          )}
           <Legend wrapperStyle={{ fontSize: 10, fontFamily: "var(--font-mono)" }} />
         </ComposedChart>
       </ResponsiveContainer>
