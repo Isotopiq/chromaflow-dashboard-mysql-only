@@ -22,7 +22,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Plus, Trash2, Upload, FileUp, ChevronDown, ChevronRight } from "lucide-react";
+import { Plus, Trash2, Upload, FileUp, ChevronDown, ChevronRight, Edit3, Save, X } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import type { GradientStep, Method, MsScan, MsGlobalSettings } from "@/lib/lab-types";
@@ -63,6 +63,11 @@ function NewMethod() {
   // --- MS scan state (from import) ---
   const [msGlobalSettings, setMsGlobalSettings] = useState<MsGlobalSettings | null>(null);
   const [msScans, setMsScans] = useState<MsScan[]>([]);
+  const [editingScans, setEditingScans] = useState(false);
+
+  function updateScan(index: number, patch: Partial<MsScan>) {
+    setMsScans((prev) => prev.map((s, j) => (j === index ? { ...s, ...patch } : s)));
+  }
 
   // --- Method file import state ---
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -463,20 +468,126 @@ function NewMethod() {
           </div>
         </div>
 
-        {/* MS Scans summary (if imported) */}
+        {/* MS Scans (editable, if imported) */}
         {msScans.length > 0 && (
           <div className="mt-6">
-            <Label className="text-[11px] uppercase tracking-widest text-muted-foreground">
-              MS Scan Definitions ({msScans.length})
-            </Label>
-            <div className="mt-2 space-y-1">
+            <div className="flex items-center justify-between">
+              <Label className="text-[11px] uppercase tracking-widest text-muted-foreground">
+                MS Scan Definitions ({msScans.length})
+              </Label>
+              <div className="flex gap-2">
+                {editingScans ? (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7"
+                      onClick={() => setEditingScans(false)}
+                    >
+                      <X className="mr-1 h-3 w-3" /> Done
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7"
+                      onClick={() => setMsScans([
+                        ...msScans,
+                        {
+                          scanType: "MS1",
+                          experimentName: "New Scan",
+                          startTimeMin: null,
+                          endTimeMin: null,
+                          orbitrapResolution: null,
+                          scanRangeMz: null,
+                          agcTarget: null,
+                          microscans: null,
+                          rfLensPct: null,
+                          maxInjectionTimeMode: null,
+                          maxInjectionTimeMs: null,
+                          dataType: null,
+                          polarity: null,
+                          sourceFragmentation: null,
+                          lockMassInjection: null,
+                          scanDescription: null,
+                          isolationOffset: null,
+                          isolationWindow: null,
+                          isolationWindowMz: null,
+                          multiplexIonsEnabled: null,
+                          maxMultiplexedIons: null,
+                          reportedMass: null,
+                          turboTmt: null,
+                          scanRangeMode: null,
+                          intensityThreshold: null,
+                          dynamicExclusionMode: null,
+                          isotopeExclusion: null,
+                          precursorSelectionRange: null,
+                          extraParams: [],
+                        },
+                      ])}
+                    >
+                      <Plus className="mr-1 h-3 w-3" /> Add scan
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7"
+                    onClick={() => setEditingScans(true)}
+                  >
+                    <Edit3 className="mr-1 h-3 w-3" /> Edit scans
+                  </Button>
+                )}
+              </div>
+            </div>
+            <div className="mt-2 space-y-3">
               {msScans.map((s, i) => (
-                <div key={i} className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-xs">
-                  <Badge variant="outline" className="text-[10px]">{s.scanType}</Badge>
-                  <span className="font-medium">{s.experimentName || `Scan ${i + 1}`}</span>
-                  {s.orbitrapResolution && <span className="text-muted-foreground">R={s.orbitrapResolution}</span>}
-                  {s.scanRangeMz && <span className="text-muted-foreground">{s.scanRangeMz[0]}-{s.scanRangeMz[1]} m/z</span>}
-                  {s.polarity && <span className="text-muted-foreground">{s.polarity}</span>}
+                <div key={i} className="rounded-md border border-border p-3">
+                  {editingScans ? (
+                    <>
+                      <div className="flex items-center gap-2">
+                        <Select
+                          value={s.scanType}
+                          onValueChange={(v) => updateScan(i, { scanType: v as MsScan["scanType"] })}
+                        >
+                          <SelectTrigger className="h-7 w-32 text-[10px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="MS1">MS1</SelectItem>
+                            <SelectItem value="ddMS2">ddMS2</SelectItem>
+                            <SelectItem value="tSIM">tSIM</SelectItem>
+                            <SelectItem value="tMS2">tMS2</SelectItem>
+                            <SelectItem value="PRM">PRM</SelectItem>
+                            <SelectItem value="AllIons">AllIons</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Input
+                          value={s.experimentName}
+                          onChange={(e) => updateScan(i, { experimentName: e.target.value })}
+                          className="h-7 flex-1 text-sm"
+                          placeholder="Experiment name"
+                        />
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7"
+                          onClick={() => setMsScans(msScans.filter((_, j) => j !== i))}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                      <NewMethodScanFields scan={s} index={i} updateScan={updateScan} />
+                    </>
+                  ) : (
+                    <div className="flex items-center gap-2 text-xs">
+                      <Badge variant="outline" className="text-[10px]">{s.scanType}</Badge>
+                      <span className="font-medium">{s.experimentName || `Scan ${i + 1}`}</span>
+                      {s.orbitrapResolution && <span className="text-muted-foreground">R={s.orbitrapResolution}</span>}
+                      {s.scanRangeMz && <span className="text-muted-foreground">{s.scanRangeMz[0]}-{s.scanRangeMz[1]} m/z</span>}
+                      {s.polarity && <span className="text-muted-foreground">{s.polarity}</span>}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -572,6 +683,177 @@ function NewMethod() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function NewMethodScanFields({
+  scan,
+  index,
+  updateScan,
+}: {
+  scan: MsScan;
+  index: number;
+  updateScan: (index: number, patch: Partial<MsScan>) => void;
+}) {
+  const numField = (label: string, key: keyof MsScan, step = "0.1") => (
+    <div>
+      <Label className="text-[10px] text-muted-foreground">{label}</Label>
+      <Input
+        type="number"
+        step={step}
+        value={scan[key] as number ?? ""}
+        onChange={(e) => {
+          const v = e.target.value === "" ? null : +e.target.value;
+          updateScan(index, { [key]: v } as any);
+        }}
+        className="mt-0.5 h-7 text-xs"
+      />
+    </div>
+  );
+
+  const textField = (label: string, key: keyof MsScan) => (
+    <div>
+      <Label className="text-[10px] text-muted-foreground">{label}</Label>
+      <Input
+        value={(scan[key] as string) ?? ""}
+        onChange={(e) => updateScan(index, { [key]: e.target.value || null } as any)}
+        className="mt-0.5 h-7 text-xs"
+      />
+    </div>
+  );
+
+  const selectField = (label: string, key: keyof MsScan, options: string[]) => (
+    <div>
+      <Label className="text-[10px] text-muted-foreground">{label}</Label>
+      <Select
+        value={(scan[key] as string) ?? ""}
+        onValueChange={(v) => updateScan(index, { [key]: v } as any)}
+      >
+        <SelectTrigger className="mt-0.5 h-7 text-xs">
+          <SelectValue placeholder="—" />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((o) => (
+            <SelectItem key={o} value={o}>{o}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+
+  return (
+    <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-3">
+      {numField("Start time (min)", "startTimeMin")}
+      {numField("End time (min)", "endTimeMin")}
+      {numField("Resolution", "orbitrapResolution", "1000")}
+      <div>
+        <Label className="text-[10px] text-muted-foreground">Scan range low (m/z)</Label>
+        <Input
+          type="number"
+          value={scan.scanRangeMz?.[0] ?? ""}
+          onChange={(e) => {
+            const lo = e.target.value === "" ? null : +e.target.value;
+            const hi = scan.scanRangeMz?.[1] ?? null;
+            updateScan(index, { scanRangeMz: lo != null && hi != null ? [lo, hi] : null });
+          }}
+          className="mt-0.5 h-7 text-xs"
+        />
+      </div>
+      <div>
+        <Label className="text-[10px] text-muted-foreground">Scan range high (m/z)</Label>
+        <Input
+          type="number"
+          value={scan.scanRangeMz?.[1] ?? ""}
+          onChange={(e) => {
+            const hi = e.target.value === "" ? null : +e.target.value;
+            const lo = scan.scanRangeMz?.[0] ?? null;
+            updateScan(index, { scanRangeMz: lo != null && hi != null ? [lo, hi] : null });
+          }}
+          className="mt-0.5 h-7 text-xs"
+        />
+      </div>
+      {selectField("AGC target", "agcTarget", ["Standard", "High", "Low"])}
+      {numField("Microscans", "microscans", "1")}
+      {numField("RF lens (%)", "rfLensPct", "1")}
+      {selectField("Max IT mode", "maxInjectionTimeMode", ["Auto", "Custom"])}
+      {numField("Max IT (ms)", "maxInjectionTimeMs", "1")}
+      {selectField("Data type", "dataType", ["Profile", "Centroid"])}
+      {selectField("Polarity", "polarity", ["Both", "Positive", "Negative"])}
+      {selectField("Source fragmentation", "sourceFragmentation", ["False", "True"])}
+      {textField("Scan description", "scanDescription")}
+      {textField("Isolation offset", "isolationOffset")}
+      {textField("Isolation window", "isolationWindow")}
+      {numField("Isolation window (m/z)", "isolationWindowMz", "0.1")}
+      {numField("Max multiplexed ions", "maxMultiplexedIons", "1")}
+      {numField("Min intensity", "intensityThreshold", "100")}
+      {textField("Dynamic exclusion", "dynamicExclusionMode")}
+      {textField("Isotope exclusion", "isotopeExclusion")}
+      <div>
+        <Label className="text-[10px] text-muted-foreground">Precursor range low (m/z)</Label>
+        <Input
+          type="number"
+          value={scan.precursorSelectionRange?.[0] ?? ""}
+          onChange={(e) => {
+            const lo = e.target.value === "" ? null : +e.target.value;
+            const hi = scan.precursorSelectionRange?.[1] ?? null;
+            updateScan(index, { precursorSelectionRange: lo != null && hi != null ? [lo, hi] : null });
+          }}
+          className="mt-0.5 h-7 text-xs"
+        />
+      </div>
+      <div>
+        <Label className="text-[10px] text-muted-foreground">Precursor range high (m/z)</Label>
+        <Input
+          type="number"
+          value={scan.precursorSelectionRange?.[1] ?? ""}
+          onChange={(e) => {
+            const hi = e.target.value === "" ? null : +e.target.value;
+            const lo = scan.precursorSelectionRange?.[0] ?? null;
+            updateScan(index, { precursorSelectionRange: lo != null && hi != null ? [lo, hi] : null });
+          }}
+          className="mt-0.5 h-7 text-xs"
+        />
+      </div>
+      {textField("Reported mass", "reportedMass")}
+      {textField("Scan range mode", "scanRangeMode")}
+      {textField("TurboTMT", "turboTmt")}
+      {selectField("Lock mass injection", "lockMassInjection", ["False", "True"])}
+      {selectField("Multiplex ions", "multiplexIonsEnabled", ["False", "True"])}
+
+      {scan.extraParams && scan.extraParams.length > 0 && (
+        <div className="col-span-2 sm:col-span-3">
+          <details>
+            <summary className="cursor-pointer text-[10px] text-muted-foreground">
+              Extra parameters ({scan.extraParams.length})
+            </summary>
+            <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-1 sm:grid-cols-3">
+              {scan.extraParams.map((p, j) => (
+                <div key={j} className="flex items-center gap-1">
+                  <span className="text-[10px] text-muted-foreground shrink-0">{p.key}:</span>
+                  <Input
+                    value={p.value}
+                    onChange={(e) => {
+                      const next = [...scan.extraParams];
+                      next[j] = { ...p, value: e.target.value };
+                      updateScan(index, { extraParams: next });
+                    }}
+                    className="h-6 flex-1 text-[10px]"
+                  />
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-6 w-6 shrink-0"
+                    onClick={() => updateScan(index, { extraParams: scan.extraParams.filter((_, k) => k !== j) })}
+                  >
+                    <X className="h-2.5 w-2.5" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </details>
+        </div>
+      )}
     </div>
   );
 }
