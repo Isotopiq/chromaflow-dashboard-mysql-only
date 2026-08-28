@@ -120,28 +120,28 @@ function NewMethod() {
     if (selectedFields.has("msGlobalSettings") && p.msGlobalSettings) {
       setMsGlobalSettings(p.msGlobalSettings);
     }
-    if (selectedFields.has("ms1Scan")) {
-      const ms1 = p.msScans.filter((s) => s.scanType === "MS1");
-      if (ms1.length > 0) {
-        // Replace existing MS1 scans, keep ddMS2
-        const ddms2 = msScans.filter((s) => s.scanType !== "MS1");
-        setMsScans([...ms1, ...ddms2]);
-        // Also set the ionization from the MS1 polarity
-        const pol = ms1[0].polarity;
+    // Build the final scan list from the parsed file, combining MS1 + ddMS2
+    // as selected. We must not read msScans state here because setMsScans
+    // is async and the second block would see stale state.
+    const wantMs1 = selectedFields.has("ms1Scan");
+    const wantDdms2 = selectedFields.has("ddMS2Scans");
+    if (wantMs1 || wantDdms2) {
+      const importedMs1 = wantMs1 ? p.msScans.filter((s) => s.scanType === "MS1") : [];
+      const importedDdms2 = wantDdms2 ? p.msScans.filter((s) => s.scanType === "ddMS2") : [];
+      // Keep any existing scans of types NOT being imported
+      const keepTypes = new Set<string>();
+      if (!wantMs1) keepTypes.add("MS1");
+      if (!wantDdms2) keepTypes.add("ddMS2");
+      const kept = keepTypes.size > 0
+        ? msScans.filter((s) => keepTypes.has(s.scanType))
+        : [];
+      setMsScans([...importedMs1, ...importedDdms2, ...kept]);
+      // Set ionization from the MS1 polarity
+      if (importedMs1.length > 0) {
+        const pol = importedMs1[0].polarity;
         if (pol === "Both") setIon("ESI±");
         else if (pol === "Positive") setIon("ESI+");
         else if (pol === "Negative") setIon("ESI-");
-        // Set scan range from MS1
-        if (ms1[0].scanRangeMz) {
-          // We don't have a direct state for scan range but it's saved in msScans
-        }
-      }
-    }
-    if (selectedFields.has("ddMS2Scans")) {
-      const ddms2 = p.msScans.filter((s) => s.scanType === "ddMS2");
-      if (ddms2.length > 0) {
-        const ms1 = msScans.filter((s) => s.scanType === "MS1");
-        setMsScans([...ms1, ...ddms2]);
       }
     }
 
