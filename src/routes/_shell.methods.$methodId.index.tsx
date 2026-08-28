@@ -663,17 +663,36 @@ function GradientProfilePlot({
 }) {
   if (gradient.length === 0) return null;
 
-  // Build data points from gradient steps
-  const data = gradient.map((g) => ({
+  // Build data points from gradient steps.
+  // Gradient steps are step-changes: the value at time T persists until the
+  // next step. We duplicate each interior point so stepAfter renders flat
+  // segments between steps and vertical jumps at step boundaries.
+  const raw = gradient.map((g) => ({
     time: g.time,
     pctB: g.pctB,
     flow: g.flow || flowRate,
   }));
+  const data: typeof raw = [];
+  for (let i = 0; i < raw.length; i++) {
+    data.push(raw[i]);
+    if (i < raw.length - 1) {
+      // Insert a duplicate at the next step's time so the line stays flat
+      // until the jump.
+      data.push({ ...raw[i], time: raw[i + 1].time });
+    }
+  }
+
+  // Compute a sensible flow Y-axis domain with padding
+  const flows = raw.map((g) => g.flow);
+  const minFlow = Math.min(...flows);
+  const maxFlow = Math.max(...flows);
+  const flowPad = Math.max((maxFlow - minFlow) * 0.5, 0.1);
+  const flowDomain = [Math.max(0, minFlow - flowPad), maxFlow + flowPad];
 
   return (
     <div style={{ width: "100%", height: 200 }}>
       <ResponsiveContainer>
-        <ComposedChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 20 }}>
+        <ComposedChart data={data} margin={{ top: 8, right: 56, left: 0, bottom: 20 }}>
           <defs>
             <linearGradient id="gradB" x1="0" y1="0" x2="0" y2="1">
               <stop offset="5%" stopColor="var(--chart-1)" stopOpacity={0.3} />
@@ -703,7 +722,8 @@ function GradientProfilePlot({
             orientation="right"
             stroke="var(--chart-2)"
             tick={{ fontSize: 10, fontFamily: "var(--font-mono)" }}
-            tickFormatter={(v: number) => `${v.toFixed(1)}`}
+            tickFormatter={(v: number) => `${v.toFixed(2)}`}
+            domain={flowDomain}
             width={48}
           />
           <Tooltip
@@ -718,7 +738,7 @@ function GradientProfilePlot({
           />
           <Area
             yAxisId="left"
-            type="monotone"
+            type="stepAfter"
             dataKey="pctB"
             stroke="var(--chart-1)"
             strokeWidth={2}
@@ -728,7 +748,7 @@ function GradientProfilePlot({
           />
           <Line
             yAxisId="right"
-            type="monotone"
+            type="stepAfter"
             dataKey="flow"
             stroke="var(--chart-2)"
             strokeWidth={1.5}
