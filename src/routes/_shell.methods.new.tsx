@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useRef, useState } from "react";
-import { useLab, useUpsertMethod } from "@/lib/store";
+import { useLab, useUpsertMethod, useUploadMethodFile } from "@/lib/store";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,14 +22,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Plus, Trash2, Upload, FileUp } from "lucide-react";
+import { Plus, Trash2, Upload, FileUp, ChevronDown, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
-import type { GradientStep, Method } from "@/lib/lab-types";
+import { Badge } from "@/components/ui/badge";
+import type { GradientStep, Method, MsScan, MsGlobalSettings } from "@/lib/lab-types";
 import {
   parseMethodFile,
-  buildFieldList,
+  buildFieldGroups,
   type ParsedMethodFile,
   type ImportableField,
+  type FieldGroup,
 } from "@/lib/method-import";
 
 export const Route = createFileRoute("/_shell/methods/new")({
@@ -39,6 +41,7 @@ export const Route = createFileRoute("/_shell/methods/new")({
 function NewMethod() {
   const { columns, currentUser } = useLab();
   const upsertMethod = useUpsertMethod();
+  const uploadMethodFile = useUploadMethodFile();
   const navigate = useNavigate();
   const [name, setName] = useState("");
   const [modality, setModality] = useState<Method["modality"]>("RP-LC-MS");
@@ -57,12 +60,18 @@ function NewMethod() {
     { time: 14, pctB: 95, flow: 0.4 },
   ]);
 
+  // --- MS scan state (from import) ---
+  const [msGlobalSettings, setMsGlobalSettings] = useState<MsGlobalSettings | null>(null);
+  const [msScans, setMsScans] = useState<MsScan[]>([]);
+
   // --- Method file import state ---
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [parsedFile, setParsedFile] = useState<ParsedMethodFile | null>(null);
+  const [rawFile, setRawFile] = useState<File | null>(null);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [selectedFields, setSelectedFields] = useState<Set<ImportableField>>(new Set());
   const [parsing, setParsing] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -71,9 +80,13 @@ function NewMethod() {
     try {
       const parsed = await parseMethodFile(file);
       setParsedFile(parsed);
-      const fields = buildFieldList(parsed);
+      setRawFile(file);
+      const groups = buildFieldGroups(parsed);
       // Default: select all fields
-      setSelectedFields(new Set(fields.map((f) => f.key)));
+      const allKeys = groups.flatMap((g) => g.fields.map((f) => f.key));
+      setSelectedFields(new Set(allKeys));
+      // Expand all groups by default
+      setExpandedGroups(new Set(groups.map((g) => g.title)));
       setImportDialogOpen(true);
     } catch (err: any) {
       toast.error(err?.message ?? "Failed to parse method file");
@@ -104,10 +117,36 @@ function NewMethod() {
       if (p.pressureLimitBar != null) noteParts.push(`Pressure limit: ${p.pressureLimitBar} bar`);
       if (noteParts.length > 0) setNotes(noteParts.join("\n"));
     }
+    if (selectedFields.has("msGlobalSettings") && p.msGlobalSettings) {
+      setMsGlobalSettings(p.msGlobalSettings);
+    }
+    if (selectedFields.has("ms1Scan")) {
+      const ms1 = p.msScans.filter((s) => s.scanType === "MS1");
+      if (ms1.length > 0) {
+        // Replace existing MS1 scans, keep ddMS2
+        const ddms2 = msScans.filter((s) => s.scanType !== "MS1");
+        setMsScans([...ms1, ...ddms2]);
+        // Also set the ionization from the MS1 polarity
+        const pol = ms1[0].polarity;
+        if (pol === "Both") setIon("ESI±");
+        else if (pol === "Positive") setIon("ESI+");
+        else if (pol === "Negative") setIon("ESI-");
+        // Set scan range from MS1
+        if (ms1[0].scanRangeMz) {
+          // We don't have a direct state for scan range but it's saved in msScans
+        }
+      }
+    }
+    if (selectedFields.has("ddMS2Scans")) {
+      const ddms2 = p.msScans.filter((s) => s.scanType === "ddMS2");
+      if (ddms2.length > 0) {
+        const ms1 = msScans.filter((s) => s.scanType === "MS1");
+        setMsScans([...ms1, ...ddms2]);
+      }
+    }
 
     // Guess modality from solvent names
     if (p.mobilePhaseB && /acn|acetonitrile/i.test(p.mobilePhaseB)) {
-      // HILIC typically starts high %B (ACN), RP starts low
       if (p.gradient.length > 0 && p.gradient[0].pctB > 80) {
         setModality("HILIC-MS");
       } else {
@@ -115,9 +154,9 @@ function NewMethod() {
       }
     }
 
-    toast.success(`Imported ${selectedFields.size} field${selectedFields.size === 1 ? "" : "s"} from method file`);
+    const count = selectedFields.size;
+    toast.success(`Imported ${count} field${count === 1 ? "" : "s"} from method file`);
     setImportDialogOpen(false);
-    setParsedFile(null);
   }
 
   function toggleField(key: ImportableField) {
@@ -129,9 +168,36 @@ function NewMethod() {
     });
   }
 
+  function toggleGroup(title: string) {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(title)) next.delete(title);
+      else next.add(title);
+      return next;
+    });
+  }
+
+  function toggleGroupAll(group: FieldGroup) {
+    const groupKeys = group.fields.map((f) => f.key);
+    const allSelected = groupKeys.every((k) => selectedFields.has(k));
+    setSelectedFields((prev) => {
+      const next = new Set(prev);
+      if (allSelected) {
+        groupKeys.forEach((k) => next.delete(k));
+      } else {
+        groupKeys.forEach((k) => next.add(k));
+      }
+      return next;
+    });
+  }
+
   const submit = async () => {
     if (!name.trim()) return toast.error("Name required");
     try {
+      // Derive MS scan range from MS1 scan if available
+      const ms1Scan = msScans.find((s) => s.scanType === "MS1");
+      const scanRange: [number, number] = ms1Scan?.scanRangeMz ?? [100, 1500];
+
       const saved = await upsertMethod({
         id: undefined as any,
         name,
@@ -146,14 +212,37 @@ function NewMethod() {
         injectionVolume: inj,
         detector: "Q-TOF, full scan",
         msIonization: ion,
-        msScanRange: [100, 1500],
+        msScanRange: scanRange,
+        msGlobalSettings,
+        msScans,
+        methodFilePath: null,
+        methodFileName: rawFile?.name ?? null,
         notes,
         createdBy: currentUser.id,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         tags: ["draft"],
         runIds: [],
-      });
+      } as any);
+
+      // Upload the .meth file if the user selected that option
+      if (selectedFields.has("methodFile") && rawFile) {
+        try {
+          const fileData = await rawFile.arrayBuffer();
+          const base64 = btoa(String.fromCharCode(...new Uint8Array(fileData)));
+          await uploadMethodFile({
+            data: {
+              methodId: saved.id,
+              fileName: rawFile.name,
+              fileDataBase64: base64,
+            },
+          });
+          toast.success("Method file saved");
+        } catch (uploadErr: any) {
+          toast.error(`Method file upload failed: ${uploadErr?.message ?? "error"}`);
+        }
+      }
+
       toast.success("Method created");
       navigate({ to: "/methods/$methodId", params: { methodId: saved.id } });
     } catch (err: any) {
@@ -180,7 +269,7 @@ function NewMethod() {
           <div className="flex-1">
             <div className="text-sm font-medium">Import from instrument method file</div>
             <div className="text-xs text-muted-foreground">
-              Upload a Chromeleon <span className="font-mono">.meth</span> file to pre-fill fields. You choose which data to keep.
+              Upload a Chromeleon <span className="font-mono">.meth</span> file to pre-fill LC + MS parameters. You choose which data to keep.
             </div>
           </div>
           <input
@@ -200,6 +289,11 @@ function NewMethod() {
             {parsing ? "Parsing…" : "Choose file"}
           </Button>
         </div>
+        {rawFile && (
+          <div className="mt-2 text-xs text-muted-foreground">
+            Selected: <span className="font-mono">{rawFile.name}</span> ({(rawFile.size / 1024).toFixed(0)} KB)
+          </div>
+        )}
       </Card>
 
       <Card className="border-border bg-card p-5">
@@ -362,6 +456,26 @@ function NewMethod() {
           </div>
         </div>
 
+        {/* MS Scans summary (if imported) */}
+        {msScans.length > 0 && (
+          <div className="mt-6">
+            <Label className="text-[11px] uppercase tracking-widest text-muted-foreground">
+              MS Scan Definitions ({msScans.length})
+            </Label>
+            <div className="mt-2 space-y-1">
+              {msScans.map((s, i) => (
+                <div key={i} className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-xs">
+                  <Badge variant="outline" className="text-[10px]">{s.scanType}</Badge>
+                  <span className="font-medium">{s.experimentName || `Scan ${i + 1}`}</span>
+                  {s.orbitrapResolution && <span className="text-muted-foreground">R={s.orbitrapResolution}</span>}
+                  {s.scanRangeMz && <span className="text-muted-foreground">{s.scanRangeMz[0]}-{s.scanRangeMz[1]} m/z</span>}
+                  {s.polarity && <span className="text-muted-foreground">{s.polarity}</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="mt-6">
           <Label className="text-[11px]">Notes</Label>
           <Textarea
@@ -381,9 +495,9 @@ function NewMethod() {
         </div>
       </Card>
 
-      {/* Import field selection dialog */}
+      {/* Import field selection dialog with grouped categories */}
       <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Import method fields</DialogTitle>
             <DialogDescription>
@@ -391,23 +505,54 @@ function NewMethod() {
             </DialogDescription>
           </DialogHeader>
           {parsedFile && (
-            <div className="max-h-[400px] space-y-2 overflow-y-auto">
-              {buildFieldList(parsedFile).map((field) => (
-                <label
-                  key={field.key}
-                  className="flex cursor-pointer items-start gap-3 rounded-md border border-border p-3 hover:bg-accent/30"
-                >
-                  <Checkbox
-                    checked={selectedFields.has(field.key)}
-                    onCheckedChange={() => toggleField(field.key)}
-                    className="mt-0.5"
-                  />
-                  <div className="flex-1">
-                    <div className="text-sm font-medium">{field.label}</div>
-                    <div className="text-xs text-muted-foreground">{field.value}</div>
+            <div className="max-h-[500px] space-y-2 overflow-y-auto">
+              {buildFieldGroups(parsedFile).map((group) => {
+                const isExpanded = expandedGroups.has(group.title);
+                const groupKeys = group.fields.map((f) => f.key);
+                const allSelected = groupKeys.every((k) => selectedFields.has(k));
+                return (
+                  <div key={group.title} className="rounded-md border border-border">
+                    <div className="flex items-center gap-2 border-b border-border bg-muted/30 px-3 py-2">
+                      <button
+                        onClick={() => toggleGroup(group.title)}
+                        className="flex items-center gap-1 text-xs font-semibold"
+                      >
+                        {isExpanded
+                          ? <ChevronDown className="h-3.5 w-3.5" />
+                          : <ChevronRight className="h-3.5 w-3.5" />}
+                        {group.title}
+                      </button>
+                      <span className="text-[10px] text-muted-foreground">({group.fields.length})</span>
+                      <div className="ml-auto">
+                        <Checkbox
+                          checked={allSelected}
+                          onCheckedChange={() => toggleGroupAll(group)}
+                        />
+                      </div>
+                    </div>
+                    {isExpanded && (
+                      <div className="space-y-1 p-2">
+                        {group.fields.map((field) => (
+                          <label
+                            key={field.key}
+                            className="flex cursor-pointer items-start gap-3 rounded-md p-2 hover:bg-accent/30"
+                          >
+                            <Checkbox
+                              checked={selectedFields.has(field.key)}
+                              onCheckedChange={() => toggleField(field.key)}
+                              className="mt-0.5"
+                            />
+                            <div className="flex-1">
+                              <div className="text-sm font-medium">{field.label}</div>
+                              <div className="text-xs text-muted-foreground">{field.value}</div>
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                </label>
-              ))}
+                );
+              })}
             </div>
           )}
           <DialogFooter>
@@ -423,3 +568,4 @@ function NewMethod() {
     </div>
   );
 }
+

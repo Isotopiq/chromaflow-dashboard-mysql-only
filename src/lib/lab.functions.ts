@@ -55,8 +55,12 @@ const MethodInput = z.object({
   columnTemp: z.number().min(0).max(120).default(30),
   injectionVolume: z.number().min(0).max(1000).default(2),
   detector: z.string().max(500).default(""),
-  msIonization: z.enum(["ESI+", "ESI-", "APCI+", "APCI-"]).default("ESI+"),
+  msIonization: z.enum(["ESI+", "ESI-", "ESI±", "APCI+", "APCI-"]).default("ESI+"),
   msScanRange: z.tuple([z.number(), z.number()]).default([100, 1200]),
+  msGlobalSettings: z.any().optional().nullable().default(null),
+  msScans: z.array(z.any()).default([]),
+  methodFilePath: z.string().optional().nullable().default(null),
+  methodFileName: z.string().optional().nullable().default(null),
   notes: z.string().max(5000).default(""),
   tags: z.array(z.string().max(50)).max(20).default([]),
 });
@@ -77,6 +81,7 @@ export const upsertMethod = createServerFn({ method: "POST" })
       detector: data.detector,
       msIonization: data.msIonization,
       msScanRange: data.msScanRange,
+      msGlobalSettings: data.msGlobalSettings ?? null,
       tags: data.tags,
     };
     let row;
@@ -84,23 +89,101 @@ export const upsertMethod = createServerFn({ method: "POST" })
       row = await db.one(
         `update public.methods set
            name=$1, modality=$2, column_id=$3, gradient_json=$4, ms_params_json=$5,
-           notes_md=$6, status=$7, updated_at=now()
-         where id=$8 returning *`,
+           ms_scans_json=$6, method_file_path=$7, method_file_name=$8,
+           notes_md=$9, status=$10, updated_at=now()
+         where id=$11 returning *`,
         [data.name, data.modality, data.columnId || null, JSON.stringify(data.gradient),
-         JSON.stringify(msParams), data.notes, data.status, data.id],
+         JSON.stringify(msParams), JSON.stringify(data.msScans),
+         data.methodFilePath ?? null, data.methodFileName ?? null,
+         data.notes, data.status, data.id],
       );
     } else {
       row = await db.one(
         `insert into public.methods
-           (name, modality, column_id, gradient_json, ms_params_json, notes_md, status, created_by)
-         values ($1,$2,$3,$4,$5,$6,$7,$8) returning *`,
+           (name, modality, column_id, gradient_json, ms_params_json, ms_scans_json,
+            method_file_path, method_file_name, notes_md, status, created_by)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) returning *`,
         [data.name, data.modality, data.columnId || null, JSON.stringify(data.gradient),
-         JSON.stringify(msParams), data.notes, data.status, userId],
+         JSON.stringify(msParams), JSON.stringify(data.msScans),
+         data.methodFilePath ?? null, data.methodFileName ?? null,
+         data.notes, data.status, userId],
       );
     }
     return mapMethod(row);
   });
 
+// ---- Method file upload (save .meth file to storage) ----
+const UploadMethodFileInput = z.object({
+  methodId: z.string().optional(),
+  fileName: z.string().min(1).max(300),
+  fileDataBase64: z.string(), // base64-encoded file content
+});
+export const uploadMethodFile = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) => UploadMethodFileInput.parse(d))
+  .handler(async ({ data, context }) => {
+    const ctx = context as any;
+    requirePermission(ctx, "canEdit");
+    const { userId, db } = ctx;
+    // Decode base64 to bytes
+    const body = Buffer.from(data.fileDataBase64, "base64");
+    // Limit to 10 MB for method files
+    if (body.length > 10 * 1024 * 1024) {
+      throw new Response("Method file too large (max 10 MB)", { status: 413 });
+    }
+    // Generate a unique path: methods/<userId>/<timestamp>-<filename>
+    const safeName = data.fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const path = `${userId}/${Date.now()}-${safeName}`;
+    // Upload to the "raw-runs" bucket (reuse for method files)
+    const { createSignedUploadUrl, localPut } = await import("@/lib/storage.server");
+    const { url, key } = await createSignedUploadUrl("raw-runs", path, "application/octet-stream");
+    // If local storage, the URL is an internal endpoint — we need to PUT directly
+    if (url.startsWith("/api/upload")) {
+      await localPut(key, new Uint8Array(body), "application/octet-stream");
+    } else {
+      // S3: PUT to the presigned URL
+      const resp = await fetch(url, {
+        method: "PUT",
+        body,
+        headers: { "Content-Type": "application/octet-stream" },
+      });
+      if (!resp.ok) throw new Response(`S3 upload failed: ${resp.status}`, { status: 500 });
+    }
+    // If methodId is provided, update the method record with the file path
+    if (data.methodId) {
+      await db.query(
+        `update public.methods set method_file_path=$1, method_file_name=$2, updated_at=now() where id=$3`,
+        [key, data.fileName, data.methodId],
+      );
+    }
+    return { ok: true, key, fileName: data.fileName };
+  });
+
+// ---- Get method file download URL ----
+const DownloadMethodFileInput = z.object({ methodId: z.string() });
+export const downloadMethodFile = createServerFn({ method: "GET" })
+  .middleware([requireAuth])
+  .inputValidator((d) => DownloadMethodFileInput.parse(d))
+  .handler(async ({ data, context }) => {
+    const ctx = context as any;
+    const { db } = ctx;
+    const method = await db.maybe<any>(
+      "select method_file_path, method_file_name from public.methods where id = $1",
+      [data.methodId],
+    );
+    if (!method?.method_file_path) {
+      throw new Response("No method file attached", { status: 404 });
+    }
+    const { createSignedDownloadUrl } = await import("@/lib/storage.server");
+    // The key is stored as the full object key (e.g. "raw-runs/userId/timestamp-file.meth")
+    // createSignedDownloadUrl expects bucket + path, but we stored the full key.
+    // We need to extract the path from the key.
+    const key = method.method_file_path;
+    const bucketPrefix = key.split("/")[0]; // "raw-runs"
+    const pathInBucket = key.substring(bucketPrefix.length + 1);
+    const url = await createSignedDownloadUrl(bucketPrefix as any, pathInBucket, 60 * 30);
+    return { url, fileName: method.method_file_name ?? "method.meth" };
+  });
 // ---- Method delete / archive ----
 export const deleteMethod = createServerFn({ method: "POST" })
   .middleware([requireAuth])

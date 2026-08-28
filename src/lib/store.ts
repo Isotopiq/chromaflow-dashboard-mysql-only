@@ -182,6 +182,8 @@ import { useServerFn } from "@tanstack/react-start";
 import {
   upsertMethod as upsertMethodFn,
   annotatePeak as annotatePeakFn,
+  uploadMethodFile as uploadMethodFileFn,
+  downloadMethodFile as downloadMethodFileFn,
 } from "./lab.functions";
 
 export function useUpsertMethod() {
@@ -192,6 +194,16 @@ export function useUpsertMethod() {
     upsert(saved);
     return saved;
   };
+}
+
+export function useUploadMethodFile() {
+  const fn = useServerFn(uploadMethodFileFn);
+  return fn;
+}
+
+export function useDownloadMethodFile() {
+  const fn = useServerFn(downloadMethodFileFn);
+  return fn;
 }
 
 export function useAnnotatePeak() {

@@ -27,6 +27,8 @@ export function mapColumn(r: any): Column {
 
 export function mapMethod(r: any): Method {
   const ms = r.ms_params_json ?? {};
+  const msScans = Array.isArray(r.ms_scans_json) ? r.ms_scans_json : [];
+  const msGlobal = ms.msGlobalSettings ?? null;
   return {
     id: r.id,
     name: r.name,
@@ -42,6 +44,10 @@ export function mapMethod(r: any): Method {
     detector: ms.detector ?? "",
     msIonization: (ms.msIonization as Method["msIonization"]) ?? "ESI+",
     msScanRange: ms.msScanRange ?? [100, 1200],
+    msGlobalSettings: msGlobal,
+    msScans,
+    methodFilePath: r.method_file_path ?? null,
+    methodFileName: r.method_file_name ?? null,
     notes: r.notes_md ?? "",
     createdBy: r.created_by ?? "",
     createdAt: r.created_at,

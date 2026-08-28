@@ -41,6 +41,56 @@ export type Run = {
 
 export type GradientStep = { time: number; pctB: number; flow: number };
 
+export type MsScan = {
+  scanType: "MS1" | "ddMS2" | "tSIM" | "tMS2" | "PRM" | "AllIons";
+  experimentName: string;
+  startTimeMin: number | null;
+  endTimeMin: number | null;
+  orbitrapResolution: number | null;
+  scanRangeMz: [number, number] | null;
+  agcTarget: string | null;
+  microscans: number | null;
+  rfLensPct: number | null;
+  maxInjectionTimeMode: string | null;
+  maxInjectionTimeMs: number | null;
+  dataType: string | null;
+  polarity: string | null;
+  sourceFragmentation: boolean | null;
+  lockMassInjection: boolean | null;
+  scanDescription: string | null;
+  isolationOffset: string | null;
+  isolationWindow: string | null;
+  isolationWindowMz: number | null;
+  multiplexIonsEnabled: boolean | null;
+  maxMultiplexedIons: number | null;
+  reportedMass: string | null;
+  turboTmt: string | null;
+  scanRangeMode: string | null;
+  intensityThreshold: number | null;
+  dynamicExclusionMode: string | null;
+  isotopeExclusion: string | null;
+  precursorSelectionRange: [number, number] | null;
+  extraParams: { key: string; value: string }[];
+};
+
+export type MsGlobalSettings = {
+  useIonSourceFromTune: boolean | null;
+  methodDurationMin: number | null;
+  sprayVoltage: string | null;
+  gasMode: string | null;
+  infusionMode: string | null;
+  carrierGasFlowType: string | null;
+  faimsMode: string | null;
+  lockMassCorrection: string | null;
+  mode: string | null;
+  applicationMode: string | null;
+  pressureMode: string | null;
+  expectedPeakWidthS: number | null;
+  defaultChargeState: number | null;
+  advancedPeakDetermination: boolean | null;
+  mildTrapping: boolean | null;
+};
+
 export type Method = {
   id: string;
   name: string;
@@ -56,6 +106,10 @@ export type Method = {
   detector: string;
   msIonization: "ESI+" | "ESI-" | "ESI±" | "APCI+" | "APCI-";
   msScanRange: [number, number];
+  msGlobalSettings: MsGlobalSettings | null;
+  msScans: MsScan[];
+  methodFilePath: string | null;
+  methodFileName: string | null;
   notes: string;
   createdBy: string;
   createdAt: string;

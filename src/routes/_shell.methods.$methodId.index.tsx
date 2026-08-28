@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/table";
 import { ChromatogramPlot } from "@/components/chromatogram-plot";
 import { StatusDot } from "@/components/status-dot";
-import { ArrowLeft, GitBranch, Edit3, Trash2, Archive } from "lucide-react";
+import { ArrowLeft, GitBranch, Edit3, Trash2, Archive, Download } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import {
@@ -27,7 +27,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { deleteMethod, archiveMethod } from "@/lib/lab.functions";
+import { deleteMethod, archiveMethod, downloadMethodFile } from "@/lib/lab.functions";
 import type { Method } from "@/lib/lab-types";
 
 export const Route = createFileRoute("/_shell/methods/$methodId/")({
@@ -72,6 +72,7 @@ function MethodDetail({ method }: { method: Method }) {
   const { columns, runs, currentUser, removeMethodLocal, archiveMethodLocal } = useLab();
   const deleteFn = useServerFn(deleteMethod);
   const archiveFn = useServerFn(archiveMethod);
+  const downloadFn = useServerFn(downloadMethodFile);
   const nav = useNavigate();
   const [showDelete, setShowDelete] = useState(false);
   const [showArchive, setShowArchive] = useState(false);
@@ -240,8 +241,126 @@ function MethodDetail({ method }: { method: Method }) {
             Notes
           </div>
           <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{method.notes}</p>
+
+          {/* Method file download */}
+          {method.methodFileName && (
+            <div className="mt-5 border-t border-border pt-3">
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                Method file
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <span className="text-xs font-mono text-muted-foreground">{method.methodFileName}</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7"
+                  onClick={async () => {
+                    try {
+                      const result = await downloadFn({ data: { methodId: method.id } });
+                      window.open(result.url, "_blank");
+                    } catch (e: any) {
+                      toast.error(e?.message ?? "Download failed");
+                    }
+                  }}
+                >
+                  <Download className="mr-1 h-3 w-3" /> Download
+                </Button>
+              </div>
+            </div>
+          )}
         </Card>
       </div>
+
+      {/* MS Scan Definitions */}
+      {method.msScans && method.msScans.length > 0 && (
+        <Card className="border-border bg-card p-4">
+          <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+            MS Scan Definitions ({method.msScans.length})
+          </div>
+          <div className="mt-3 space-y-3">
+            {method.msScans.map((scan, i) => (
+              <div key={i} className="rounded-md border border-border p-3">
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-[10px]">{scan.scanType}</Badge>
+                  <span className="text-sm font-medium">{scan.experimentName || `Scan ${i + 1}`}</span>
+                  {scan.startTimeMin != null && scan.endTimeMin != null && (
+                    <span className="text-[10px] text-muted-foreground">
+                      {scan.startTimeMin}–{scan.endTimeMin} min
+                    </span>
+                  )}
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-3">
+                  {scan.orbitrapResolution != null && (
+                    <div><span className="text-muted-foreground">Resolution:</span> {scan.orbitrapResolution}</div>
+                  )}
+                  {scan.scanRangeMz && (
+                    <div><span className="text-muted-foreground">Scan range:</span> {scan.scanRangeMz[0]}–{scan.scanRangeMz[1]} m/z</div>
+                  )}
+                  {scan.agcTarget && (
+                    <div><span className="text-muted-foreground">AGC target:</span> {scan.agcTarget}</div>
+                  )}
+                  {scan.microscans != null && (
+                    <div><span className="text-muted-foreground">Microscans:</span> {scan.microscans}</div>
+                  )}
+                  {scan.rfLensPct != null && (
+                    <div><span className="text-muted-foreground">RF lens:</span> {scan.rfLensPct}%</div>
+                  )}
+                  {scan.maxInjectionTimeMode && (
+                    <div><span className="text-muted-foreground">IT mode:</span> {scan.maxInjectionTimeMode}</div>
+                  )}
+                  {scan.maxInjectionTimeMs != null && (
+                    <div><span className="text-muted-foreground">Max IT:</span> {scan.maxInjectionTimeMs} ms</div>
+                  )}
+                  {scan.dataType && (
+                    <div><span className="text-muted-foreground">Data type:</span> {scan.dataType}</div>
+                  )}
+                  {scan.polarity && (
+                    <div><span className="text-muted-foreground">Polarity:</span> {scan.polarity}</div>
+                  )}
+                  {scan.sourceFragmentation != null && (
+                    <div><span className="text-muted-foreground">Source frag:</span> {scan.sourceFragmentation ? "On" : "Off"}</div>
+                  )}
+                  {scan.isolationWindow && (
+                    <div><span className="text-muted-foreground">Isolation:</span> {scan.isolationWindow}</div>
+                  )}
+                  {scan.isolationWindowMz != null && (
+                    <div><span className="text-muted-foreground">Isolation window:</span> {scan.isolationWindowMz} m/z</div>
+                  )}
+                  {scan.maxMultiplexedIons != null && (
+                    <div><span className="text-muted-foreground">Max multiplex:</span> {scan.maxMultiplexedIons}</div>
+                  )}
+                  {scan.intensityThreshold != null && (
+                    <div><span className="text-muted-foreground">Min intensity:</span> {scan.intensityThreshold}</div>
+                  )}
+                  {scan.dynamicExclusionMode && (
+                    <div><span className="text-muted-foreground">Dyn. exclusion:</span> {scan.dynamicExclusionMode}</div>
+                  )}
+                  {scan.isotopeExclusion && (
+                    <div><span className="text-muted-foreground">Isotope excl:</span> {scan.isotopeExclusion}</div>
+                  )}
+                  {scan.precursorSelectionRange && (
+                    <div><span className="text-muted-foreground">Precursor range:</span> {scan.precursorSelectionRange[0]}–{scan.precursorSelectionRange[1]} m/z</div>
+                  )}
+                </div>
+                {scan.extraParams && scan.extraParams.length > 0 && (
+                  <details className="mt-2">
+                    <summary className="cursor-pointer text-[10px] text-muted-foreground">
+                      Extra parameters ({scan.extraParams.length})
+                    </summary>
+                    <div className="mt-1 grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-3">
+                      {scan.extraParams.map((p, j) => (
+                        <div key={j}>
+                          <span className="text-muted-foreground">{p.key}:</span> {p.value}
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {methodRuns.length > 0 && (
         <Card className="border-border bg-card p-4">

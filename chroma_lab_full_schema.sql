@@ -180,12 +180,25 @@ create table if not exists public.methods (
   column_id       uuid references public.columns(id) on delete set null,
   gradient_json   jsonb default '[]'::jsonb,
   ms_params_json  jsonb default '{}'::jsonb,
+  ms_scans_json   jsonb default '[]'::jsonb,
+  method_file_path text,
+  method_file_name text,
   notes_md        text default '',
   status          text default 'draft' check (status in ('draft','validated','archived')),
   created_by      uuid references public.app_users(id) on delete set null,
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now()
 );
+-- Add columns to existing tables if they were created before this migration
+do $$ begin
+  alter table public.methods add column if not exists ms_scans_json jsonb default '[]'::jsonb;
+exception when others then null; end $$;
+do $$ begin
+  alter table public.methods add column if not exists method_file_path text;
+exception when others then null; end $$;
+do $$ begin
+  alter table public.methods add column if not exists method_file_name text;
+exception when others then null; end $$;
 alter table public.methods enable row level security;
 drop policy if exists "methods: read all"   on public.methods;
 drop policy if exists "methods: write auth" on public.methods;

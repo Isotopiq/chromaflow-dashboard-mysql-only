@@ -301,14 +301,28 @@ export async function createSignedDownloadUrl(
     return `/api/asset?key=${encodeURIComponent(key)}`;
   }
 
-  const { GetObjectCommand, getSignedUrl } = await getS3Commands();
-  const client = await getS3();
-  const bucket = await getBucket();
-  const cmd = new GetObjectCommand({
-    Bucket: bucket,
-    Key: key,
-  });
-  return getSignedUrl(client as any, cmd, { expiresIn: expiresInSeconds });
+  // S3 mode: try S3 first, fall back to local filesystem if the object
+  // doesn't exist (e.g. files uploaded before S3 was configured).
+  try {
+    const { GetObjectCommand, getSignedUrl } = await getS3Commands();
+    const client = await getS3();
+    const bucket = await getBucket();
+    const cmd = new GetObjectCommand({
+      Bucket: bucket,
+      Key: key,
+    });
+    return await getSignedUrl(client as any, cmd, { expiresIn: expiresInSeconds });
+  } catch {
+    // S3 presign failed — check if the file exists locally as a fallback.
+    const fp = localPath(key);
+    try {
+      await fs.access(fp);
+      return `/api/asset?key=${encodeURIComponent(key)}`;
+    } catch {
+      // Not in local either — return a placeholder that will 404.
+      return `/api/asset?key=${encodeURIComponent(key)}`;
+    }
+  }
 }
 
 /** Public URL for buckets that are exposed via CDN. */
