@@ -56,7 +56,7 @@ export const Route = createFileRoute("/_shell/runs/$runId")({
 
 function RunDetail() {
   const { runId } = Route.useParams();
-  const { runs, methods, columns, analytes } = useLab();
+  const { runs, methods, columns, analytes, compoundLists, listDefaults } = useLab();
   const annotatePeak = useAnnotatePeak();
   const removeRunLocal = useLab((s) => s.removeRunLocal);
   const updateRunNameLocal = useLab((s) => s.updateRunNameLocal);
@@ -194,6 +194,9 @@ function RunDetail() {
 
   const [enabledIds, setEnabledIds] = useState<Set<string>>(new Set());
   const [targetFilter, setTargetFilter] = useState("");
+  const [selectedListId, setSelectedListId] = useState<string>("");
+  const [acceptDrifted, setAcceptDrifted] = useState(false);
+  const [batchSaving, setBatchSaving] = useState(false);
   const filteredTargets = useMemo(() => {
     const q = targetFilter.trim().toLowerCase();
     if (!q) return libraryTargets;
@@ -395,6 +398,81 @@ function RunDetail() {
     }
   };
 
+  // Apply a compound list selection — replaces enabled IDs with the list's
+  // analytes. Pass empty string to clear.
+  const applyCompoundList = (listId: string) => {
+    setSelectedListId(listId);
+    if (!listId) {
+      setEnabledIds(new Set());
+      return;
+    }
+    const cl = compoundLists.find((x) => x.id === listId);
+    if (cl) {
+      setEnabledIds(new Set(cl.analyteIds));
+    }
+  };
+
+  // Auto-select the method+column default list on first render if available.
+  useMemo(() => {
+    if (selectedListId || !listDefaults.length || !run.methodId || !run.columnId) return;
+    const def = listDefaults.find(
+      (d) => d.methodId === run.methodId && d.columnId === run.columnId,
+    );
+    if (def) {
+      const cl = compoundLists.find((x) => x.id === def.listId);
+      if (cl && cl.analyteIds.length > 0) {
+        setSelectedListId(def.listId);
+        setEnabledIds(new Set(cl.analyteIds));
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listDefaults, compoundLists, run.methodId, run.columnId]);
+
+  // Batch-accept all matched (or drifted, if checkbox is on) annotations.
+  const batchAccept = async () => {
+    if (!batchQuery.data) return;
+    setBatchSaving(true);
+    let accepted = 0;
+    let skipped = 0;
+    for (const { tr, t, dRt, matched } of matchRows) {
+      if (!t || tr.peakRt == null || tr.peakIntensity <= 0) { skipped++; continue; }
+      if (acceptedAnalyteIds.has(t.id)) { skipped++; continue; }
+      // Skip if drifted and user hasn't enabled accepting drifted peaks
+      if (!matched && !acceptDrifted) { skipped++; continue; }
+      try {
+        const half = Math.max(tr.fwhm / 2, 0.01);
+        const { peak } = await addManualPeakFn({
+          data: {
+            runId: run.id,
+            rt: tr.peakRt,
+            rtStart: tr.peakRt - half,
+            rtEnd: tr.peakRt + half,
+            area: tr.area,
+            height: tr.height,
+            fwhm: tr.fwhm,
+            sn: tr.sn,
+            mz: tr.mz,
+            mzLow: tr.mzLow,
+            mzHigh: tr.mzHigh,
+            analyteId: t.id,
+            analyteName: t.name,
+          },
+        });
+        addPeakLocal(run.id, peak);
+        accepted++;
+      } catch {
+        skipped++;
+      }
+    }
+    setBatchSaving(false);
+    if (accepted > 0) {
+      setPeakTab("detected");
+      toast.success(`Saved ${accepted} peak${accepted === 1 ? "" : "s"}${skipped ? ` (${skipped} skipped)` : ""}`);
+    } else {
+      toast.warning("No new peaks to save");
+    }
+  };
+
   const downloadCsv = () => {
     const header = "rt,area,height,fwhm,sn,mz,mz_low,mz_high,annotation\n";
     const body = run.peaks
@@ -573,10 +651,26 @@ function RunDetail() {
               Auto-XIC from analyte library
             </div>
             <div className="mt-0.5 text-xs text-muted-foreground">
-              Pick compounds — m/z is computed from formula + adduct, then EICs are extracted in one pass.
+              Pick a compound list or select individual compounds — m/z is computed from formula + adduct, then EICs are extracted in one pass.
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">List</span>
+              <Select value={selectedListId} onValueChange={applyCompoundList}>
+                <SelectTrigger className="h-8 w-44 text-xs">
+                  <SelectValue placeholder="All analytes" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="" className="text-xs">All analytes (no list)</SelectItem>
+                  {compoundLists.map((cl) => (
+                    <SelectItem key={cl.id} value={cl.id} className="text-xs">
+                      {cl.name} ({cl.analyteIds.length})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="flex items-center gap-2">
               <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Mode</span>
               <Select value={polarity} onValueChange={(v) => setPolarity(v as "positive" | "negative")}>
@@ -793,6 +887,27 @@ function RunDetail() {
                   ))}
                 </TableBody>
               </Table>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
+              <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+                <Checkbox
+                  checked={acceptDrifted}
+                  onCheckedChange={(v) => setAcceptDrifted(!!v)}
+                />
+                <span>Accept peaks even when RT differs (drifted)</span>
+              </label>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-muted-foreground">
+                  {matchRows.filter(r => r.tr.peakIntensity > 0 && r.t && !acceptedAnalyteIds.has(r.t.id) && (r.matched || acceptDrifted)).length} to save
+                </span>
+                <Button
+                  size="sm"
+                  onClick={batchAccept}
+                  disabled={batchSaving || matchRows.every(r => !r.t || r.tr.peakIntensity <= 0 || acceptedAnalyteIds.has(r.t.id))}
+                >
+                  {batchSaving ? "Saving…" : "Save all matches"}
+                </Button>
+              </div>
             </div>
           </>
         ) : null}
