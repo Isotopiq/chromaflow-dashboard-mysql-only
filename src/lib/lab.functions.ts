@@ -1017,7 +1017,7 @@ export const getRunEIC = createServerFn({ method: "POST" })
 const EICBatchInput = z.object({
   runId: z.string(),
   ppm: z.number().min(1).max(200).default(10),
-  targets: z.array(z.object({ id: z.string().max(80), mz: z.number().min(0).max(10000) })).min(1).max(50),
+  targets: z.array(z.object({ id: z.string().max(80), mz: z.number().min(0).max(10000) })).min(1).max(500),
 });
 export const getRunEICBatch = createServerFn({ method: "POST" })
   .middleware([requireAuth])
