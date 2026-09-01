@@ -27,7 +27,7 @@ import { MS2Viewer } from "@/components/ms2-viewer";
 import { SystemSuitability } from "@/components/system-suitability";
 import { ago } from "@/lib/time";
 import { toast } from "sonner";
-import { getRunEIC, getRunEICBatch, deleteRun, addManualPeak, unassignPeaks, updateRunName } from "@/lib/lab.functions";
+import { getRunEIC, getRunEICBatch, deleteRun, addManualPeak, unassignPeaks, updateRunName, updateRunMethodColumn } from "@/lib/lab.functions";
 import { integrateBand, type IntegrationResult } from "@/lib/peak-math";
 import { mzFromFormula, defaultAdduct, ADDUCTS_POS, ADDUCTS_NEG, type Adduct } from "@/lib/chem";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -60,8 +60,10 @@ function RunDetail() {
   const annotatePeak = useAnnotatePeak();
   const removeRunLocal = useLab((s) => s.removeRunLocal);
   const updateRunNameLocal = useLab((s) => s.updateRunNameLocal);
+  const updateRunMethodColumnLocal = useLab((s) => s.updateRunMethodColumnLocal);
   const deleteRunFn = useServerFn(deleteRun);
   const updateRunNameFn = useServerFn(updateRunName);
+  const updateRunMethodColumnFn = useServerFn(updateRunMethodColumn);
   const nav = useNavigate();
   const run = runs.find((r) => r.id === runId);
   if (!run) throw notFound();
@@ -71,6 +73,10 @@ function RunDetail() {
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(run.name);
   const [savingName, setSavingName] = useState(false);
+  const [editingMeta, setEditingMeta] = useState(false);
+  const [metaMethod, setMetaMethod] = useState(run.methodId || "");
+  const [metaColumn, setMetaColumn] = useState(run.columnId || "");
+  const [savingMeta, setSavingMeta] = useState(false);
   const [selectedTargetId, setSelectedTargetId] = useState<string | undefined>(undefined);
   const [selectedTargetName, setSelectedTargetName] = useState<string | undefined>(undefined);
   const [annotation, setAnnotation] = useState("");
@@ -113,6 +119,26 @@ function RunDetail() {
       toast.error(err?.message ?? "Failed to rename run");
     } finally {
       setSavingName(false);
+    }
+  };
+
+  const handleSaveMeta = async () => {
+    setSavingMeta(true);
+    try {
+      await updateRunMethodColumnFn({
+        data: {
+          runId: run.id,
+          methodId: metaMethod || null,
+          columnId: metaColumn || null,
+        },
+      });
+      updateRunMethodColumnLocal(run.id, metaMethod || null, metaColumn || null);
+      setEditingMeta(false);
+      toast.success("Run method/column updated");
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to update method/column");
+    } finally {
+      setSavingMeta(false);
     }
   };
 
@@ -438,13 +464,45 @@ function RunDetail() {
               </button>
             </div>
           )}
-          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-            <span>{method?.name}</span>·<span>{column?.name}</span>·
-            <Badge variant="outline" className="text-[10px]">
-              {run.ionMode === "positive" ? "ESI +" : "ESI −"}
-            </Badge>
-            <span>·</span><span>{run.fileSize}</span>·<span>{ago(run.acquiredAt)}</span>
-          </div>
+          {editingMeta ? (
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <Select value={metaMethod} onValueChange={setMetaMethod}>
+                <SelectTrigger className="h-7 w-40 text-xs"><SelectValue placeholder="Method" /></SelectTrigger>
+                <SelectContent>
+                  {methods.map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <span className="text-muted-foreground">·</span>
+              <Select value={metaColumn} onValueChange={setMetaColumn}>
+                <SelectTrigger className="h-7 w-40 text-xs"><SelectValue placeholder="Column" /></SelectTrigger>
+                <SelectContent>
+                  {columns.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Button size="sm" variant="ghost" className="h-7 px-2" onClick={handleSaveMeta} disabled={savingMeta}>
+                <Check className="h-3.5 w-3.5" />
+              </Button>
+              <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => { setEditingMeta(false); setMetaMethod(run.methodId || ""); setMetaColumn(run.columnId || ""); }} disabled={savingMeta}>
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ) : (
+            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+              <span>{method?.name ?? "No method"}</span>·<span>{column?.name ?? "No column"}</span>·
+              <button
+                onClick={() => { setMetaMethod(run.methodId || ""); setMetaColumn(run.columnId || ""); setEditingMeta(true); }}
+                className="text-muted-foreground hover:text-foreground"
+                title="Change method/column"
+              >
+                <Pencil className="h-3 w-3" />
+              </button>
+              <span>·</span>
+              <Badge variant="outline" className="text-[10px]">
+                {run.ionMode === "positive" ? "ESI +" : "ESI −"}
+              </Badge>
+              <span>·</span><span>{run.fileSize}</span>·<span>{ago(run.acquiredAt)}</span>
+            </div>
+          )}
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={downloadCsv}>

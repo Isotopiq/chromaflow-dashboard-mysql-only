@@ -408,6 +408,31 @@ export const updateRunName = createServerFn({ method: "POST" })
     return { ok: true, name: data.name };
   });
 
+export const updateRunMethodColumn = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) =>
+    z.object({
+      runId: z.string(),
+      methodId: z.string().uuid().nullable().optional(),
+      columnId: z.string().uuid().nullable().optional(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { userId, db } = context as { userId: string; db: import("@/db/index.server").Db };
+    const r = await db.maybe<any>("select uploaded_by from public.runs where id=$1", [data.runId]);
+    if (!r) throw new Error("Run not found");
+    if (r.uploaded_by && r.uploaded_by !== userId) throw new Error("Not your run.");
+    const sets: string[] = [];
+    const vals: any[] = [];
+    let p = 1;
+    if (data.methodId !== undefined) { sets.push(`method_id=$${p++}`); vals.push(data.methodId); }
+    if (data.columnId !== undefined) { sets.push(`column_id=$${p++}`); vals.push(data.columnId); }
+    if (sets.length === 0) return { ok: true };
+    vals.push(data.runId);
+    await db.query(`update public.runs set ${sets.join(", ")} where id=$${p}`, vals);
+    return { ok: true };
+  });
+
 export const updatePeakNotes = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => z.object({ peakId: z.string(), notes: z.string().max(20000) }).parse(d))

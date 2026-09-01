@@ -51,6 +51,7 @@ type State = {
   updateBatchNotesLocal: (batchId: string, notes: string) => void;
   updateRunNotesLocal: (runId: string, notes: string) => void;
   updateRunNameLocal: (runId: string, name: string) => void;
+  updateRunMethodColumnLocal: (runId: string, methodId: string | null, columnId: string | null) => void;
   updatePeakNotesLocal: (runId: string, peakId: string, notes: string) => void;
   setRunBatchLocal: (runId: string, batchId: string | null) => void;
   upsertInjectionLocal: (i: ColumnInjection) => void;
@@ -184,6 +185,14 @@ export const useLab = create<State>((set) => ({
   updateRunNameLocal: (runId, name) =>
     set((s) => ({
       runs: s.runs.map((r) => (r.id === runId ? { ...r, name } : r)),
+    })),
+  updateRunMethodColumnLocal: (runId, methodId, columnId) =>
+    set((s) => ({
+      runs: s.runs.map((r) =>
+        r.id === runId
+          ? { ...r, methodId: methodId ?? "", columnId: columnId ?? "" }
+          : r,
+      ),
     })),
   updatePeakNotesLocal: (runId, peakId, notes) =>
     set((s) => ({
