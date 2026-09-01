@@ -208,7 +208,7 @@ function RunDetail() {
     );
   }, [libraryTargets, targetFilter]);
   // Initialize selection on first render to all targets within a reasonable mass range.
-  useMemo(() => {
+  useEffect(() => {
     if (enabledIds.size === 0 && libraryTargets.length > 0) {
       setEnabledIds(new Set(libraryTargets.slice(0, 8).map((t) => t.id)));
     }
@@ -399,13 +399,14 @@ function RunDetail() {
   };
 
   // Apply a compound list selection — replaces enabled IDs with the list's
-  // analytes. Pass empty string to clear.
+  // analytes. Pass "__none__" to clear.
   const applyCompoundList = (listId: string) => {
-    setSelectedListId(listId);
-    if (!listId) {
+    if (listId === "__none__") {
+      setSelectedListId("");
       setEnabledIds(new Set());
       return;
     }
+    setSelectedListId(listId);
     const cl = compoundLists.find((x) => x.id === listId);
     if (cl) {
       setEnabledIds(new Set(cl.analyteIds));
@@ -413,7 +414,7 @@ function RunDetail() {
   };
 
   // Auto-select the method+column default list on first render if available.
-  useMemo(() => {
+  useEffect(() => {
     if (selectedListId || !listDefaults.length || !run.methodId || !run.columnId) return;
     const def = listDefaults.find(
       (d) => d.methodId === run.methodId && d.columnId === run.columnId,
@@ -657,12 +658,12 @@ function RunDetail() {
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2">
               <span className="text-[10px] uppercase tracking-wider text-muted-foreground">List</span>
-              <Select value={selectedListId} onValueChange={applyCompoundList}>
+              <Select value={selectedListId || "__none__"} onValueChange={applyCompoundList}>
                 <SelectTrigger className="h-8 w-44 text-xs">
                   <SelectValue placeholder="All analytes" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="" className="text-xs">All analytes (no list)</SelectItem>
+                  <SelectItem value="__none__" className="text-xs">All analytes (no list)</SelectItem>
                   {compoundLists.map((cl) => (
                     <SelectItem key={cl.id} value={cl.id} className="text-xs">
                       {cl.name} ({cl.analyteIds.length})
