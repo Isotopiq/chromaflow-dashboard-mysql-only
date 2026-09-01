@@ -208,6 +208,7 @@ function RunDetail() {
   const [selectedListId, setSelectedListId] = useState<string>(savedPrefs?.selectedListId ?? "");
   const [acceptDrifted, setAcceptDrifted] = useState(savedPrefs?.acceptDrifted ?? false);
   const [batchSaving, setBatchSaving] = useState(false);
+  const [showOnlyAccepted, setShowOnlyAccepted] = useState(false);
   const filteredTargets = useMemo(() => {
     const q = targetFilter.trim().toLowerCase();
     if (!q) return libraryTargets;
@@ -377,6 +378,13 @@ function RunDetail() {
     for (const p of run.peaks) if (p.analyteId) ids.add(p.analyteId);
     return ids;
   }, [run.peaks]);
+
+  // When "show only accepted" is checked, auto-select all accepted analyte IDs.
+  useEffect(() => {
+    if (showOnlyAccepted) {
+      setEnabledIds(new Set(acceptedAnalyteIds));
+    }
+  }, [showOnlyAccepted, acceptedAnalyteIds]);
 
   const acceptAnnotation = async (
     tr: { id: string; mz: number; mzLow: number; mzHigh: number; peakRt: number | null; peakIntensity: number; area: number; height: number; fwhm: number; sn: number },
@@ -757,6 +765,13 @@ function RunDetail() {
                 placeholder={`Search ${libraryTargets.length} analytes by name, formula, or m/z…`}
                 className="h-8 flex-1 min-w-[200px] text-xs"
               />
+              <label className="flex cursor-pointer items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+                <Checkbox
+                  checked={showOnlyAccepted}
+                  onCheckedChange={(v) => setShowOnlyAccepted(!!v)}
+                />
+                <span>Accepted only ({acceptedAnalyteIds.size})</span>
+              </label>
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
                 {enabledIds.size} selected
               </div>
