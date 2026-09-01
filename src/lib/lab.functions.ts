@@ -1731,3 +1731,131 @@ export const setMethodColumnListDefault = createServerFn({ method: "POST" })
     );
     return mapListDefault(row);
   });
+
+// ---- Compound list CSV import ----
+// Creates a new compound list from parsed CSV rows. For each row, creates
+// an analyte if it doesn't already exist (matched by name), then links it
+// to the new list. Returns the created CompoundList.
+const CsvRowInput = z.object({
+  name: z.string().min(1).max(200),
+  formula: z.string().max(200).default(""),
+  rtExpected: z.number().min(0).max(120),
+  mz: z.number().min(0).max(10000).nullable().optional(),
+});
+
+export const createCompoundListFromCsv = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) =>
+    z.object({
+      name: z.string().min(1).max(200),
+      description: z.string().max(2000).default(""),
+      rows: z.array(CsvRowInput).min(1).max(5000),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const ctx = context as any;
+    requirePermission(ctx, "canEdit");
+    const { userId, db } = ctx;
+    const list = await db.one<any>(
+      `insert into public.compound_lists (name, description, created_by)
+       values ($1,$2,$3) returning *`,
+      [data.name, data.description, userId],
+    );
+    const analyteIds: string[] = [];
+    for (const r of data.rows) {
+      let mz = r.mz ?? null;
+      if (mz == null || mz <= 0) {
+        const computed = r.formula ? mzFromFormula(r.formula, "[M+H]+") : null;
+        if (computed == null) throw new Error(`Row "${r.name}": provide a valid formula or numeric mz.`);
+        mz = computed;
+      }
+      // Find or create the analyte by name (case-insensitive)
+      const existing = await db.maybe<any>(
+        "select id from public.analytes where lower(name) = lower($1)",
+        [r.name],
+      );
+      let analyteId: string;
+      if (existing) {
+        analyteId = existing.id;
+      } else {
+        const row = await db.one<any>(
+          `insert into public.analytes (name, formula, mz, rt_expected, library_source, created_by)
+           values ($1,$2,$3,$4,'user',$5) returning id`,
+          [r.name, r.formula, mz, r.rtExpected, userId],
+        );
+        analyteId = row.id;
+      }
+      await db.query(
+        `insert into public.compound_list_entries (list_id, analyte_id) values ($1,$2)
+         on conflict (list_id, analyte_id) do nothing`,
+        [list.id, analyteId],
+      );
+      analyteIds.push(analyteId);
+    }
+    return mapCompoundList(list, analyteIds);
+  });
+
+// Updates an existing compound list from parsed CSV rows. Can either replace
+// all entries or append to existing ones. Creates analytes as needed.
+export const updateCompoundListFromCsv = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) =>
+    z.object({
+      id: z.string().uuid(),
+      name: z.string().min(1).max(200).optional(),
+      description: z.string().max(2000).optional(),
+      rows: z.array(CsvRowInput).min(1).max(5000),
+      mode: z.enum(["replace", "append"]).default("replace"),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const ctx = context as any;
+    requirePermission(ctx, "canEdit");
+    const { userId, db } = ctx;
+    // Update list metadata
+    if (data.name !== undefined || data.description !== undefined) {
+      const sets: string[] = [];
+      const vals: any[] = [];
+      let p = 1;
+      if (data.name !== undefined) { sets.push(`name=$${p++}`); vals.push(data.name); }
+      if (data.description !== undefined) { sets.push(`description=$${p++}`); vals.push(data.description); }
+      vals.push(data.id);
+      await db.query(`update public.compound_lists set ${sets.join(", ")}, updated_at=now() where id=$${p}`, vals);
+    }
+    if (data.mode === "replace") {
+      await db.query("delete from public.compound_list_entries where list_id=$1", [data.id]);
+    }
+    const analyteIds: string[] = [];
+    for (const r of data.rows) {
+      let mz = r.mz ?? null;
+      if (mz == null || mz <= 0) {
+        const computed = r.formula ? mzFromFormula(r.formula, "[M+H]+") : null;
+        if (computed == null) throw new Error(`Row "${r.name}": provide a valid formula or numeric mz.`);
+        mz = computed;
+      }
+      const existing = await db.maybe<any>(
+        "select id from public.analytes where lower(name) = lower($1)",
+        [r.name],
+      );
+      let analyteId: string;
+      if (existing) {
+        analyteId = existing.id;
+      } else {
+        const row = await db.one<any>(
+          `insert into public.analytes (name, formula, mz, rt_expected, library_source, created_by)
+           values ($1,$2,$3,$4,'user',$5) returning id`,
+          [r.name, r.formula, mz, r.rtExpected, userId],
+        );
+        analyteId = row.id;
+      }
+      await db.query(
+        `insert into public.compound_list_entries (list_id, analyte_id) values ($1,$2)
+         on conflict (list_id, analyte_id) do nothing`,
+        [data.id, analyteId],
+      );
+      analyteIds.push(analyteId);
+    }
+    const list = await db.one<any>("select * from public.compound_lists where id=$1", [data.id]);
+    const entries = await db.many<any>("select analyte_id from public.compound_list_entries where list_id=$1", [data.id]);
+    return mapCompoundList(list, entries.map((e) => e.analyte_id));
+  });

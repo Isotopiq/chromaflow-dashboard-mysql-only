@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useServerFn } from "@tanstack/react-start";
+import { useQueryClient } from "@tanstack/react-query";
 import { useLab } from "@/lib/store";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -34,17 +35,87 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Pencil, Trash2, Search } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Plus, Pencil, Trash2, Search, Upload } from "lucide-react";
 import { toast } from "sonner";
 import {
   createCompoundList,
   updateCompoundList,
   deleteCompoundList,
+  createCompoundListFromCsv,
+  updateCompoundListFromCsv,
 } from "@/lib/lab.functions";
+import { mzFromFormula } from "@/lib/chem";
 
 export const Route = createFileRoute("/_shell/compound-lists")({
   component: CompoundLists,
 });
+
+// ---- CSV parsing (same format as analyte CSV: name,formula,rt_expected,mz) ----
+type ParsedCsvRow = { name: string; formula: string; rtExpected: number; mz: number | null };
+
+function parseCompoundCsv(text: string): { rows: ParsedCsvRow[]; errors: string[] } {
+  const errors: string[] = [];
+  const rows: ParsedCsvRow[] = [];
+  const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+  if (lines.length === 0) return { rows, errors: ["File is empty."] };
+
+  const splitCsv = (line: string): string[] => {
+    const out: string[] = [];
+    let cur = "";
+    let inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (inQ) {
+        if (c === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+        else if (c === '"') inQ = false;
+        else cur += c;
+      } else if (c === '"') inQ = true;
+      else if (c === ",") { out.push(cur); cur = ""; }
+      else cur += c;
+    }
+    out.push(cur);
+    return out.map((s) => s.trim());
+  };
+
+  const header = splitCsv(lines[0]).map((h) => h.toLowerCase().replace(/\s+/g, "_"));
+  const idx = {
+    name: header.indexOf("name"),
+    formula: header.indexOf("formula"),
+    rt: header.findIndex((h) => h === "rt_expected" || h === "rt" || h === "rtexpected"),
+    mz: header.indexOf("mz"),
+  };
+  if (idx.name < 0) errors.push("Missing required 'name' column.");
+  if (idx.rt < 0) errors.push("Missing required 'rt_expected' column.");
+  if (errors.length) return { rows, errors };
+
+  for (let li = 1; li < lines.length; li++) {
+    const cols = splitCsv(lines[li]);
+    const name = (cols[idx.name] ?? "").trim();
+    const formula = idx.formula >= 0 ? (cols[idx.formula] ?? "").trim() : "";
+    const rtRaw = (cols[idx.rt] ?? "").trim();
+    const mzRaw = idx.mz >= 0 ? (cols[idx.mz] ?? "").trim() : "";
+    if (!name) { errors.push(`Row ${li + 1}: missing name.`); continue; }
+    const rt = parseFloat(rtRaw);
+    if (!Number.isFinite(rt) || rt < 0 || rt > 120) {
+      errors.push(`Row ${li + 1} (${name}): rt_expected must be 0–120.`); continue;
+    }
+    const mzNum = mzRaw ? parseFloat(mzRaw) : NaN;
+    const hasMz = Number.isFinite(mzNum) && mzNum > 0;
+    const mzPos = formula ? mzFromFormula(formula, "[M+H]+") : null;
+    if (mzPos == null && !hasMz) {
+      errors.push(`Row ${li + 1} (${name}): provide a valid formula or numeric mz.`); continue;
+    }
+    rows.push({ name, formula, rtExpected: rt, mz: hasMz ? mzNum : null });
+  }
+  return { rows, errors };
+}
 
 function CompoundLists() {
   const { analytes, compoundLists } = useLab();
@@ -53,6 +124,9 @@ function CompoundLists() {
   const createFn = useServerFn(createCompoundList);
   const updateFn = useServerFn(updateCompoundList);
   const deleteFn = useServerFn(deleteCompoundList);
+  const createFromCsvFn = useServerFn(createCompoundListFromCsv);
+  const updateFromCsvFn = useServerFn(updateCompoundListFromCsv);
+  const qc = useQueryClient();
 
   const [showDialog, setShowDialog] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -62,6 +136,16 @@ function CompoundLists() {
   const [search, setSearch] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  // CSV import state
+  const [showCsvDialog, setShowCsvDialog] = useState(false);
+  const [csvEditingId, setCsvEditingId] = useState<string | null>(null);
+  const [csvName, setCsvName] = useState("");
+  const [csvDescription, setCsvDescription] = useState("");
+  const [csvMode, setCsvMode] = useState<"replace" | "append">("replace");
+  const [csvParsed, setCsvParsed] = useState<{ rows: ParsedCsvRow[]; errors: string[]; fileName: string } | null>(null);
+  const [csvSaving, setCsvSaving] = useState(false);
+  const csvInputRef = useRef<HTMLInputElement>(null);
 
   const filteredAnalytes = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -142,6 +226,96 @@ function CompoundLists() {
     }
   };
 
+  // ---- CSV import handlers ----
+  const openCsvNew = () => {
+    setCsvEditingId(null);
+    setCsvName("");
+    setCsvDescription("");
+    setCsvMode("replace");
+    setCsvParsed(null);
+    setShowCsvDialog(true);
+  };
+
+  const openCsvEdit = (id: string) => {
+    const cl = compoundLists.find((x) => x.id === id);
+    if (!cl) return;
+    setCsvEditingId(id);
+    setCsvName(cl.name);
+    setCsvDescription(cl.description);
+    setCsvMode("replace");
+    setCsvParsed(null);
+    setShowCsvDialog(true);
+  };
+
+  const handleCsvFile = async (file: File) => {
+    try {
+      const text = await file.text();
+      const { rows, errors } = parseCompoundCsv(text);
+      if (errors.length && rows.length === 0) {
+        toast.error(errors.slice(0, 3).join(" "));
+        return;
+      }
+      setCsvParsed({ rows, errors, fileName: file.name });
+      // Auto-fill name from filename if empty
+      if (!csvName && !csvEditingId) {
+        const baseName = file.name.replace(/\.csv$/i, "").replace(/[-_]/g, " ");
+        setCsvName(baseName);
+      }
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to read CSV file");
+    }
+  };
+
+  const saveCsvImport = async () => {
+    if (!csvParsed || csvParsed.rows.length === 0) {
+      toast.error("No valid rows to import");
+      return;
+    }
+    if (!csvName.trim()) {
+      toast.error("List name is required");
+      return;
+    }
+    setCsvSaving(true);
+    try {
+      const rowsPayload = csvParsed.rows.map((r) => ({
+        name: r.name,
+        formula: r.formula,
+        rtExpected: r.rtExpected,
+        mz: r.mz,
+      }));
+      if (csvEditingId) {
+        const updated = await updateFromCsvFn({
+          data: {
+            id: csvEditingId,
+            name: csvName.trim(),
+            description: csvDescription.trim(),
+            rows: rowsPayload,
+            mode: csvMode,
+          },
+        });
+        upsertCompoundListLocal(updated as any);
+        qc.invalidateQueries({ queryKey: ["lab"] });
+        toast.success(`Compound list updated — ${csvParsed.rows.length} compounds ${csvMode === "replace" ? "replaced" : "appended"}`);
+      } else {
+        const created = await createFromCsvFn({
+          data: {
+            name: csvName.trim(),
+            description: csvDescription.trim(),
+            rows: rowsPayload,
+          },
+        });
+        upsertCompoundListLocal(created as any);
+        qc.invalidateQueries({ queryKey: ["lab"] });
+        toast.success(`Compound list created — ${csvParsed.rows.length} compounds imported`);
+      }
+      setShowCsvDialog(false);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to import CSV");
+    } finally {
+      setCsvSaving(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4 p-6">
       <div>
@@ -159,9 +333,14 @@ function CompoundLists() {
         <div className="text-xs text-muted-foreground">
           {compoundLists.length} list{compoundLists.length === 1 ? "" : "s"}
         </div>
-        <Button size="sm" onClick={openNew}>
-          <Plus className="mr-1 h-3.5 w-3.5" /> New List
-        </Button>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={openCsvNew}>
+            <Upload className="mr-1 h-3.5 w-3.5" /> Import CSV
+          </Button>
+          <Button size="sm" onClick={openNew}>
+            <Plus className="mr-1 h-3.5 w-3.5" /> New List
+          </Button>
+        </div>
       </div>
 
       <Card className="border-border bg-card p-4">
@@ -197,10 +376,13 @@ function CompoundLists() {
                   </TableCell>
                   <TableCell className="py-1.5">
                     <div className="flex gap-1">
-                      <button onClick={() => openEdit(cl.id)} className="text-muted-foreground hover:text-foreground">
+                      <button onClick={() => openEdit(cl.id)} className="text-muted-foreground hover:text-foreground" title="Edit">
                         <Pencil className="h-3 w-3" />
                       </button>
-                      <button onClick={() => setDeleteId(cl.id)} className="text-muted-foreground hover:text-destructive">
+                      <button onClick={() => openCsvEdit(cl.id)} className="text-muted-foreground hover:text-foreground" title="Import CSV to update">
+                        <Upload className="h-3 w-3" />
+                      </button>
+                      <button onClick={() => setDeleteId(cl.id)} className="text-muted-foreground hover:text-destructive" title="Delete">
                         <Trash2 className="h-3 w-3" />
                       </button>
                     </div>
@@ -291,6 +473,125 @@ function CompoundLists() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* CSV import dialog */}
+      <Dialog open={showCsvDialog} onOpenChange={setShowCsvDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              {csvEditingId ? "Update list from CSV" : "Create list from CSV"}
+            </DialogTitle>
+            <DialogDescription>
+              Upload a CSV file (columns: name, formula, rt_expected, mz) to
+              {csvEditingId ? " update this compound list." : " create a new compound list."}
+              {" "}Compounds are auto-created in the analyte library if they don't already exist.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 py-2">
+            <div className="grid gap-1.5">
+              <Label className="text-xs">List name</Label>
+              <Input value={csvName} onChange={(e) => setCsvName(e.target.value)} placeholder="e.g. Luna Standards" />
+            </div>
+            <div className="grid gap-1.5">
+              <Label className="text-xs">Description (optional)</Label>
+              <Input value={csvDescription} onChange={(e) => setCsvDescription(e.target.value)} placeholder="Optional description" />
+            </div>
+            {csvEditingId && (
+              <div className="grid gap-1.5">
+                <Label className="text-xs">Import mode</Label>
+                <Select value={csvMode} onValueChange={(v) => setCsvMode(v as "replace" | "append")}>
+                  <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="replace">Replace all compounds</SelectItem>
+                    <SelectItem value="append">Append to existing compounds</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <div className="grid gap-1.5">
+              <Label className="text-xs">CSV file</Label>
+              <input
+                ref={csvInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handleCsvFile(f);
+                }}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => csvInputRef.current?.click()}
+              >
+                <Upload className="mr-1 h-3.5 w-3.5" />
+                {csvParsed ? `Loaded: ${csvParsed.fileName}` : "Choose CSV file…"}
+              </Button>
+            </div>
+            {csvParsed && (
+              <div className="rounded-md border border-border p-3 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">
+                    {csvParsed.rows.length} valid compound{csvParsed.rows.length === 1 ? "" : "s"}
+                  </span>
+                  {csvParsed.errors.length > 0 && (
+                    <span className="text-destructive">
+                      {csvParsed.errors.length} row(s) skipped
+                    </span>
+                  )}
+                </div>
+                {csvParsed.errors.length > 0 && (
+                  <div className="mt-1 max-h-20 overflow-y-auto text-[10px] text-muted-foreground">
+                    {csvParsed.errors.slice(0, 5).map((e, i) => (
+                      <div key={i}>{e}</div>
+                    ))}
+                    {csvParsed.errors.length > 5 && <div>…and {csvParsed.errors.length - 5} more</div>}
+                  </div>
+                )}
+                {csvParsed.rows.length > 0 && (
+                  <div className="mt-2 max-h-32 overflow-y-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="h-6 text-[9px] uppercase">Name</TableHead>
+                          <TableHead className="h-6 text-[9px] uppercase">Formula</TableHead>
+                          <TableHead className="h-6 text-[9px] uppercase">RT</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {csvParsed.rows.slice(0, 20).map((r, i) => (
+                          <TableRow key={i}>
+                            <TableCell className="py-0.5 text-[10px] font-medium">{r.name}</TableCell>
+                            <TableCell className="py-0.5 text-[10px] text-muted-foreground">{r.formula || "—"}</TableCell>
+                            <TableCell className="py-0.5 text-[10px] font-mono">{r.rtExpected.toFixed(2)}</TableCell>
+                          </TableRow>
+                        ))}
+                        {csvParsed.rows.length > 20 && (
+                          <TableRow>
+                            <TableCell colSpan={3} className="py-0.5 text-[10px] text-muted-foreground">
+                              …and {csvParsed.rows.length - 20} more
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCsvDialog(false)}>Cancel</Button>
+            <Button
+              onClick={saveCsvImport}
+              disabled={csvSaving || !csvName.trim() || !csvParsed || csvParsed.rows.length === 0}
+            >
+              {csvSaving ? "Importing…" : csvEditingId ? "Update list" : "Create list"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
