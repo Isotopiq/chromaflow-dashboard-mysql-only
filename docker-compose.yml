@@ -24,9 +24,13 @@ services:
     ports:
       - "29473:29473"
     volumes:
-      # Bind mount to a host directory so data survives Easypanel redeploys.
-      # Named Docker volumes can be recreated by Easypanel on each deploy;
-      # a bind mount to a fixed host path is persistent.
+      # Persistent storage for PostgreSQL data + uploaded files.
+      # On Easypanel: configure a persistent volume mount for /app/data
+      # in the service's "Storage" tab. If Easypanel doesn't preserve
+      # bind mounts, use a named volume instead:
+      #   - chroma-lab-data:/app/data
+      # The Dockerfile also declares VOLUME ["/app/data"] as a fallback
+      # so Docker auto-creates an anonymous volume if nothing is mounted.
       - /var/lib/chroma-lab:/app/data
     environment:
       NODE_ENV: production

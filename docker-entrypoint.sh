@@ -21,7 +21,13 @@ chown postgres:postgres /run/postgresql
 mkdir -p /app/data/uploads
 
 # ---- 1. Initialize PostgreSQL data directory (first run only) ----
-if [ ! -d "$PG_DATA" ] || [ -z "$(ls -A "$PG_DATA" 2>/dev/null)" ]; then
+PG_DATA_CONTENTS=$(ls -A "$PG_DATA" 2>/dev/null || true)
+if [ -n "$PG_DATA_CONTENTS" ]; then
+  echo "[entrypoint] PG data dir at $PG_DATA has existing data ($(echo "$PG_DATA_CONTENTS" | wc -l) items) — preserving."
+else
+  echo "[entrypoint] WARNING: PG data dir at $PG_DATA is EMPTY — this is a fresh initialization."
+  echo "[entrypoint]   If this appears after a redeploy, the /app/data volume is NOT persistent."
+  echo "[entrypoint]   Check Easypanel volume settings to ensure /app/data is mounted to a persistent volume."
   echo "[entrypoint] initializing PostgreSQL data dir at $PG_DATA ..."
   mkdir -p "$PG_DATA"
   chown -R postgres:postgres /app/data
@@ -30,6 +36,16 @@ if [ ! -d "$PG_DATA" ] || [ -z "$(ls -A "$PG_DATA" 2>/dev/null)" ]; then
   echo "host all all 127.0.0.1/32 trust" >> "$PG_DATA/pg_hba.conf"
   echo "host all all ::1/128 trust" >> "$PG_DATA/pg_hba.conf"
   echo "[entrypoint] PostgreSQL initialized."
+  # Write a marker file so we can detect future volume resets.
+  echo "initialized at $(date -u +%Y-%m-%dT%H:%M:%SZ)" > /app/data/.pg_initialized
+fi
+
+# ---- 1a. Diagnostic: check for volume reset ----
+if [ -f /app/data/.pg_initialized ] && [ -z "$PG_DATA_CONTENTS" ]; then
+  echo "[entrypoint] CRITICAL: /app/data/.pg_initialized exists but PG data dir is empty!"
+  echo "[entrypoint]   The volume was partially reset. This should not happen."
+elif [ -f /app/data/.pg_initialized ]; then
+  echo "[entrypoint] Volume marker found: $(cat /app/data/.pg_initialized)"
 fi
 
 # Ensure postgres owns the data dir (volume mount may reset ownership).
@@ -120,6 +136,13 @@ if [ -f /app/seed.sql ]; then
   }
 fi
 echo "[entrypoint] migrations done."
+
+# ---- 4b. Diagnostic: show existing data counts ----
+echo "[entrypoint] data summary:"
+for tbl in app_users methods columns runs analytes batches compound_lists; do
+  CNT=$(su-exec postgres psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$PG_DB" -tAc "SELECT count(*) FROM public.$tbl" 2>/dev/null || echo "?")
+  echo "[entrypoint]   $tbl: $CNT rows"
+done
 
 # ---- 5. Ensure DATABASE_URL points at the bundled postgres ----
 export DATABASE_URL="postgres://${PG_USER}:${PG_PASS}@${PG_HOST}:${PG_PORT}/${PG_DB}"
