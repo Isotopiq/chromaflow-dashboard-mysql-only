@@ -252,6 +252,7 @@ function LibraryTab() {
             <Download className="mr-1 h-3.5 w-3.5" /> CSV template
           </Button>
           <CsvImportButton
+            existingAnalytes={analytes}
             onImported={(saved) => {
               for (const a of saved) addLocal(a);
               qc.invalidateQueries({ queryKey: ["lab"] });
@@ -1008,12 +1009,39 @@ function parseAnalyteCsv(text: string): { rows: ParsedRow[]; errors: string[] } 
 function CsvImportButton({
   addFn,
   onImported,
+  existingAnalytes,
 }: {
   addFn: (args: { data: ParsedRow }) => Promise<Analyte>;
   onImported: (saved: Analyte[]) => void;
+  existingAnalytes: Analyte[];
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  const [dupDialog, setDupDialog] = useState<{
+    duplicates: ParsedRow[];
+    unique: ParsedRow[];
+    errors: string[];
+  } | null>(null);
+
+  async function importRows(rows: ParsedRow[]) {
+    const saved: Analyte[] = [];
+    let failed = 0;
+    for (const r of rows) {
+      try {
+        const s = await addFn({ data: r });
+        saved.push(s);
+      } catch (e: any) {
+        failed++;
+        console.error("Import row failed", r, e);
+      }
+    }
+    if (saved.length) {
+      onImported(saved);
+      toast.success(`Imported ${saved.length} compound${saved.length === 1 ? "" : "s"}${failed ? ` (${failed} failed)` : ""}.`);
+    } else {
+      toast.error("No compounds imported.");
+    }
+  }
 
   async function handleFile(file: File) {
     setBusy(true);
@@ -1024,28 +1052,71 @@ function CsvImportButton({
         toast.error(errors.slice(0, 3).join(" "));
         return;
       }
+
+      // Detect duplicates: rows whose name matches an existing analyte
+      // (case-insensitive) or appears more than once within the CSV.
+      const existingNames = new Set(
+        existingAnalytes.map((a) => a.name.toLowerCase()),
+      );
+      const seenInCsv = new Set<string>();
+      const duplicates: ParsedRow[] = [];
+      const unique: ParsedRow[] = [];
+      for (const r of rows) {
+        const key = r.name.toLowerCase();
+        if (existingNames.has(key) || seenInCsv.has(key)) {
+          duplicates.push(r);
+        } else {
+          unique.push(r);
+          seenInCsv.add(key);
+        }
+      }
+
+      if (duplicates.length > 0) {
+        // Show duplicate dialog — pause import for user decision
+        setDupDialog({ duplicates, unique, errors });
+        return;
+      }
+
+      // No duplicates — proceed directly
       if (errors.length) {
         toast.warning(`${errors.length} row(s) skipped. Importing ${rows.length}…`);
       }
-      const saved: Analyte[] = [];
-      let failed = 0;
-      for (const r of rows) {
-        try {
-          const s = await addFn({ data: r });
-          saved.push(s);
-        } catch (e: any) {
-          failed++;
-          console.error("Import row failed", r, e);
-        }
-      }
-      if (saved.length) {
-        onImported(saved);
-        toast.success(`Imported ${saved.length} compound${saved.length === 1 ? "" : "s"}${failed ? ` (${failed} failed)` : ""}.`);
-      } else {
-        toast.error("No compounds imported.");
-      }
+      await importRows(rows);
     } catch (e: any) {
       toast.error(e?.message ?? "Failed to read file.");
+    } finally {
+      setBusy(false);
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  }
+
+  async function handleSkipDuplicates() {
+    if (!dupDialog) return;
+    const { unique, errors } = dupDialog;
+    setDupDialog(null);
+    if (errors.length) {
+      toast.warning(`${errors.length} row(s) skipped. Importing ${unique.length}…`);
+    }
+    setBusy(true);
+    try {
+      await importRows(unique);
+    } finally {
+      setBusy(false);
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  }
+
+  async function handleImportAll() {
+    if (!dupDialog) return;
+    const { unique, duplicates, errors } = dupDialog;
+    const all = [...unique, ...duplicates];
+    setDupDialog(null);
+    if (errors.length) {
+      toast.warning(`${errors.length} row(s) skipped. Importing ${all.length}…`);
+    }
+    setBusy(true);
+    try {
+      await importRows(all);
     } finally {
       setBusy(false);
       if (inputRef.current) inputRef.current.value = "";
@@ -1073,6 +1144,57 @@ function CsvImportButton({
         <Upload className="mr-1 h-3.5 w-3.5" />
         {busy ? "Importing…" : "Import CSV"}
       </Button>
+
+      <Dialog open={!!dupDialog} onOpenChange={(open) => {
+        if (!open) { setDupDialog(null); setBusy(false); if (inputRef.current) inputRef.current.value = ""; }
+      }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Duplicate compounds detected</DialogTitle>
+            <DialogDescription>
+              {dupDialog?.duplicates.length ?? 0} compound{(dupDialog?.duplicates.length ?? 0) === 1 ? "" : "s"} in the CSV already exist
+              in your library or appear multiple times in the file. Choose how to proceed.
+            </DialogDescription>
+          </DialogHeader>
+          {dupDialog && (
+            <div className="max-h-48 overflow-y-auto rounded-md border border-border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="h-7 text-[10px] uppercase">Name</TableHead>
+                    <TableHead className="h-7 text-[10px] uppercase">Formula</TableHead>
+                    <TableHead className="h-7 text-[10px] uppercase">RT</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {dupDialog.duplicates.map((d, i) => (
+                    <TableRow key={i}>
+                      <TableCell className="py-1 text-xs font-medium">{d.name}</TableCell>
+                      <TableCell className="py-1 text-xs text-muted-foreground">{d.formula || "—"}</TableCell>
+                      <TableCell className="py-1 text-xs font-mono">{d.rtExpected.toFixed(2)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+          <div className="text-xs text-muted-foreground">
+            {dupDialog?.unique.length ?? 0} new compound{(dupDialog?.unique.length ?? 0) === 1 ? "" : "s"} will be imported.
+            {dupDialog?.duplicates.length ?? 0} duplicate{(dupDialog?.duplicates.length ?? 0) === 1 ? "" : "s"} will be skipped.
+          </div>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button variant="outline" onClick={() => { setDupDialog(null); setBusy(false); if (inputRef.current) inputRef.current.value = ""; }}>
+              Cancel
+            </Button>
+            <Button variant="outline" onClick={handleImportAll}>
+              Import all ({(dupDialog?.unique.length ?? 0) + (dupDialog?.duplicates.length ?? 0)})
+            </Button>
+            <Button onClick={handleSkipDuplicates}>
+              Skip duplicates ({dupDialog?.unique.length ?? 0})
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
