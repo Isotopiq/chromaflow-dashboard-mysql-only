@@ -192,10 +192,21 @@ function RunDetail() {
       .filter((x): x is NonNullable<typeof x> => x !== null);
   }, [analytes, adduct]);
 
+  // ---- Persisted view preferences (per run, stored in localStorage) ----
+  const prefsKey = `chroma-lab:run-prefs:${runId}`;
+  const loadPrefs = () => {
+    try {
+      const raw = localStorage.getItem(prefsKey);
+      if (raw) return JSON.parse(raw);
+    } catch { /* ignore */ }
+    return null;
+  };
+  const savedPrefs = loadPrefs();
+
   const [enabledIds, setEnabledIds] = useState<Set<string>>(new Set());
   const [targetFilter, setTargetFilter] = useState("");
-  const [selectedListId, setSelectedListId] = useState<string>("");
-  const [acceptDrifted, setAcceptDrifted] = useState(false);
+  const [selectedListId, setSelectedListId] = useState<string>(savedPrefs?.selectedListId ?? "");
+  const [acceptDrifted, setAcceptDrifted] = useState(savedPrefs?.acceptDrifted ?? false);
   const [batchSaving, setBatchSaving] = useState(false);
   const filteredTargets = useMemo(() => {
     const q = targetFilter.trim().toLowerCase();
@@ -301,7 +312,18 @@ function RunDetail() {
   }, [run.peaks, batchQuery.data, matchRows]);
 
   const [peakTab, setPeakTab] = useState<"detected" | "library">("detected");
-  const [hideUnannotated, setHideUnannotated] = useState(false);
+  const [hideUnannotated, setHideUnannotated] = useState(savedPrefs?.hideUnannotated ?? false);
+
+  // Persist view preferences to localStorage whenever they change.
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        prefsKey,
+        JSON.stringify({ selectedListId, acceptDrifted, hideUnannotated }),
+      );
+    } catch { /* ignore quota errors */ }
+  }, [prefsKey, selectedListId, acceptDrifted, hideUnannotated]);
+
   const hasDetected = run.peaks.length > 0;
   const hasLibrary = derivedPeaks.length > 0;
   // Auto-switch to whichever tab has content when the other is empty.
@@ -413,7 +435,17 @@ function RunDetail() {
   };
 
   // Auto-select the method+column default list on first render if available.
+  // Also restore enabledIds from a saved compound list selection.
   useEffect(() => {
+    // If we have a saved list selection, restore its analyte IDs.
+    if (selectedListId && enabledIds.size === 0) {
+      const cl = compoundLists.find((x) => x.id === selectedListId);
+      if (cl && cl.analyteIds.length > 0) {
+        setEnabledIds(new Set(cl.analyteIds));
+      }
+      return;
+    }
+    // Otherwise auto-select the method+column default list if configured.
     if (selectedListId || !listDefaults.length || !run.methodId || !run.columnId) return;
     const def = listDefaults.find(
       (d) => d.methodId === run.methodId && d.columnId === run.columnId,
@@ -426,7 +458,7 @@ function RunDetail() {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [listDefaults, compoundLists, run.methodId, run.columnId]);
+  }, [listDefaults, compoundLists, run.methodId, run.columnId, selectedListId]);
 
   // Batch-accept all matched (or drifted, if checkbox is on) annotations.
   const batchAccept = async () => {
