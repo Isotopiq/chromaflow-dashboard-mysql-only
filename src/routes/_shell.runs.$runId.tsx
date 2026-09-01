@@ -207,13 +207,8 @@ function RunDetail() {
         t.mz.toFixed(4).includes(q),
     );
   }, [libraryTargets, targetFilter]);
-  // Initialize selection on first render to all targets within a reasonable mass range.
-  useEffect(() => {
-    if (enabledIds.size === 0 && libraryTargets.length > 0) {
-      setEnabledIds(new Set(libraryTargets.slice(0, 8).map((t) => t.id)));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [libraryTargets.length]);
+  // Don't auto-select any targets — user picks via compound list or manually.
+  // The default list auto-select happens in the useEffect below.
 
   const fetchBatch = useServerFn(getRunEICBatch);
   const activeTargets = libraryTargets.filter((t) => enabledIds.has(t.id));
@@ -306,6 +301,7 @@ function RunDetail() {
   }, [run.peaks, batchQuery.data, matchRows]);
 
   const [peakTab, setPeakTab] = useState<"detected" | "library">("detected");
+  const [hideUnannotated, setHideUnannotated] = useState(false);
   const hasDetected = run.peaks.length > 0;
   const hasLibrary = derivedPeaks.length > 0;
   // Auto-switch to whichever tab has content when the other is empty.
@@ -314,10 +310,13 @@ function RunDetail() {
     if (peakTab === "library" && !hasLibrary && hasDetected) setPeakTab("detected");
   }, [peakTab, hasDetected, hasLibrary]);
   const activePeaks = peakTab === "library" ? derivedPeaks : run.peaks;
-  const peaksForTable = useMemo(
-    () => activePeaks.slice().sort((a, b) => a.rt - b.rt),
-    [activePeaks],
-  );
+  const peaksForTable = useMemo(() => {
+    let peaks = activePeaks;
+    if (hideUnannotated) {
+      peaks = peaks.filter((p) => p.analyteId || p.analyteName);
+    }
+    return peaks.slice().sort((a, b) => a.rt - b.rt);
+  }, [activePeaks, hideUnannotated]);
   const usingDerivedPeaks = peakTab === "library";
   const selectedDerived = derivedPeaks.find((p) => p.id === selectedId);
   const effectiveSelected = selected ?? selectedDerived;
@@ -1076,26 +1075,37 @@ function RunDetail() {
                   : "Detected peaks (validated) — click any row to extract its EIC"}
               </h2>
             </div>
-            <div className="flex items-center gap-1 rounded-md border border-border bg-muted/30 p-0.5">
-              <button
-                onClick={() => setPeakTab("detected")}
-                className={`rounded px-2 py-1 text-[10px] uppercase tracking-wider ${peakTab === "detected" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"}`}
-              >
-                Detected ({run.peaks.length})
-              </button>
-              <button
-                onClick={() => setPeakTab("library")}
-                className={`rounded px-2 py-1 text-[10px] uppercase tracking-wider ${peakTab === "library" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"}`}
-              >
-                Library ({derivedPeaks.length})
-              </button>
+            <div className="flex items-center gap-3">
+              <label className="flex cursor-pointer items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+                <Checkbox
+                  checked={hideUnannotated}
+                  onCheckedChange={(v) => setHideUnannotated(!!v)}
+                />
+                <span>Hide unannotated</span>
+              </label>
+              <div className="flex items-center gap-1 rounded-md border border-border bg-muted/30 p-0.5">
+                <button
+                  onClick={() => setPeakTab("detected")}
+                  className={`rounded px-2 py-1 text-[10px] uppercase tracking-wider ${peakTab === "detected" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"}`}
+                >
+                  Detected ({hideUnannotated ? run.peaks.filter(p => p.analyteId || p.analyteName).length : run.peaks.length})
+                </button>
+                <button
+                  onClick={() => setPeakTab("library")}
+                  className={`rounded px-2 py-1 text-[10px] uppercase tracking-wider ${peakTab === "library" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"}`}
+                >
+                  Library ({derivedPeaks.length})
+                </button>
+              </div>
             </div>
           </div>
           <div className="p-3">
             {peaksForTable.length === 0 ? (
               <div className="rounded-md border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
                 {peakTab === "detected"
-                  ? "No peaks detected on the raw run. Switch to Library to extract analyte-targeted candidates."
+                  ? hideUnannotated
+                    ? "No annotated peaks. Uncheck \"Hide unannotated\" to see all detected peaks."
+                    : "No peaks detected on the raw run. Switch to Library to extract analyte-targeted candidates."
                   : "No Auto-XIC matches yet. Pick analytes above to extract candidate peaks."}
               </div>
             ) : (
