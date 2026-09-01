@@ -47,7 +47,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { deleteMethod, archiveMethod, downloadMethodFile } from "@/lib/lab.functions";
+import { deleteMethod, archiveMethod, downloadMethodFile, setMethodColumnListDefault } from "@/lib/lab.functions";
 import { useUpsertMethod } from "@/lib/store";
 import type { Method, MsScan } from "@/lib/lab-types";
 
@@ -90,16 +90,19 @@ function MethodDetailGate() {
 }
 
 function MethodDetail({ method }: { method: Method }) {
-  const { columns, runs, currentUser, removeMethodLocal, archiveMethodLocal, upsertMethodLocal } = useLab();
+  const { columns, runs, currentUser, removeMethodLocal, archiveMethodLocal, upsertMethodLocal, compoundLists, listDefaults } = useLab();
+  const setListDefaultLocal = useLab((s) => s.setListDefaultLocal);
   const deleteFn = useServerFn(deleteMethod);
   const archiveFn = useServerFn(archiveMethod);
   const downloadFn = useServerFn(downloadMethodFile);
+  const setDefaultFn = useServerFn(setMethodColumnListDefault);
   const upsertMethod = useUpsertMethod();
   const nav = useNavigate();
   const [showDelete, setShowDelete] = useState(false);
   const [showArchive, setShowArchive] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [archiving, setArchiving] = useState(false);
+  const [savingDefaultCol, setSavingDefaultCol] = useState<string | null>(null);
 
   // Editable MS scan state
   const [editingScans, setEditingScans] = useState(false);
@@ -548,6 +551,65 @@ function MethodDetail({ method }: { method: Method }) {
           )}
         </Card>
       )}
+
+      {/* Default compound list assignment per column */}
+      <Card className="border-border bg-card p-4">
+        <div>
+          <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+            Default compound lists
+          </div>
+          <h2 className="text-sm font-semibold">Peak identification defaults</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Assign a default compound list per column. When uploading an mzXML with this method and column, the list is auto-selected for peak identification.
+          </p>
+        </div>
+        <div className="mt-3 space-y-2">
+          {columns.length === 0 ? (
+            <div className="text-xs text-muted-foreground">No columns available.</div>
+          ) : (
+            columns.map((col) => {
+              const def = listDefaults.find(
+                (d) => d.methodId === method.id && d.columnId === col.id,
+              );
+              return (
+                <div key={col.id} className="flex items-center gap-3 rounded-md border border-border px-3 py-2">
+                  <span className="min-w-[120px] truncate text-xs font-medium">{col.name}</span>
+                  <Select
+                    value={def?.listId ?? "__none__"}
+                    onValueChange={async (val) => {
+                      setSavingDefaultCol(col.id);
+                      try {
+                        const listId = val === "__none__" ? null : val;
+                        const result = await setDefaultFn({
+                          data: { methodId: method.id, columnId: col.id, listId: listId as any },
+                        });
+                        setListDefaultLocal(result as any, method.id, col.id);
+                        toast.success(listId ? "Default list set" : "Default cleared");
+                      } catch (err: any) {
+                        toast.error(err?.message ?? "Failed to set default");
+                      } finally {
+                        setSavingDefaultCol(null);
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="h-8 flex-1 text-xs" disabled={savingDefaultCol === col.id}>
+                      <SelectValue placeholder="No default (use all analytes)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">No default (all analytes)</SelectItem>
+                      {compoundLists.map((cl) => (
+                        <SelectItem key={cl.id} value={cl.id}>
+                          {cl.name} ({cl.analyteIds.length})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </Card>
 
       {/* Chromatogram overlay from linked runs (always visible) */}
       <Card className="border-border bg-card p-4">

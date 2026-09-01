@@ -59,13 +59,14 @@ function fmtBytes(n: number) {
 }
 
 function RunsList() {
-  const { runs, methods, columns } = useLab();
+  const { runs, methods, columns, compoundLists, listDefaults } = useLab();
   const upsertRunLocal = useLab((s) => s.upsertRunLocal);
   const removeRunLocal = useLab((s) => s.removeRunLocal);
   const deleteRunFn = useServerFn(deleteRun);
   const [dragOver, setDragOver] = useState(false);
   const [methodId, setMethodId] = useState<string>("");
   const [columnId, setColumnId] = useState<string>("");
+  const [compoundListId, setCompoundListId] = useState<string>("__auto__");
   const [jobs, setJobs] = useState<ParseJob[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
@@ -76,6 +77,21 @@ function RunsList() {
   const createRunFn = useServerFn(createRun);
   const createUploadUrlFn = useServerFn(createUploadUrl);
   const findRunByPathFn = useServerFn(findRunByFilePath);
+
+  // Auto-select compound list based on method+column default
+  useEffect(() => {
+    if (methodId && columnId) {
+      const def = listDefaults.find(
+        (d) => d.methodId === methodId && d.columnId === columnId,
+      );
+      setCompoundListId(def?.listId ?? "__auto__");
+    }
+  }, [methodId, columnId, listDefaults]);
+
+  // Resolve the effective compound list ID for the upload payload
+  const effectiveListId = compoundListId === "__auto__" || compoundListId === "__all__"
+    ? null
+    : compoundListId;
 
   // Largest Triangle Three Buckets downsample — keeps the visual shape of a
   // chromatogram while drastically cutting payload size. Returns a parallel
@@ -229,6 +245,7 @@ function RunsList() {
           r2: p.r2,
           asymmetry: p.asymmetry,
         })),
+        compoundListId: effectiveListId,
       };
 
       // Save with one retry. If both attempts hit a network-style error
@@ -328,6 +345,33 @@ function RunsList() {
             </SelectContent>
           </Select>
         </div>
+      </div>
+
+      <div>
+        <label className="text-[10px] uppercase tracking-widest text-muted-foreground">
+          Compound list for peak ID
+        </label>
+        <Select value={compoundListId} onValueChange={setCompoundListId}>
+          <SelectTrigger className="mt-1 h-9 text-xs">
+            <SelectValue placeholder="Auto (from method+column default)" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__auto__">
+              {methodId && columnId
+                ? "Auto (from method+column default)"
+                : "All analytes (no default set)"}
+            </SelectItem>
+            <SelectItem value="__all__">All analytes (full library)</SelectItem>
+            {compoundLists.map((cl) => (
+              <SelectItem key={cl.id} value={cl.id}>
+                {cl.name} ({cl.analyteIds.length})
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="mt-1 text-[10px] text-muted-foreground">
+          Controls which compound list is used for automatic peak identification. Defaults to the method+column assignment if set.
+        </p>
       </div>
 
       <Card

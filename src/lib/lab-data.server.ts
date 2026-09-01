@@ -4,6 +4,7 @@ import { withAdmin } from "@/db/index.server";
 import { createSignedDownloadUrl } from "@/lib/storage.server";
 import type {
   Method, Run, Column, Batch, Analyte, Peak, User,
+  ColumnInjection, CompoundList, MethodColumnListDefault,
 } from "@/lib/lab-types";
 
 // ---------- Mappers ----------
@@ -86,6 +87,7 @@ export function mapRun(r: any, peaks: Peak[] = []): Run {
     methodId: r.method_id ?? "",
     columnId: r.column_id ?? "",
     batchId: r.batch_id ?? undefined,
+    injectionId: r.injection_id ?? null,
     acquiredAt: r.acquired_at,
     fileFormat: (r.file_format as Run["fileFormat"]) ?? "mzML",
     fileSize: s.fileSize ?? "—",
@@ -127,6 +129,42 @@ export function mapAnalyte(r: any): Analyte {
   };
 }
 
+export function mapInjection(r: any): ColumnInjection {
+  return {
+    id: r.id,
+    columnId: r.column_id,
+    runId: r.run_id ?? null,
+    methodId: r.method_id ?? null,
+    sequenceName: r.sequence_name ?? "",
+    injectionNum: Number(r.injection_num ?? 0),
+    startingPressure: r.starting_pressure != null ? Number(r.starting_pressure) : null,
+    notes: r.notes ?? "",
+    performedBy: r.performed_by ?? null,
+    createdAt: String(r.created_at),
+  };
+}
+
+export function mapCompoundList(r: any, analyteIds: string[] = []): CompoundList {
+  return {
+    id: r.id,
+    name: r.name,
+    description: r.description ?? "",
+    analyteIds,
+    createdBy: r.created_by ?? null,
+    createdAt: String(r.created_at),
+    updatedAt: String(r.updated_at),
+  };
+}
+
+export function mapListDefault(r: any): MethodColumnListDefault {
+  return {
+    id: r.id,
+    methodId: r.method_id,
+    columnId: r.column_id,
+    listId: r.list_id,
+  };
+}
+
 export async function mapUser(profile: any, role: string): Promise<User> {
   const name = profile.display_name ?? "user";
   const avatarPath = profile.avatar_url ?? null;
@@ -163,6 +201,10 @@ export async function fetchAllForUser(db: Db) {
   const peaks = await db.many("select * from public.peaks");
   const batches = await db.many("select * from public.batches order by started_at desc");
   const analytes = await db.many("select * from public.analytes order by name");
+  const injections = await db.many("select * from public.column_injections order by injection_num");
+  const compoundListsRaw = await db.many("select * from public.compound_lists order by name");
+  const listEntries = await db.many("select * from public.compound_list_entries");
+  const listDefaults = await db.many("select * from public.method_column_list_defaults");
 
   // Fetch per-column RT overrides for all analytes.
   const columnRts = await db.many<any>(
@@ -205,6 +247,14 @@ export async function fetchAllForUser(db: Db) {
     runsByBatch.get(r.batch_id)!.push(r.id);
   }
 
+  // Group compound list entries by list_id
+  const entriesByList = new Map<string, string[]>();
+  for (const e of listEntries) {
+    const arr = entriesByList.get(e.list_id) ?? [];
+    arr.push(e.analyte_id);
+    entriesByList.set(e.list_id, arr);
+  }
+
   return {
     columns: columns.map(mapColumn),
     methods: methods.map(mapMethod),
@@ -214,6 +264,11 @@ export async function fetchAllForUser(db: Db) {
       ...mapAnalyte(a),
       columnRts: columnRtByAnalyte.get(a.id) ?? [],
     })),
+    injections: injections.map(mapInjection),
+    compoundLists: compoundListsRaw.map((cl: any) =>
+      mapCompoundList(cl, entriesByList.get(cl.id) ?? []),
+    ),
+    listDefaults: listDefaults.map(mapListDefault),
   };
 }
 

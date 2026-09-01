@@ -26,6 +26,7 @@ export type Run = {
   methodId: string;
   columnId: string;
   batchId?: string;
+  injectionId?: string | null;
   acquiredAt: string;
   fileFormat: "mzML" | "mzXML" | "raw";
   fileSize: string;
@@ -187,4 +188,34 @@ export type ColumnServiceEvent = {
   notes: string;
   performedBy?: string | null;
   createdAt: string;
+};
+
+export type ColumnInjection = {
+  id: string;
+  columnId: string;
+  runId?: string | null;
+  methodId?: string | null;
+  sequenceName: string;
+  injectionNum: number;
+  startingPressure?: number | null;
+  notes: string;
+  performedBy?: string | null;
+  createdAt: string;
+};
+
+export type CompoundList = {
+  id: string;
+  name: string;
+  description: string;
+  analyteIds: string[];
+  createdBy?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type MethodColumnListDefault = {
+  id: string;
+  methodId: string;
+  columnId: string;
+  listId: string;
 };

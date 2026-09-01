@@ -172,6 +172,31 @@ create policy "column_service_events: write auth" on public.column_service_event
   using (true)
   with check (true);
 
+-- ---- column_injections ----
+-- Tracks individual injections logged per column: sequence name, injection
+-- number, starting pressure, assigned method, optional linked run.
+create table if not exists public.column_injections (
+  id                uuid primary key default gen_random_uuid(),
+  column_id         uuid not null references public.columns(id) on delete cascade,
+  run_id            uuid references public.runs(id) on delete set null,
+  method_id         uuid references public.methods(id) on delete set null,
+  sequence_name     text not null default '',
+  injection_num     int  not null,
+  starting_pressure double precision,
+  notes             text default '',
+  performed_by      uuid references public.app_users(id) on delete set null,
+  created_at        timestamptz not null default now()
+);
+create index if not exists column_injections_column_idx on public.column_injections(column_id);
+create index if not exists column_injections_run_idx on public.column_injections(run_id);
+alter table public.column_injections enable row level security;
+drop policy if exists "column_injections: read all"   on public.column_injections;
+drop policy if exists "column_injections: write auth" on public.column_injections;
+create policy "column_injections: read all" on public.column_injections for select using (true);
+create policy "column_injections: write auth" on public.column_injections for all
+  using (performed_by = public.current_app_user() or public.current_app_is_admin() or performed_by is null)
+  with check (true);
+
 -- ---- methods ----
 create table if not exists public.methods (
   id              uuid primary key default gen_random_uuid(),
@@ -283,6 +308,58 @@ create policy "analyte_column_rt: write auth" on public.analyte_column_rt for al
   using (true)
   with check (true);
 
+-- ---- compound_lists ----
+-- Named, reusable subsets of the analyte library for targeted peak ID.
+create table if not exists public.compound_lists (
+  id          uuid primary key default gen_random_uuid(),
+  name        text not null,
+  description text default '',
+  created_by  uuid references public.app_users(id) on delete set null,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+alter table public.compound_lists enable row level security;
+drop policy if exists "compound_lists: read all"   on public.compound_lists;
+drop policy if exists "compound_lists: write auth" on public.compound_lists;
+create policy "compound_lists: read all" on public.compound_lists for select using (true);
+create policy "compound_lists: write auth" on public.compound_lists for all
+  using (created_by = public.current_app_user() or public.current_app_is_admin() or created_by is null)
+  with check (true);
+
+-- ---- compound_list_entries ----
+create table if not exists public.compound_list_entries (
+  id          uuid primary key default gen_random_uuid(),
+  list_id     uuid not null references public.compound_lists(id) on delete cascade,
+  analyte_id  uuid not null references public.analytes(id) on delete cascade,
+  created_at  timestamptz not null default now(),
+  unique (list_id, analyte_id)
+);
+create index if not exists compound_list_entries_list_idx on public.compound_list_entries(list_id);
+alter table public.compound_list_entries enable row level security;
+drop policy if exists "compound_list_entries: read all"   on public.compound_list_entries;
+drop policy if exists "compound_list_entries: write auth" on public.compound_list_entries;
+create policy "compound_list_entries: read all" on public.compound_list_entries for select using (true);
+create policy "compound_list_entries: write auth" on public.compound_list_entries for all
+  using (true) with check (true);
+
+-- ---- method_column_list_defaults ----
+-- Assigns a default compound list per method+column pair for auto-selection
+-- during mzXML upload.
+create table if not exists public.method_column_list_defaults (
+  id          uuid primary key default gen_random_uuid(),
+  method_id   uuid not null references public.methods(id) on delete cascade,
+  column_id   uuid not null references public.columns(id) on delete cascade,
+  list_id     uuid not null references public.compound_lists(id) on delete cascade,
+  created_at  timestamptz not null default now(),
+  unique (method_id, column_id)
+);
+alter table public.method_column_list_defaults enable row level security;
+drop policy if exists "method_column_list_defaults: read all"   on public.method_column_list_defaults;
+drop policy if exists "method_column_list_defaults: write auth" on public.method_column_list_defaults;
+create policy "method_column_list_defaults: read all" on public.method_column_list_defaults for select using (true);
+create policy "method_column_list_defaults: write auth" on public.method_column_list_defaults for all
+  using (true) with check (true);
+
 -- ---- runs ----
 create table if not exists public.runs (
   id              uuid primary key default gen_random_uuid(),
@@ -302,6 +379,9 @@ create table if not exists public.runs (
 );
 do $$ begin
   alter table public.runs add column if not exists notes text default '';
+exception when others then null; end $$;
+do $$ begin
+  alter table public.runs add column if not exists injection_id uuid references public.column_injections(id) on delete set null;
 exception when others then null; end $$;
 alter table public.runs enable row level security;
 drop policy if exists "runs: read all"   on public.runs;

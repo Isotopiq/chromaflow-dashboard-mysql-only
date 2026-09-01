@@ -20,6 +20,9 @@ import {
   mapAnalyte,
   mapRun,
   mapPeak,
+  mapInjection,
+  mapCompoundList,
+  mapListDefault,
   listAllUsersAdmin,
   setUserRoleAdmin,
 } from "./lab-data.server";
@@ -390,6 +393,21 @@ export const updateRunNotes = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const updateRunName = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) => z.object({ runId: z.string(), name: z.string().min(1).max(300) }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { userId, db } = context as { userId: string; db: import("@/db/index.server").Db };
+    const r = await db.maybe<any>("select uploaded_by from public.runs where id=$1", [data.runId]);
+    if (!r) throw new Error("Run not found");
+    if (r.uploaded_by && r.uploaded_by !== userId) throw new Error("Not your run.");
+    await db.query(
+      "update public.runs set summary_json = jsonb_set(summary_json, '{name}', to_jsonb($1::text)) where id=$2",
+      [data.name, data.runId],
+    );
+    return { ok: true, name: data.name };
+  });
+
 export const updatePeakNotes = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => z.object({ peakId: z.string(), notes: z.string().max(20000) }).parse(d))
@@ -676,6 +694,7 @@ const RunInput = z.object({
     r2: z.number().nullable().optional(),
     asymmetry: z.number().nullable().optional(),
   })).max(1000),
+  compoundListId: z.string().uuid().nullable().optional(),
 });
 
 export const findRunByFilePath = createServerFn({ method: "POST" })
@@ -734,8 +753,20 @@ export const createRun = createServerFn({ method: "POST" })
     // Uses per-column RT overrides when available, falling back to the
     // analyte's default rt_expected.
     try {
-      const analytes = await db.many<any>(
-        "select id, name, mz, rt_expected from public.analytes");
+      // If a compound list is specified, use only its analytes for annotation.
+      // Otherwise fall back to the full analyte library.
+      let analytes: any[];
+      if (data.compoundListId) {
+        analytes = await db.many<any>(
+          `select a.id, a.name, a.mz, a.rt_expected from public.analytes a
+           join public.compound_list_entries e on e.analyte_id = a.id
+           where e.list_id = $1`,
+          [data.compoundListId],
+        );
+      } else {
+        analytes = await db.many<any>(
+          "select id, name, mz, rt_expected from public.analytes");
+      }
       // Fetch per-column RT overrides for this run's column.
       let columnRtMap: Map<string, number> = new Map();
       if (run.column_id) {
@@ -1495,4 +1526,208 @@ export const deleteColumnServiceEvent = createServerFn({ method: "POST" })
     const { db } = context as { db: import("@/db/index.server").Db };
     await db.query("delete from public.column_service_events where id = $1", [data.id]);
     return { ok: true };
+  });
+
+// ---- Column injection tracking ----
+
+export const createInjection = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) =>
+    z.object({
+      columnId: z.string().uuid(),
+      methodId: z.string().uuid().nullable().optional(),
+      sequenceName: z.string().max(300).default(""),
+      injectionNum: z.number().int().min(1),
+      startingPressure: z.number().nullable().optional(),
+      notes: z.string().max(5000).default(""),
+      runId: z.string().uuid().nullable().optional(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const ctx = context as any;
+    requirePermission(ctx, "canEdit");
+    const { userId, db } = ctx;
+    const row = await db.one<any>(
+      `insert into public.column_injections
+         (column_id, method_id, sequence_name, injection_num, starting_pressure, notes, run_id, performed_by)
+       values ($1,$2,$3,$4,$5,$6,$7,$8) returning *`,
+      [data.columnId, data.methodId ?? null, data.sequenceName, data.injectionNum,
+       data.startingPressure ?? null, data.notes, data.runId ?? null, userId],
+    );
+    // Link the run if provided
+    if (data.runId) {
+      await db.query("update public.runs set injection_id=$1 where id=$2", [row.id, data.runId]);
+    }
+    return mapInjection(row);
+  });
+
+export const updateInjection = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) =>
+    z.object({
+      id: z.string().uuid(),
+      sequenceName: z.string().max(300).optional(),
+      injectionNum: z.number().int().min(1).optional(),
+      startingPressure: z.number().nullable().optional(),
+      methodId: z.string().uuid().nullable().optional(),
+      notes: z.string().max(5000).optional(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const ctx = context as any;
+    requirePermission(ctx, "canEdit");
+    const { db } = ctx;
+    const sets: string[] = [];
+    const vals: any[] = [];
+    let p = 1;
+    if (data.sequenceName !== undefined) { sets.push(`sequence_name=$${p++}`); vals.push(data.sequenceName); }
+    if (data.injectionNum !== undefined) { sets.push(`injection_num=$${p++}`); vals.push(data.injectionNum); }
+    if (data.startingPressure !== undefined) { sets.push(`starting_pressure=$${p++}`); vals.push(data.startingPressure); }
+    if (data.methodId !== undefined) { sets.push(`method_id=$${p++}`); vals.push(data.methodId); }
+    if (data.notes !== undefined) { sets.push(`notes=$${p++}`); vals.push(data.notes); }
+    if (sets.length === 0) return { ok: true };
+    vals.push(data.id);
+    const row = await db.one<any>(
+      `update public.column_injections set ${sets.join(", ")} where id=$${p} returning *`,
+      vals,
+    );
+    return mapInjection(row);
+  });
+
+export const deleteInjection = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const ctx = context as any;
+    requirePermission(ctx, "canDelete");
+    const { db } = ctx;
+    await db.query("update public.runs set injection_id=null where injection_id=$1", [data.id]);
+    await db.query("delete from public.column_injections where id=$1", [data.id]);
+    return { ok: true };
+  });
+
+export const linkRunToInjection = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) =>
+    z.object({ injectionId: z.string().uuid(), runId: z.string().uuid() }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { userId, db } = context as { userId: string; db: import("@/db/index.server").Db };
+    // Clear previous link on this injection
+    await db.query("update public.runs set injection_id=null where injection_id=$1", [data.injectionId]);
+    // Set new link
+    await db.query("update public.runs set injection_id=$1 where id=$2", [data.injectionId, data.runId]);
+    await db.query("update public.column_injections set run_id=$1 where id=$2", [data.runId, data.injectionId]);
+    return { ok: true };
+  });
+
+// ---- Compound lists ----
+
+export const createCompoundList = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) =>
+    z.object({
+      name: z.string().min(1).max(200),
+      description: z.string().max(2000).default(""),
+      analyteIds: z.array(z.string().uuid()).max(5000).default([]),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const ctx = context as any;
+    requirePermission(ctx, "canEdit");
+    const { userId, db } = ctx;
+    const row = await db.one<any>(
+      `insert into public.compound_lists (name, description, created_by)
+       values ($1,$2,$3) returning *`,
+      [data.name, data.description, userId],
+    );
+    for (const aid of data.analyteIds) {
+      await db.query(
+        `insert into public.compound_list_entries (list_id, analyte_id) values ($1,$2)
+         on conflict (list_id, analyte_id) do nothing`,
+        [row.id, aid],
+      );
+    }
+    return mapCompoundList(row, data.analyteIds);
+  });
+
+export const updateCompoundList = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) =>
+    z.object({
+      id: z.string().uuid(),
+      name: z.string().min(1).max(200).optional(),
+      description: z.string().max(2000).optional(),
+      analyteIds: z.array(z.string().uuid()).max(5000).optional(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const ctx = context as any;
+    requirePermission(ctx, "canEdit");
+    const { db } = ctx;
+    const sets: string[] = [];
+    const vals: any[] = [];
+    let p = 1;
+    if (data.name !== undefined) { sets.push(`name=$${p++}`); vals.push(data.name); }
+    if (data.description !== undefined) { sets.push(`description=$${p++}`); vals.push(data.description); }
+    if (sets.length > 0) {
+      vals.push(data.id);
+      await db.query(`update public.compound_lists set ${sets.join(", ")}, updated_at=now() where id=$${p}`, vals);
+    }
+    // Sync entries if provided
+    if (data.analyteIds !== undefined) {
+      await db.query("delete from public.compound_list_entries where list_id=$1", [data.id]);
+      for (const aid of data.analyteIds) {
+        await db.query(
+          `insert into public.compound_list_entries (list_id, analyte_id) values ($1,$2)
+           on conflict (list_id, analyte_id) do nothing`,
+          [data.id, aid],
+        );
+      }
+    }
+    const row = await db.one<any>("select * from public.compound_lists where id=$1", [data.id]);
+    const entries = await db.many<any>("select analyte_id from public.compound_list_entries where list_id=$1", [data.id]);
+    return mapCompoundList(row, entries.map((e) => e.analyte_id));
+  });
+
+export const deleteCompoundList = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const ctx = context as any;
+    requirePermission(ctx, "canDelete");
+    const { db } = ctx;
+    await db.query("delete from public.method_column_list_defaults where list_id=$1", [data.id]);
+    await db.query("delete from public.compound_lists where id=$1", [data.id]);
+    return { ok: true };
+  });
+
+export const setMethodColumnListDefault = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) =>
+    z.object({
+      methodId: z.string().uuid(),
+      columnId: z.string().uuid(),
+      listId: z.string().uuid().nullable().optional(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const ctx = context as any;
+    requirePermission(ctx, "canEdit");
+    const { db } = ctx;
+    if (!data.listId) {
+      await db.query(
+        "delete from public.method_column_list_defaults where method_id=$1 and column_id=$2",
+        [data.methodId, data.columnId],
+      );
+      return { ok: true };
+    }
+    const row = await db.one<any>(
+      `insert into public.method_column_list_defaults (method_id, column_id, list_id)
+       values ($1,$2,$3)
+       on conflict (method_id, column_id) do update set list_id=$3
+       returning *`,
+      [data.methodId, data.columnId, data.listId],
+    );
+    return mapListDefault(row);
   });

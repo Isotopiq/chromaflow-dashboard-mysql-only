@@ -12,6 +12,7 @@ import {
   Activity,
   UserCog,
   TrendingUp,
+  ListChecks,
 } from "lucide-react";
 import logoLightUrl from "@/assets/isotopiq-logo-light.png";
 import logoDarkUrl from "@/assets/isotopiq-logo-dark.png";
@@ -54,6 +55,7 @@ const groups: Array<{
       { title: "Runs & uploads", url: "/runs", icon: Activity },
       { title: "Overlay workspace", url: "/overlay", icon: FileBarChart },
       { title: "Analyte comparison", url: "/analytes", icon: Beaker },
+      { title: "Compound lists", url: "/compound-lists", icon: ListChecks },
     ],
   },
   {

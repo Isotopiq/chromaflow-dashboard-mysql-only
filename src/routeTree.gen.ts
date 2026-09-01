@@ -9,47 +9,45 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SignupRouteImport } from './routes/signup'
-import { Route as ResetPasswordRouteImport } from './routes/reset-password'
-import { Route as LoginRouteImport } from './routes/login'
 import { Route as ShellRouteImport } from './routes/_shell'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as SignupRouteImport } from './routes/signup'
 import { Route as ShellIndexRouteImport } from './routes/_shell.index'
-import { Route as SharedTokenRouteImport } from './routes/shared.$token'
-import { Route as ShellReportsRouteImport } from './routes/_shell.reports'
-import { Route as ShellOverlayRouteImport } from './routes/_shell.overlay'
-import { Route as ShellBatchesRouteImport } from './routes/_shell.batches'
-import { Route as ShellAnalytesRouteImport } from './routes/_shell.analytes'
-import { Route as ShellAdminRouteImport } from './routes/_shell.admin'
 import { Route as ShellAccountRouteImport } from './routes/_shell.account'
-import { Route as ShellRunsIndexRouteImport } from './routes/_shell.runs.index'
-import { Route as ShellMethodsIndexRouteImport } from './routes/_shell.methods.index'
-import { Route as ShellColumnsIndexRouteImport } from './routes/_shell.columns.index'
-import { Route as ApiPublicBootstrapAdminRouteImport } from './routes/api/public/bootstrap-admin'
-import { Route as ApiAuthSignupRouteImport } from './routes/api/auth/signup'
-import { Route as ApiAuthResetRequestRouteImport } from './routes/api/auth/reset-request'
-import { Route as ApiAuthResetRouteImport } from './routes/api/auth/reset'
-import { Route as ApiAuthMeRouteImport } from './routes/api/auth/me'
-import { Route as ApiAuthLogoutRouteImport } from './routes/api/auth/logout'
-import { Route as ApiAuthLoginRouteImport } from './routes/api/auth/login'
-import { Route as ShellRunsRunIdRouteImport } from './routes/_shell.runs.$runId'
-import { Route as ShellMethodsNewRouteImport } from './routes/_shell.methods.new'
-import { Route as ShellMethodsCompareRouteImport } from './routes/_shell.methods.compare'
-import { Route as ShellMethodsMethodIdRouteImport } from './routes/_shell.methods.$methodId'
-import { Route as ShellColumnsColumnIdRouteImport } from './routes/_shell.columns.$columnId'
-import { Route as ShellBatchesBatchIdRouteImport } from './routes/_shell.batches.$batchId'
+import { Route as ShellAdminRouteImport } from './routes/_shell.admin'
+import { Route as ShellAnalytesRouteImport } from './routes/_shell.analytes'
+import { Route as ShellBatchesRouteImport } from './routes/_shell.batches'
+import { Route as ShellCompoundListsRouteImport } from './routes/_shell.compound-lists'
+import { Route as ShellOverlayRouteImport } from './routes/_shell.overlay'
+import { Route as ShellQuantRouteImport } from './routes/_shell.quant'
+import { Route as ShellReportsRouteImport } from './routes/_shell.reports'
+import { Route as ApiAssetRouteImport } from './routes/api/asset'
+import { Route as ApiUploadRouteImport } from './routes/api/upload'
+import { Route as SharedTokenRouteImport } from './routes/shared.$token'
 import { Route as ShellAnalytesAnalyteIdRouteImport } from './routes/_shell.analytes.$analyteId'
+import { Route as ShellBatchesBatchIdRouteImport } from './routes/_shell.batches.$batchId'
+import { Route as ShellColumnsIndexRouteImport } from './routes/_shell.columns.index'
+import { Route as ShellColumnsColumnIdRouteImport } from './routes/_shell.columns.$columnId'
+import { Route as ShellMethodsIndexRouteImport } from './routes/_shell.methods.index'
+import { Route as ShellMethodsMethodIdRouteImport } from './routes/_shell.methods.$methodId'
+import { Route as ShellMethodsCompareRouteImport } from './routes/_shell.methods.compare'
+import { Route as ShellMethodsNewRouteImport } from './routes/_shell.methods.new'
+import { Route as ShellRunsIndexRouteImport } from './routes/_shell.runs.index'
+import { Route as ShellRunsRunIdRouteImport } from './routes/_shell.runs.$runId'
+import { Route as ApiAuthLoginRouteImport } from './routes/api/auth/login'
+import { Route as ApiAuthLogoutRouteImport } from './routes/api/auth/logout'
+import { Route as ApiAuthMeRouteImport } from './routes/api/auth/me'
+import { Route as ApiAuthResetRouteImport } from './routes/api/auth/reset'
+import { Route as ApiAuthResetRequestRouteImport } from './routes/api/auth/reset-request'
+import { Route as ApiAuthSignupRouteImport } from './routes/api/auth/signup'
+import { Route as ApiPublicBootstrapAdminRouteImport } from './routes/api/public/bootstrap-admin'
 import { Route as ShellMethodsMethodIdIndexRouteImport } from './routes/_shell.methods.$methodId.index'
-import { Route as ShellMethodsMethodIdHistoryRouteImport } from './routes/_shell.methods.$methodId.history'
 import { Route as ShellMethodsMethodIdEditRouteImport } from './routes/_shell.methods.$methodId.edit'
+import { Route as ShellMethodsMethodIdHistoryRouteImport } from './routes/_shell.methods.$methodId.history'
 
-const SignupRoute = SignupRouteImport.update({
-  id: '/signup',
-  path: '/signup',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ResetPasswordRoute = ResetPasswordRouteImport.update({
-  id: '/reset-password',
-  path: '/reset-password',
+const ShellRoute = ShellRouteImport.update({
+  id: '/_shell',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -57,8 +55,14 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ShellRoute = ShellRouteImport.update({
-  id: '/_shell',
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SignupRoute = SignupRouteImport.update({
+  id: '/signup',
+  path: '/signup',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ShellIndexRoute = ShellIndexRouteImport.update({
@@ -66,29 +70,9 @@ const ShellIndexRoute = ShellIndexRouteImport.update({
   path: '/',
   getParentRoute: () => ShellRoute,
 } as any)
-const SharedTokenRoute = SharedTokenRouteImport.update({
-  id: '/shared/$token',
-  path: '/shared/$token',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ShellReportsRoute = ShellReportsRouteImport.update({
-  id: '/reports',
-  path: '/reports',
-  getParentRoute: () => ShellRoute,
-} as any)
-const ShellOverlayRoute = ShellOverlayRouteImport.update({
-  id: '/overlay',
-  path: '/overlay',
-  getParentRoute: () => ShellRoute,
-} as any)
-const ShellBatchesRoute = ShellBatchesRouteImport.update({
-  id: '/batches',
-  path: '/batches',
-  getParentRoute: () => ShellRoute,
-} as any)
-const ShellAnalytesRoute = ShellAnalytesRouteImport.update({
-  id: '/analytes',
-  path: '/analytes',
+const ShellAccountRoute = ShellAccountRouteImport.update({
+  id: '/account',
+  path: '/account',
   getParentRoute: () => ShellRoute,
 } as any)
 const ShellAdminRoute = ShellAdminRouteImport.update({
@@ -96,79 +80,64 @@ const ShellAdminRoute = ShellAdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => ShellRoute,
 } as any)
-const ShellAccountRoute = ShellAccountRouteImport.update({
-  id: '/account',
-  path: '/account',
+const ShellAnalytesRoute = ShellAnalytesRouteImport.update({
+  id: '/analytes',
+  path: '/analytes',
   getParentRoute: () => ShellRoute,
 } as any)
-const ShellRunsIndexRoute = ShellRunsIndexRouteImport.update({
-  id: '/runs/',
-  path: '/runs/',
+const ShellBatchesRoute = ShellBatchesRouteImport.update({
+  id: '/batches',
+  path: '/batches',
   getParentRoute: () => ShellRoute,
 } as any)
-const ShellMethodsIndexRoute = ShellMethodsIndexRouteImport.update({
-  id: '/methods/',
-  path: '/methods/',
+const ShellCompoundListsRoute = ShellCompoundListsRouteImport.update({
+  id: '/compound-lists',
+  path: '/compound-lists',
   getParentRoute: () => ShellRoute,
+} as any)
+const ShellOverlayRoute = ShellOverlayRouteImport.update({
+  id: '/overlay',
+  path: '/overlay',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ShellQuantRoute = ShellQuantRouteImport.update({
+  id: '/quant',
+  path: '/quant',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ShellReportsRoute = ShellReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ApiAssetRoute = ApiAssetRouteImport.update({
+  id: '/api/asset',
+  path: '/api/asset',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiUploadRoute = ApiUploadRouteImport.update({
+  id: '/api/upload',
+  path: '/api/upload',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SharedTokenRoute = SharedTokenRouteImport.update({
+  id: '/shared/$token',
+  path: '/shared/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ShellAnalytesAnalyteIdRoute = ShellAnalytesAnalyteIdRouteImport.update({
+  id: '/$analyteId',
+  path: '/$analyteId',
+  getParentRoute: () => ShellAnalytesRoute,
+} as any)
+const ShellBatchesBatchIdRoute = ShellBatchesBatchIdRouteImport.update({
+  id: '/$batchId',
+  path: '/$batchId',
+  getParentRoute: () => ShellBatchesRoute,
 } as any)
 const ShellColumnsIndexRoute = ShellColumnsIndexRouteImport.update({
   id: '/columns/',
   path: '/columns/',
-  getParentRoute: () => ShellRoute,
-} as any)
-const ApiPublicBootstrapAdminRoute = ApiPublicBootstrapAdminRouteImport.update({
-  id: '/api/public/bootstrap-admin',
-  path: '/api/public/bootstrap-admin',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiAuthSignupRoute = ApiAuthSignupRouteImport.update({
-  id: '/api/auth/signup',
-  path: '/api/auth/signup',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiAuthResetRequestRoute = ApiAuthResetRequestRouteImport.update({
-  id: '/api/auth/reset-request',
-  path: '/api/auth/reset-request',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiAuthResetRoute = ApiAuthResetRouteImport.update({
-  id: '/api/auth/reset',
-  path: '/api/auth/reset',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiAuthMeRoute = ApiAuthMeRouteImport.update({
-  id: '/api/auth/me',
-  path: '/api/auth/me',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiAuthLogoutRoute = ApiAuthLogoutRouteImport.update({
-  id: '/api/auth/logout',
-  path: '/api/auth/logout',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiAuthLoginRoute = ApiAuthLoginRouteImport.update({
-  id: '/api/auth/login',
-  path: '/api/auth/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ShellRunsRunIdRoute = ShellRunsRunIdRouteImport.update({
-  id: '/runs/$runId',
-  path: '/runs/$runId',
-  getParentRoute: () => ShellRoute,
-} as any)
-const ShellMethodsNewRoute = ShellMethodsNewRouteImport.update({
-  id: '/methods/new',
-  path: '/methods/new',
-  getParentRoute: () => ShellRoute,
-} as any)
-const ShellMethodsCompareRoute = ShellMethodsCompareRouteImport.update({
-  id: '/methods/compare',
-  path: '/methods/compare',
-  getParentRoute: () => ShellRoute,
-} as any)
-const ShellMethodsMethodIdRoute = ShellMethodsMethodIdRouteImport.update({
-  id: '/methods/$methodId',
-  path: '/methods/$methodId',
   getParentRoute: () => ShellRoute,
 } as any)
 const ShellColumnsColumnIdRoute = ShellColumnsColumnIdRouteImport.update({
@@ -176,15 +145,70 @@ const ShellColumnsColumnIdRoute = ShellColumnsColumnIdRouteImport.update({
   path: '/columns/$columnId',
   getParentRoute: () => ShellRoute,
 } as any)
-const ShellBatchesBatchIdRoute = ShellBatchesBatchIdRouteImport.update({
-  id: '/$batchId',
-  path: '/$batchId',
-  getParentRoute: () => ShellBatchesRoute,
+const ShellMethodsIndexRoute = ShellMethodsIndexRouteImport.update({
+  id: '/methods/',
+  path: '/methods/',
+  getParentRoute: () => ShellRoute,
 } as any)
-const ShellAnalytesAnalyteIdRoute = ShellAnalytesAnalyteIdRouteImport.update({
-  id: '/$analyteId',
-  path: '/$analyteId',
-  getParentRoute: () => ShellAnalytesRoute,
+const ShellMethodsMethodIdRoute = ShellMethodsMethodIdRouteImport.update({
+  id: '/methods/$methodId',
+  path: '/methods/$methodId',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ShellMethodsCompareRoute = ShellMethodsCompareRouteImport.update({
+  id: '/methods/compare',
+  path: '/methods/compare',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ShellMethodsNewRoute = ShellMethodsNewRouteImport.update({
+  id: '/methods/new',
+  path: '/methods/new',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ShellRunsIndexRoute = ShellRunsIndexRouteImport.update({
+  id: '/runs/',
+  path: '/runs/',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ShellRunsRunIdRoute = ShellRunsRunIdRouteImport.update({
+  id: '/runs/$runId',
+  path: '/runs/$runId',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ApiAuthLoginRoute = ApiAuthLoginRouteImport.update({
+  id: '/api/auth/login',
+  path: '/api/auth/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAuthLogoutRoute = ApiAuthLogoutRouteImport.update({
+  id: '/api/auth/logout',
+  path: '/api/auth/logout',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAuthMeRoute = ApiAuthMeRouteImport.update({
+  id: '/api/auth/me',
+  path: '/api/auth/me',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAuthResetRoute = ApiAuthResetRouteImport.update({
+  id: '/api/auth/reset',
+  path: '/api/auth/reset',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAuthResetRequestRoute = ApiAuthResetRequestRouteImport.update({
+  id: '/api/auth/reset-request',
+  path: '/api/auth/reset-request',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAuthSignupRoute = ApiAuthSignupRouteImport.update({
+  id: '/api/auth/signup',
+  path: '/api/auth/signup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicBootstrapAdminRoute = ApiPublicBootstrapAdminRouteImport.update({
+  id: '/api/public/bootstrap-admin',
+  path: '/api/public/bootstrap-admin',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ShellMethodsMethodIdIndexRoute =
   ShellMethodsMethodIdIndexRouteImport.update({
@@ -192,16 +216,16 @@ const ShellMethodsMethodIdIndexRoute =
     path: '/',
     getParentRoute: () => ShellMethodsMethodIdRoute,
   } as any)
-const ShellMethodsMethodIdHistoryRoute =
-  ShellMethodsMethodIdHistoryRouteImport.update({
-    id: '/history',
-    path: '/history',
-    getParentRoute: () => ShellMethodsMethodIdRoute,
-  } as any)
 const ShellMethodsMethodIdEditRoute =
   ShellMethodsMethodIdEditRouteImport.update({
     id: '/edit',
     path: '/edit',
+    getParentRoute: () => ShellMethodsMethodIdRoute,
+  } as any)
+const ShellMethodsMethodIdHistoryRoute =
+  ShellMethodsMethodIdHistoryRouteImport.update({
+    id: '/history',
+    path: '/history',
     getParentRoute: () => ShellMethodsMethodIdRoute,
   } as any)
 
@@ -214,8 +238,12 @@ export interface FileRoutesByFullPath {
   '/admin': typeof ShellAdminRoute
   '/analytes': typeof ShellAnalytesRouteWithChildren
   '/batches': typeof ShellBatchesRouteWithChildren
+  '/compound-lists': typeof ShellCompoundListsRoute
   '/overlay': typeof ShellOverlayRoute
+  '/quant': typeof ShellQuantRoute
   '/reports': typeof ShellReportsRoute
+  '/api/asset': typeof ApiAssetRoute
+  '/api/upload': typeof ApiUploadRoute
   '/shared/$token': typeof SharedTokenRoute
   '/analytes/$analyteId': typeof ShellAnalytesAnalyteIdRoute
   '/batches/$batchId': typeof ShellBatchesBatchIdRoute
@@ -246,8 +274,12 @@ export interface FileRoutesByTo {
   '/admin': typeof ShellAdminRoute
   '/analytes': typeof ShellAnalytesRouteWithChildren
   '/batches': typeof ShellBatchesRouteWithChildren
+  '/compound-lists': typeof ShellCompoundListsRoute
   '/overlay': typeof ShellOverlayRoute
+  '/quant': typeof ShellQuantRoute
   '/reports': typeof ShellReportsRoute
+  '/api/asset': typeof ApiAssetRoute
+  '/api/upload': typeof ApiUploadRoute
   '/shared/$token': typeof SharedTokenRoute
   '/': typeof ShellIndexRoute
   '/analytes/$analyteId': typeof ShellAnalytesAnalyteIdRoute
@@ -280,8 +312,12 @@ export interface FileRoutesById {
   '/_shell/admin': typeof ShellAdminRoute
   '/_shell/analytes': typeof ShellAnalytesRouteWithChildren
   '/_shell/batches': typeof ShellBatchesRouteWithChildren
+  '/_shell/compound-lists': typeof ShellCompoundListsRoute
   '/_shell/overlay': typeof ShellOverlayRoute
+  '/_shell/quant': typeof ShellQuantRoute
   '/_shell/reports': typeof ShellReportsRoute
+  '/api/asset': typeof ApiAssetRoute
+  '/api/upload': typeof ApiUploadRoute
   '/shared/$token': typeof SharedTokenRoute
   '/_shell/': typeof ShellIndexRoute
   '/_shell/analytes/$analyteId': typeof ShellAnalytesAnalyteIdRoute
@@ -316,8 +352,12 @@ export interface FileRouteTypes {
     | '/admin'
     | '/analytes'
     | '/batches'
+    | '/compound-lists'
     | '/overlay'
+    | '/quant'
     | '/reports'
+    | '/api/asset'
+    | '/api/upload'
     | '/shared/$token'
     | '/analytes/$analyteId'
     | '/batches/$batchId'
@@ -348,8 +388,12 @@ export interface FileRouteTypes {
     | '/admin'
     | '/analytes'
     | '/batches'
+    | '/compound-lists'
     | '/overlay'
+    | '/quant'
     | '/reports'
+    | '/api/asset'
+    | '/api/upload'
     | '/shared/$token'
     | '/'
     | '/analytes/$analyteId'
@@ -381,8 +425,12 @@ export interface FileRouteTypes {
     | '/_shell/admin'
     | '/_shell/analytes'
     | '/_shell/batches'
+    | '/_shell/compound-lists'
     | '/_shell/overlay'
+    | '/_shell/quant'
     | '/_shell/reports'
+    | '/api/asset'
+    | '/api/upload'
     | '/shared/$token'
     | '/_shell/'
     | '/_shell/analytes/$analyteId'
@@ -412,6 +460,8 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SignupRoute: typeof SignupRoute
+  ApiAssetRoute: typeof ApiAssetRoute
+  ApiUploadRoute: typeof ApiUploadRoute
   SharedTokenRoute: typeof SharedTokenRoute
   ApiAuthLoginRoute: typeof ApiAuthLoginRoute
   ApiAuthLogoutRoute: typeof ApiAuthLogoutRoute
@@ -424,18 +474,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/signup': {
-      id: '/signup'
-      path: '/signup'
-      fullPath: '/signup'
-      preLoaderRoute: typeof SignupRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/reset-password': {
-      id: '/reset-password'
-      path: '/reset-password'
-      fullPath: '/reset-password'
-      preLoaderRoute: typeof ResetPasswordRouteImport
+    '/_shell': {
+      id: '/_shell'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof ShellRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -445,11 +488,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_shell': {
-      id: '/_shell'
-      path: ''
-      fullPath: '/'
-      preLoaderRoute: typeof ShellRouteImport
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/signup': {
+      id: '/signup'
+      path: '/signup'
+      fullPath: '/signup'
+      preLoaderRoute: typeof SignupRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_shell/': {
@@ -459,39 +509,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellIndexRouteImport
       parentRoute: typeof ShellRoute
     }
-    '/shared/$token': {
-      id: '/shared/$token'
-      path: '/shared/$token'
-      fullPath: '/shared/$token'
-      preLoaderRoute: typeof SharedTokenRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/_shell/reports': {
-      id: '/_shell/reports'
-      path: '/reports'
-      fullPath: '/reports'
-      preLoaderRoute: typeof ShellReportsRouteImport
-      parentRoute: typeof ShellRoute
-    }
-    '/_shell/overlay': {
-      id: '/_shell/overlay'
-      path: '/overlay'
-      fullPath: '/overlay'
-      preLoaderRoute: typeof ShellOverlayRouteImport
-      parentRoute: typeof ShellRoute
-    }
-    '/_shell/batches': {
-      id: '/_shell/batches'
-      path: '/batches'
-      fullPath: '/batches'
-      preLoaderRoute: typeof ShellBatchesRouteImport
-      parentRoute: typeof ShellRoute
-    }
-    '/_shell/analytes': {
-      id: '/_shell/analytes'
-      path: '/analytes'
-      fullPath: '/analytes'
-      preLoaderRoute: typeof ShellAnalytesRouteImport
+    '/_shell/account': {
+      id: '/_shell/account'
+      path: '/account'
+      fullPath: '/account'
+      preLoaderRoute: typeof ShellAccountRouteImport
       parentRoute: typeof ShellRoute
     }
     '/_shell/admin': {
@@ -501,109 +523,88 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellAdminRouteImport
       parentRoute: typeof ShellRoute
     }
-    '/_shell/account': {
-      id: '/_shell/account'
-      path: '/account'
-      fullPath: '/account'
-      preLoaderRoute: typeof ShellAccountRouteImport
+    '/_shell/analytes': {
+      id: '/_shell/analytes'
+      path: '/analytes'
+      fullPath: '/analytes'
+      preLoaderRoute: typeof ShellAnalytesRouteImport
       parentRoute: typeof ShellRoute
     }
-    '/_shell/runs/': {
-      id: '/_shell/runs/'
-      path: '/runs'
-      fullPath: '/runs/'
-      preLoaderRoute: typeof ShellRunsIndexRouteImport
+    '/_shell/batches': {
+      id: '/_shell/batches'
+      path: '/batches'
+      fullPath: '/batches'
+      preLoaderRoute: typeof ShellBatchesRouteImport
       parentRoute: typeof ShellRoute
     }
-    '/_shell/methods/': {
-      id: '/_shell/methods/'
-      path: '/methods'
-      fullPath: '/methods/'
-      preLoaderRoute: typeof ShellMethodsIndexRouteImport
+    '/_shell/compound-lists': {
+      id: '/_shell/compound-lists'
+      path: '/compound-lists'
+      fullPath: '/compound-lists'
+      preLoaderRoute: typeof ShellCompoundListsRouteImport
       parentRoute: typeof ShellRoute
+    }
+    '/_shell/overlay': {
+      id: '/_shell/overlay'
+      path: '/overlay'
+      fullPath: '/overlay'
+      preLoaderRoute: typeof ShellOverlayRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/quant': {
+      id: '/_shell/quant'
+      path: '/quant'
+      fullPath: '/quant'
+      preLoaderRoute: typeof ShellQuantRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/reports': {
+      id: '/_shell/reports'
+      path: '/reports'
+      fullPath: '/reports'
+      preLoaderRoute: typeof ShellReportsRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/api/asset': {
+      id: '/api/asset'
+      path: '/api/asset'
+      fullPath: '/api/asset'
+      preLoaderRoute: typeof ApiAssetRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/upload': {
+      id: '/api/upload'
+      path: '/api/upload'
+      fullPath: '/api/upload'
+      preLoaderRoute: typeof ApiUploadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/shared/$token': {
+      id: '/shared/$token'
+      path: '/shared/$token'
+      fullPath: '/shared/$token'
+      preLoaderRoute: typeof SharedTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_shell/analytes/$analyteId': {
+      id: '/_shell/analytes/$analyteId'
+      path: '/$analyteId'
+      fullPath: '/analytes/$analyteId'
+      preLoaderRoute: typeof ShellAnalytesAnalyteIdRouteImport
+      parentRoute: typeof ShellAnalytesRoute
+    }
+    '/_shell/batches/$batchId': {
+      id: '/_shell/batches/$batchId'
+      path: '/$batchId'
+      fullPath: '/batches/$batchId'
+      preLoaderRoute: typeof ShellBatchesBatchIdRouteImport
+      parentRoute: typeof ShellBatchesRoute
     }
     '/_shell/columns/': {
       id: '/_shell/columns/'
       path: '/columns'
       fullPath: '/columns/'
       preLoaderRoute: typeof ShellColumnsIndexRouteImport
-      parentRoute: typeof ShellRoute
-    }
-    '/api/public/bootstrap-admin': {
-      id: '/api/public/bootstrap-admin'
-      path: '/api/public/bootstrap-admin'
-      fullPath: '/api/public/bootstrap-admin'
-      preLoaderRoute: typeof ApiPublicBootstrapAdminRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/auth/signup': {
-      id: '/api/auth/signup'
-      path: '/api/auth/signup'
-      fullPath: '/api/auth/signup'
-      preLoaderRoute: typeof ApiAuthSignupRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/auth/reset-request': {
-      id: '/api/auth/reset-request'
-      path: '/api/auth/reset-request'
-      fullPath: '/api/auth/reset-request'
-      preLoaderRoute: typeof ApiAuthResetRequestRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/auth/reset': {
-      id: '/api/auth/reset'
-      path: '/api/auth/reset'
-      fullPath: '/api/auth/reset'
-      preLoaderRoute: typeof ApiAuthResetRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/auth/me': {
-      id: '/api/auth/me'
-      path: '/api/auth/me'
-      fullPath: '/api/auth/me'
-      preLoaderRoute: typeof ApiAuthMeRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/auth/logout': {
-      id: '/api/auth/logout'
-      path: '/api/auth/logout'
-      fullPath: '/api/auth/logout'
-      preLoaderRoute: typeof ApiAuthLogoutRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/auth/login': {
-      id: '/api/auth/login'
-      path: '/api/auth/login'
-      fullPath: '/api/auth/login'
-      preLoaderRoute: typeof ApiAuthLoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/_shell/runs/$runId': {
-      id: '/_shell/runs/$runId'
-      path: '/runs/$runId'
-      fullPath: '/runs/$runId'
-      preLoaderRoute: typeof ShellRunsRunIdRouteImport
-      parentRoute: typeof ShellRoute
-    }
-    '/_shell/methods/new': {
-      id: '/_shell/methods/new'
-      path: '/methods/new'
-      fullPath: '/methods/new'
-      preLoaderRoute: typeof ShellMethodsNewRouteImport
-      parentRoute: typeof ShellRoute
-    }
-    '/_shell/methods/compare': {
-      id: '/_shell/methods/compare'
-      path: '/methods/compare'
-      fullPath: '/methods/compare'
-      preLoaderRoute: typeof ShellMethodsCompareRouteImport
-      parentRoute: typeof ShellRoute
-    }
-    '/_shell/methods/$methodId': {
-      id: '/_shell/methods/$methodId'
-      path: '/methods/$methodId'
-      fullPath: '/methods/$methodId'
-      preLoaderRoute: typeof ShellMethodsMethodIdRouteImport
       parentRoute: typeof ShellRoute
     }
     '/_shell/columns/$columnId': {
@@ -613,19 +614,96 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellColumnsColumnIdRouteImport
       parentRoute: typeof ShellRoute
     }
-    '/_shell/batches/$batchId': {
-      id: '/_shell/batches/$batchId'
-      path: '/$batchId'
-      fullPath: '/batches/$batchId'
-      preLoaderRoute: typeof ShellBatchesBatchIdRouteImport
-      parentRoute: typeof ShellBatchesRoute
+    '/_shell/methods/': {
+      id: '/_shell/methods/'
+      path: '/methods'
+      fullPath: '/methods/'
+      preLoaderRoute: typeof ShellMethodsIndexRouteImport
+      parentRoute: typeof ShellRoute
     }
-    '/_shell/analytes/$analyteId': {
-      id: '/_shell/analytes/$analyteId'
-      path: '/$analyteId'
-      fullPath: '/analytes/$analyteId'
-      preLoaderRoute: typeof ShellAnalytesAnalyteIdRouteImport
-      parentRoute: typeof ShellAnalytesRoute
+    '/_shell/methods/$methodId': {
+      id: '/_shell/methods/$methodId'
+      path: '/methods/$methodId'
+      fullPath: '/methods/$methodId'
+      preLoaderRoute: typeof ShellMethodsMethodIdRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/methods/compare': {
+      id: '/_shell/methods/compare'
+      path: '/methods/compare'
+      fullPath: '/methods/compare'
+      preLoaderRoute: typeof ShellMethodsCompareRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/methods/new': {
+      id: '/_shell/methods/new'
+      path: '/methods/new'
+      fullPath: '/methods/new'
+      preLoaderRoute: typeof ShellMethodsNewRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/runs/': {
+      id: '/_shell/runs/'
+      path: '/runs'
+      fullPath: '/runs/'
+      preLoaderRoute: typeof ShellRunsIndexRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/runs/$runId': {
+      id: '/_shell/runs/$runId'
+      path: '/runs/$runId'
+      fullPath: '/runs/$runId'
+      preLoaderRoute: typeof ShellRunsRunIdRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/api/auth/login': {
+      id: '/api/auth/login'
+      path: '/api/auth/login'
+      fullPath: '/api/auth/login'
+      preLoaderRoute: typeof ApiAuthLoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/auth/logout': {
+      id: '/api/auth/logout'
+      path: '/api/auth/logout'
+      fullPath: '/api/auth/logout'
+      preLoaderRoute: typeof ApiAuthLogoutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/auth/me': {
+      id: '/api/auth/me'
+      path: '/api/auth/me'
+      fullPath: '/api/auth/me'
+      preLoaderRoute: typeof ApiAuthMeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/auth/reset': {
+      id: '/api/auth/reset'
+      path: '/api/auth/reset'
+      fullPath: '/api/auth/reset'
+      preLoaderRoute: typeof ApiAuthResetRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/auth/reset-request': {
+      id: '/api/auth/reset-request'
+      path: '/api/auth/reset-request'
+      fullPath: '/api/auth/reset-request'
+      preLoaderRoute: typeof ApiAuthResetRequestRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/auth/signup': {
+      id: '/api/auth/signup'
+      path: '/api/auth/signup'
+      fullPath: '/api/auth/signup'
+      preLoaderRoute: typeof ApiAuthSignupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/bootstrap-admin': {
+      id: '/api/public/bootstrap-admin'
+      path: '/api/public/bootstrap-admin'
+      fullPath: '/api/public/bootstrap-admin'
+      preLoaderRoute: typeof ApiPublicBootstrapAdminRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_shell/methods/$methodId/': {
       id: '/_shell/methods/$methodId/'
@@ -634,18 +712,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellMethodsMethodIdIndexRouteImport
       parentRoute: typeof ShellMethodsMethodIdRoute
     }
-    '/_shell/methods/$methodId/history': {
-      id: '/_shell/methods/$methodId/history'
-      path: '/history'
-      fullPath: '/methods/$methodId/history'
-      preLoaderRoute: typeof ShellMethodsMethodIdHistoryRouteImport
-      parentRoute: typeof ShellMethodsMethodIdRoute
-    }
     '/_shell/methods/$methodId/edit': {
       id: '/_shell/methods/$methodId/edit'
       path: '/edit'
       fullPath: '/methods/$methodId/edit'
       preLoaderRoute: typeof ShellMethodsMethodIdEditRouteImport
+      parentRoute: typeof ShellMethodsMethodIdRoute
+    }
+    '/_shell/methods/$methodId/history': {
+      id: '/_shell/methods/$methodId/history'
+      path: '/history'
+      fullPath: '/methods/$methodId/history'
+      preLoaderRoute: typeof ShellMethodsMethodIdHistoryRouteImport
       parentRoute: typeof ShellMethodsMethodIdRoute
     }
   }
@@ -695,7 +773,9 @@ interface ShellRouteChildren {
   ShellAdminRoute: typeof ShellAdminRoute
   ShellAnalytesRoute: typeof ShellAnalytesRouteWithChildren
   ShellBatchesRoute: typeof ShellBatchesRouteWithChildren
+  ShellCompoundListsRoute: typeof ShellCompoundListsRoute
   ShellOverlayRoute: typeof ShellOverlayRoute
+  ShellQuantRoute: typeof ShellQuantRoute
   ShellReportsRoute: typeof ShellReportsRoute
   ShellIndexRoute: typeof ShellIndexRoute
   ShellColumnsColumnIdRoute: typeof ShellColumnsColumnIdRoute
@@ -713,7 +793,9 @@ const ShellRouteChildren: ShellRouteChildren = {
   ShellAdminRoute: ShellAdminRoute,
   ShellAnalytesRoute: ShellAnalytesRouteWithChildren,
   ShellBatchesRoute: ShellBatchesRouteWithChildren,
+  ShellCompoundListsRoute: ShellCompoundListsRoute,
   ShellOverlayRoute: ShellOverlayRoute,
+  ShellQuantRoute: ShellQuantRoute,
   ShellReportsRoute: ShellReportsRoute,
   ShellIndexRoute: ShellIndexRoute,
   ShellColumnsColumnIdRoute: ShellColumnsColumnIdRoute,
@@ -733,6 +815,8 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SignupRoute: SignupRoute,
+  ApiAssetRoute: ApiAssetRoute,
+  ApiUploadRoute: ApiUploadRoute,
   SharedTokenRoute: SharedTokenRoute,
   ApiAuthLoginRoute: ApiAuthLoginRoute,
   ApiAuthLogoutRoute: ApiAuthLogoutRoute,

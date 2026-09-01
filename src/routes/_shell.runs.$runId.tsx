@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
-import { ArrowLeft, Sparkles, Download, Activity, Trash2, Share2 } from "lucide-react";
+import { ArrowLeft, Sparkles, Download, Activity, Trash2, Share2, Pencil, Check, X } from "lucide-react";
 import { ShareDialog } from "@/components/share-dialog";
 import {
   AlertDialog,
@@ -27,7 +27,7 @@ import { MS2Viewer } from "@/components/ms2-viewer";
 import { SystemSuitability } from "@/components/system-suitability";
 import { ago } from "@/lib/time";
 import { toast } from "sonner";
-import { getRunEIC, getRunEICBatch, deleteRun, addManualPeak, unassignPeaks } from "@/lib/lab.functions";
+import { getRunEIC, getRunEICBatch, deleteRun, addManualPeak, unassignPeaks, updateRunName } from "@/lib/lab.functions";
 import { integrateBand, type IntegrationResult } from "@/lib/peak-math";
 import { mzFromFormula, defaultAdduct, ADDUCTS_POS, ADDUCTS_NEG, type Adduct } from "@/lib/chem";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -59,13 +59,18 @@ function RunDetail() {
   const { runs, methods, columns, analytes } = useLab();
   const annotatePeak = useAnnotatePeak();
   const removeRunLocal = useLab((s) => s.removeRunLocal);
+  const updateRunNameLocal = useLab((s) => s.updateRunNameLocal);
   const deleteRunFn = useServerFn(deleteRun);
+  const updateRunNameFn = useServerFn(updateRunName);
   const nav = useNavigate();
   const run = runs.find((r) => r.id === runId);
   if (!run) throw notFound();
   const method = methods.find((m) => m.id === run.methodId);
   const column = columns.find((c) => c.id === run.columnId);
   const [selectedId, setSelected] = useState<string | undefined>(run.peaks[0]?.id);
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState(run.name);
+  const [savingName, setSavingName] = useState(false);
   const [selectedTargetId, setSelectedTargetId] = useState<string | undefined>(undefined);
   const [selectedTargetName, setSelectedTargetName] = useState<string | undefined>(undefined);
   const [annotation, setAnnotation] = useState("");
@@ -88,6 +93,26 @@ function RunDetail() {
       );
     } catch (err: any) {
       toast.error(err?.message ?? "Failed to clear assignment");
+    }
+  };
+
+  const handleSaveName = async () => {
+    const trimmed = nameDraft.trim();
+    if (!trimmed || trimmed === run.name) {
+      setEditingName(false);
+      setNameDraft(run.name);
+      return;
+    }
+    setSavingName(true);
+    try {
+      await updateRunNameFn({ data: { runId: run.id, name: trimmed } });
+      updateRunNameLocal(run.id, trimmed);
+      setEditingName(false);
+      toast.success("Run renamed");
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to rename run");
+    } finally {
+      setSavingName(false);
     }
   };
 
@@ -381,7 +406,38 @@ function RunDetail() {
           <Link to="/runs" className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
             <ArrowLeft className="h-3 w-3" /> All runs
           </Link>
-          <h1 className="mt-1 font-mono text-xl font-semibold tracking-tight">{run.name}</h1>
+          {editingName ? (
+            <div className="mt-1 flex items-center gap-2">
+              <Input
+                value={nameDraft}
+                onChange={(e) => setNameDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSaveName();
+                  if (e.key === "Escape") { setEditingName(false); setNameDraft(run.name); }
+                }}
+                className="h-8 max-w-md font-mono text-xl font-semibold"
+                autoFocus
+                disabled={savingName}
+              />
+              <Button size="sm" variant="ghost" onClick={handleSaveName} disabled={savingName}>
+                <Check className="h-4 w-4" />
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => { setEditingName(false); setNameDraft(run.name); }} disabled={savingName}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          ) : (
+            <div className="mt-1 flex items-center gap-2">
+              <h1 className="font-mono text-xl font-semibold tracking-tight">{run.name}</h1>
+              <button
+                onClick={() => { setNameDraft(run.name); setEditingName(true); }}
+                className="text-muted-foreground hover:text-foreground"
+                title="Rename run"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
             <span>{method?.name}</span>·<span>{column?.name}</span>·
             <Badge variant="outline" className="text-[10px]">

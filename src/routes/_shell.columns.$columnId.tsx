@@ -1,14 +1,56 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { useLab } from "@/lib/store";
 import type { Column } from "@/lib/lab-types";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { StatusDot } from "@/components/status-dot";
 import { ColumnServicePanel } from "@/components/column-service-panel";
-import { ArrowLeft, Activity, FlaskConical, Gauge } from "lucide-react";
+import { ArrowLeft, Activity, FlaskConical, Gauge, Plus, Pencil, Trash2 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { toast } from "sonner";
+import {
+  createInjection,
+  updateInjection,
+  deleteInjection,
+} from "@/lib/lab.functions";
 import {
   LineChart,
   Line,
@@ -58,7 +100,98 @@ function ColumnDetailGate() {
 }
 
 function ColumnDetail({ column }: { column: Column }) {
-  const { methods, runs } = useLab();
+  const { methods, runs, injections } = useLab();
+  const upsertInjectionLocal = useLab((s) => s.upsertInjectionLocal);
+  const removeInjectionLocal = useLab((s) => s.removeInjectionLocal);
+  const createInjectionFn = useServerFn(createInjection);
+  const updateInjectionFn = useServerFn(updateInjection);
+  const deleteInjectionFn = useServerFn(deleteInjection);
+
+  const columnInjections = useMemo(
+    () => injections.filter((i) => i.columnId === column.id).sort((a, b) => a.injectionNum - b.injectionNum),
+    [injections, column.id],
+  );
+  const nextInjectionNum = columnInjections.length > 0
+    ? Math.max(...columnInjections.map((i) => i.injectionNum)) + 1
+    : 1;
+
+  const [showInjDialog, setShowInjDialog] = useState(false);
+  const [editingInj, setEditingInj] = useState<string | null>(null);
+  const [injSeq, setInjSeq] = useState("");
+  const [injNum, setInjNum] = useState(1);
+  const [injPressure, setInjPressure] = useState("");
+  const [injMethod, setInjMethod] = useState("");
+  const [injRun, setInjRun] = useState("");
+  const [injNotes, setInjNotes] = useState("");
+  const [savingInj, setSavingInj] = useState(false);
+  const [deleteInjId, setDeleteInjId] = useState<string | null>(null);
+
+  const openNewInj = () => {
+    setEditingInj(null);
+    setInjSeq("");
+    setInjNum(nextInjectionNum);
+    setInjPressure("");
+    setInjMethod("");
+    setInjRun("");
+    setInjNotes("");
+    setShowInjDialog(true);
+  };
+
+  const openEditInj = (id: string) => {
+    const inj = columnInjections.find((i) => i.id === id);
+    if (!inj) return;
+    setEditingInj(id);
+    setInjSeq(inj.sequenceName);
+    setInjNum(inj.injectionNum);
+    setInjPressure(inj.startingPressure != null ? String(inj.startingPressure) : "");
+    setInjMethod(inj.methodId ?? "");
+    setInjRun(inj.runId ?? "");
+    setInjNotes(inj.notes);
+    setShowInjDialog(true);
+  };
+
+  const saveInj = async () => {
+    setSavingInj(true);
+    try {
+      const payload = {
+        columnId: column.id,
+        methodId: injMethod || null,
+        sequenceName: injSeq,
+        injectionNum: injNum,
+        startingPressure: injPressure ? parseFloat(injPressure) : null,
+        notes: injNotes,
+        runId: injRun || null,
+      };
+      if (editingInj) {
+        const updated = await updateInjectionFn({ data: { id: editingInj, ...payload } });
+        upsertInjectionLocal(updated as any);
+        toast.success("Injection updated");
+      } else {
+        const created = await createInjectionFn({ data: payload });
+        upsertInjectionLocal(created as any);
+        toast.success("Injection logged");
+      }
+      setShowInjDialog(false);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to save injection");
+    } finally {
+      setSavingInj(false);
+    }
+  };
+
+  const confirmDeleteInj = async () => {
+    if (!deleteInjId) return;
+    try {
+      await deleteInjectionFn({ data: { id: deleteInjId } });
+      removeInjectionLocal(deleteInjId);
+      toast.success("Injection deleted");
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to delete injection");
+    } finally {
+      setDeleteInjId(null);
+    }
+  };
+
   const linkedMethods = useMemo(
     () => methods.filter((m) => m.columnId === column.id),
     [methods, column.id],
@@ -129,6 +262,63 @@ function ColumnDetail({ column }: { column: Column }) {
       </div>
 
       <ColumnServicePanel column={column} />
+
+      <Card className="border-border bg-card p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+              Injection log
+            </div>
+            <h2 className="text-sm font-semibold">{columnInjections.length} injection{columnInjections.length === 1 ? "" : "s"}</h2>
+          </div>
+          <Button size="sm" variant="outline" onClick={openNewInj}>
+            <Plus className="mr-1 h-3.5 w-3.5" /> Log Injection
+          </Button>
+        </div>
+        {columnInjections.length > 0 && (
+          <div className="mt-3 overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="h-8 text-[10px] uppercase">Seq</TableHead>
+                  <TableHead className="h-8 text-[10px] uppercase">Inj #</TableHead>
+                  <TableHead className="h-8 text-[10px] uppercase">Method</TableHead>
+                  <TableHead className="h-8 text-[10px] uppercase">Start psi</TableHead>
+                  <TableHead className="h-8 text-[10px] uppercase">Run</TableHead>
+                  <TableHead className="h-8 text-[10px] uppercase">Notes</TableHead>
+                  <TableHead className="h-8 w-16" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {columnInjections.map((inj) => {
+                  const m = methods.find((x) => x.id === inj.methodId);
+                  const r = runs.find((x) => x.id === inj.runId);
+                  return (
+                    <TableRow key={inj.id}>
+                      <TableCell className="py-1.5 text-xs">{inj.sequenceName || "—"}</TableCell>
+                      <TableCell className="py-1.5 text-xs font-mono">{inj.injectionNum}</TableCell>
+                      <TableCell className="py-1.5 text-xs">{m?.name ?? "—"}</TableCell>
+                      <TableCell className="py-1.5 text-xs font-mono">{inj.startingPressure != null ? `${inj.startingPressure}` : "—"}</TableCell>
+                      <TableCell className="py-1.5 text-xs font-mono">{r?.name ?? "—"}</TableCell>
+                      <TableCell className="py-1.5 text-xs max-w-[200px] truncate">{inj.notes || "—"}</TableCell>
+                      <TableCell className="py-1.5">
+                        <div className="flex gap-1">
+                          <button onClick={() => openEditInj(inj.id)} className="text-muted-foreground hover:text-foreground">
+                            <Pencil className="h-3 w-3" />
+                          </button>
+                          <button onClick={() => setDeleteInjId(inj.id)} className="text-muted-foreground hover:text-destructive">
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </Card>
 
       <Card className="border-border bg-card p-4">
         <div className="flex flex-wrap items-end justify-between gap-2">
@@ -233,6 +423,76 @@ function ColumnDetail({ column }: { column: Column }) {
           {column.notes || <span className="text-muted-foreground">No notes recorded.</span>}
         </p>
       </Card>
+
+      <Dialog open={showInjDialog} onOpenChange={setShowInjDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editingInj ? "Edit injection" : "Log injection"}</DialogTitle>
+            <DialogDescription>
+              Track individual injections on this column.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 py-2">
+            <div className="grid gap-1.5">
+              <Label className="text-xs">Sequence name</Label>
+              <Input value={injSeq} onChange={(e) => setInjSeq(e.target.value)} placeholder="e.g. Batch-2026-001" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label className="text-xs">Injection number</Label>
+                <Input type="number" value={injNum} onChange={(e) => setInjNum(parseInt(e.target.value) || 1)} min={1} />
+              </div>
+              <div className="grid gap-1.5">
+                <Label className="text-xs">Starting pressure (bar)</Label>
+                <Input type="number" value={injPressure} onChange={(e) => setInjPressure(e.target.value)} placeholder="e.g. 380" />
+              </div>
+            </div>
+            <div className="grid gap-1.5">
+              <Label className="text-xs">Method</Label>
+              <Select value={injMethod} onValueChange={setInjMethod}>
+                <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Select method" /></SelectTrigger>
+                <SelectContent>
+                  {methods.map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-1.5">
+              <Label className="text-xs">Linked run (optional)</Label>
+              <Select value={injRun} onValueChange={setInjRun}>
+                <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="None" /></SelectTrigger>
+                <SelectContent>
+                  {linkedRuns.map((r) => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-1.5">
+              <Label className="text-xs">Notes</Label>
+              <Input value={injNotes} onChange={(e) => setInjNotes(e.target.value)} placeholder="Optional notes" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowInjDialog(false)}>Cancel</Button>
+            <Button onClick={saveInj} disabled={savingInj || !injSeq}>
+              {savingInj ? "Saving…" : editingInj ? "Update" : "Log injection"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!deleteInjId} onOpenChange={(open) => { if (!open) setDeleteInjId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete injection record?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently remove the injection record. The linked run will be unlinked.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteInj}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

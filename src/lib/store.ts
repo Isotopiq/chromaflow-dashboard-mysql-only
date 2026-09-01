@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Method, Run, Column, Batch, Analyte, User, Peak } from "./lab-types";
+import type { Method, Run, Column, Batch, Analyte, User, Peak, ColumnInjection, CompoundList, MethodColumnListDefault } from "./lab-types";
 
 const EMPTY_USER: User = {
   id: "",
@@ -17,6 +17,9 @@ type State = {
   batches: Batch[];
   analytes: Analyte[];
   users: User[];
+  injections: ColumnInjection[];
+  compoundLists: CompoundList[];
+  listDefaults: MethodColumnListDefault[];
   currentUser: User;
   hydrated: boolean;
   setAll: (s: {
@@ -25,6 +28,9 @@ type State = {
     columns: Column[];
     batches: Batch[];
     analytes: Analyte[];
+    injections: ColumnInjection[];
+    compoundLists: CompoundList[];
+    listDefaults: MethodColumnListDefault[];
     currentUser: User;
   }) => void;
   upsertMethodLocal: (m: Method) => void;
@@ -44,8 +50,14 @@ type State = {
   removeBatchLocal: (id: string) => void;
   updateBatchNotesLocal: (batchId: string, notes: string) => void;
   updateRunNotesLocal: (runId: string, notes: string) => void;
+  updateRunNameLocal: (runId: string, name: string) => void;
   updatePeakNotesLocal: (runId: string, peakId: string, notes: string) => void;
   setRunBatchLocal: (runId: string, batchId: string | null) => void;
+  upsertInjectionLocal: (i: ColumnInjection) => void;
+  removeInjectionLocal: (id: string) => void;
+  upsertCompoundListLocal: (cl: CompoundList) => void;
+  removeCompoundListLocal: (id: string) => void;
+  setListDefaultLocal: (d: MethodColumnListDefault | null, methodId: string, columnId: string) => void;
 };
 
 export const useLab = create<State>((set) => ({
@@ -55,6 +67,9 @@ export const useLab = create<State>((set) => ({
   batches: [],
   analytes: [],
   users: [],
+  injections: [],
+  compoundLists: [],
+  listDefaults: [],
   currentUser: EMPTY_USER,
   hydrated: false,
   setAll: (s) =>
@@ -64,6 +79,9 @@ export const useLab = create<State>((set) => ({
       columns: s.columns,
       batches: s.batches,
       analytes: s.analytes,
+      injections: s.injections,
+      compoundLists: s.compoundLists,
+      listDefaults: s.listDefaults,
       currentUser: s.currentUser,
       hydrated: true,
     })),
@@ -163,6 +181,10 @@ export const useLab = create<State>((set) => ({
     set((s) => ({
       runs: s.runs.map((r) => (r.id === runId ? { ...r, notes } : r)),
     })),
+  updateRunNameLocal: (runId, name) =>
+    set((s) => ({
+      runs: s.runs.map((r) => (r.id === runId ? { ...r, name } : r)),
+    })),
   updatePeakNotesLocal: (runId, peakId, notes) =>
     set((s) => ({
       runs: s.runs.map((r) =>
@@ -175,6 +197,32 @@ export const useLab = create<State>((set) => ({
     set((s) => ({
       runs: s.runs.map((r) => (r.id === runId ? { ...r, batchId: batchId ?? undefined } : r)),
     })),
+  upsertInjectionLocal: (i) =>
+    set((s) => ({
+      injections: s.injections.some((x) => x.id === i.id)
+        ? s.injections.map((x) => (x.id === i.id ? i : x))
+        : [...s.injections, i],
+    })),
+  removeInjectionLocal: (id) =>
+    set((s) => ({ injections: s.injections.filter((x) => x.id !== id) })),
+  upsertCompoundListLocal: (cl) =>
+    set((s) => ({
+      compoundLists: s.compoundLists.some((x) => x.id === cl.id)
+        ? s.compoundLists.map((x) => (x.id === cl.id ? cl : x))
+        : [...s.compoundLists, cl],
+    })),
+  removeCompoundListLocal: (id) =>
+    set((s) => ({
+      compoundLists: s.compoundLists.filter((x) => x.id !== id),
+      listDefaults: s.listDefaults.filter((d) => d.listId !== id),
+    })),
+  setListDefaultLocal: (d, methodId, columnId) =>
+    set((s) => {
+      const filtered = s.listDefaults.filter(
+        (x) => !(x.methodId === methodId && x.columnId === columnId),
+      );
+      return { listDefaults: d ? [...filtered, d] : filtered };
+    }),
 }));
 
 // Backwards-compat helpers used by older pages — they map to *Local + server fn.
