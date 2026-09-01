@@ -117,6 +117,14 @@ export async function parseMethodFile(file: File): Promise<ParsedMethodFile> {
     }
   }
 
+  // Decode the ENTIRE file as UTF-16LE for gradient scanning.
+  // Thermo .meth files are OLE compound documents — the gradient timetable
+  // can be split across multiple OLE streams, so scanning just the first
+  // 60KB after "Overview" misses entries that are in later streams.
+  // The full decode lets us find all time markers + pump flow patterns
+  // regardless of OLE stream boundaries.
+  const fullText = decodeUtf16LERange(bytes, 0, bytes.length);
+
   // Extract the MS method summary section (UTF-16LE)
   // Look for "Method Summary" which appears in the MS method section
   const msSummaryIdx = findUtf16LEPattern(bytes, "Method Summary");
@@ -132,7 +140,7 @@ export async function parseMethodFile(file: File): Promise<ParsedMethodFile> {
     );
   }
 
-  const lc = parseOverviewText(lcText);
+  const lc = parseOverviewText(lcText, fullText);
   const ms = parseMsMethodSummary(msText);
 
   // If we have per-pump gradients, pick the active pump (highest flow) as
@@ -196,7 +204,10 @@ function decodeUtf16LERange(bytes: Uint8Array, offset: number, length: number): 
 // ---- LC Overview parser ----
 
 /** Parse the human-readable overview text into LC fields. */
-function parseOverviewText(text: string): Omit<ParsedMethodFile, "msGlobalSettings" | "msScans" | "rawText"> {
+function parseOverviewText(
+  text: string,
+  fullText: string,
+): Omit<ParsedMethodFile, "msGlobalSettings" | "msScans" | "rawText"> {
   const get = (re: RegExp): string | null => {
     const m = text.match(re);
     return m ? m[1].trim() : null;
@@ -223,8 +234,10 @@ function parseOverviewText(text: string): Omit<ParsedMethodFile, "msGlobalSettin
 
   const injectionVolumeUl = getNum(/InjectVolume:\s*([\d.]+)/);
 
-  // Parse per-pump gradients (detects multiple pumps like LeftPumpBlue / RightPumpRed)
-  const pumpGradients = parsePumpGradients(text);
+  // Parse per-pump gradients using the FULL file text (not just the overview
+  // section) because the gradient timetable can be split across multiple OLE
+  // streams in the .meth file.
+  const pumpGradients = parsePumpGradients(fullText);
 
   // Use the legacy parser as a fallback if per-pump parsing found nothing
   let gradient: { time: number; pctB: number; flow: number }[];
@@ -237,7 +250,7 @@ function parseOverviewText(text: string): Omit<ParsedMethodFile, "msGlobalSettin
     });
     gradient = activePump.gradient;
   } else {
-    gradient = parseGradientTimetable(text);
+    gradient = parseGradientTimetable(fullText);
   }
 
   const flowRate = gradient.length > 0
@@ -268,19 +281,18 @@ function parseOverviewText(text: string): Omit<ParsedMethodFile, "msGlobalSettin
  *   PumpModuleRed.RightPumpRed.Flow.Nominal: 0.260 [ml/min]
  *   PumpModuleRed.RightPumpRed.%B.Value: 35.0 [%]
  * This function detects all pump prefixes and returns a gradient per pump.
+ *
+ * IMPORTANT: The gradient timetable can be split across multiple OLE streams
+ * in the .meth file. We scan the ENTIRE decoded text for time markers and
+ * pump data, not just the section between "[min] Run" and "Stop Run".
  */
 function parsePumpGradients(text: string): PumpGradient[] {
-  const runIdx = text.indexOf("[min] Run");
-  if (runIdx < 0) return [];
-  const stopIdx = text.indexOf("Stop Run", runIdx);
-  const section = text.slice(runIdx, stopIdx > 0 ? stopIdx : undefined);
-
-  // Detect all unique pump prefixes from Flow.Nominal lines
-  // e.g. "PumpModuleBlue.LeftPumpBlue.Flow.Nominal:" → prefix "PumpModuleBlue.LeftPumpBlue"
+  // Detect all unique pump prefixes from Flow.Nominal lines across the
+  // entire file (not just the "[min] Run" section).
   const pumpPrefixes = new Set<string>();
   const pumpRe = /([A-Za-z0-9_.]+)\.Flow\.Nominal:\s*[\d.]+/g;
   let m: RegExpExecArray | null;
-  while ((m = pumpRe.exec(section)) !== null) {
+  while ((m = pumpRe.exec(text)) !== null) {
     // Only capture prefixes that look like pump module names (contain "Pump")
     if (/Pump/i.test(m[1])) {
       pumpPrefixes.add(m[1]);
@@ -289,12 +301,41 @@ function parsePumpGradients(text: string): PumpGradient[] {
 
   if (pumpPrefixes.size === 0) return [];
 
+  // Find all time markers in the full text: "N.NNN [min]"
+  // Each time marker starts a gradient step. The pump Flow/%B values
+  // appear between this time marker and the next one.
+  const timeMarkerRe = /(\d+\.?\d*)\s*\[min\]/g;
+  const timeMarkers: { time: number; index: number }[] = [];
+  while ((m = timeMarkerRe.exec(text)) !== null) {
+    const t = parseFloat(m[1]);
+    // Only accept reasonable gradient time values (0–120 min)
+    if (Number.isFinite(t) && t >= 0 && t <= 120) {
+      timeMarkers.push({ time: t, index: m.index });
+    }
+  }
+
+  if (timeMarkers.length === 0) return [];
+
+  // For each time marker, extract the text up to the next time marker
+  // (or up to a reasonable limit) and look for pump Flow/%B values.
+  const segments: { time: number; text: string }[] = [];
+  for (let i = 0; i < timeMarkers.length; i++) {
+    const start = timeMarkers[i].index;
+    const end = i + 1 < timeMarkers.length
+      ? timeMarkers[i + 1].index
+      : Math.min(start + 2000, text.length);
+    const segText = text.slice(start, end);
+    // Skip segments that don't contain any pump data
+    if (!/Pump.*\.Flow\.Nominal:/.test(segText) && !/Pump.*\.%B\.Value:/.test(segText)) {
+      continue;
+    }
+    segments.push({ time: timeMarkers[i].time, text: segText });
+  }
+
   const results: PumpGradient[] = [];
 
   for (const prefix of pumpPrefixes) {
     // Build a human-readable label from the prefix
-    // "PumpModuleRed.RightPumpRed" → "Right Pump (Red)"
-    // "PumpModuleBlue.LeftPumpBlue" → "Left Pump (Blue)"
     let label = prefix;
     const colorMatch = prefix.match(/(Red|Blue|Green|Yellow)/i);
     const sideMatch = prefix.match(/(Left|Right|Rear|Front)/i);
@@ -304,7 +345,7 @@ function parsePumpGradients(text: string): PumpGradient[] {
     if (colorMatch) parts.push(`(${colorMatch[1]})`);
     label = parts.join(" ");
 
-    const gradient = parseGradientForPump(section, prefix);
+    const gradient = parseGradientForPump(segments, prefix);
     if (gradient.length > 0) {
       results.push({ pumpName: prefix, pumpLabel: label, gradient });
     }
@@ -313,26 +354,14 @@ function parsePumpGradients(text: string): PumpGradient[] {
   return results;
 }
 
-/** Parse the gradient timetable for a specific pump prefix. */
+/** Parse the gradient timetable for a specific pump prefix.
+ * Accepts pre-split segments (time + text) from parsePumpGradients.
+ */
 function parseGradientForPump(
-  section: string,
+  segments: { time: number; text: string }[],
   prefix: string,
 ): { time: number; pctB: number; flow: number }[] {
-  const timeLineRe = /(\d+\.?\d*)\s*\[min\]/g;
   const steps: { time: number; pctB: number; flow: number }[] = [];
-  const segments: { time: number; text: string }[] = [];
-  let lastMatch: RegExpExecArray | null = null;
-  let m: RegExpExecArray | null;
-
-  while ((m = timeLineRe.exec(section)) !== null) {
-    if (lastMatch) {
-      segments.push({ time: parseFloat(lastMatch[1]), text: section.slice(lastMatch.index, m.index) });
-    }
-    lastMatch = m;
-  }
-  if (lastMatch) {
-    segments.push({ time: parseFloat(lastMatch[1]), text: section.slice(lastMatch.index) });
-  }
 
   // Build regexes that match only this pump's Flow and %B values
   const flowRe = new RegExp(
@@ -361,35 +390,51 @@ function parseGradientForPump(
     steps.push({ time: seg.time, pctB, flow });
   }
 
-  if (steps.length > 0 && steps[0].time > 0) {
-    steps.unshift({ time: 0, pctB: steps[0].pctB, flow: steps[0].flow });
+  // Deduplicate by time (OLE stream boundaries can cause duplicate entries)
+  const seen = new Map<number, { time: number; pctB: number; flow: number }>();
+  for (const s of steps) {
+    if (!seen.has(s.time) || s.flow > 0) {
+      seen.set(s.time, s);
+    }
   }
-  return steps;
+  const deduped = Array.from(seen.values()).sort((a, b) => a.time - b.time);
+
+  if (deduped.length > 0 && deduped[0].time > 0) {
+    deduped.unshift({ time: 0, pctB: deduped[0].pctB, flow: deduped[0].flow });
+  }
+  return deduped;
 }
 
-/** Parse the gradient timetable from the "Run" section (legacy, single-pump). */
+/** Parse the gradient timetable from the "Run" section (legacy, single-pump).
+ * Scans the full text for time markers with Flow/%B data, since the gradient
+ * can be split across OLE streams.
+ */
 function parseGradientTimetable(text: string): { time: number; pctB: number; flow: number }[] {
-  const runIdx = text.indexOf("[min] Run");
-  if (runIdx < 0) return [];
-  const stopIdx = text.indexOf("Stop Run", runIdx);
-  const section = text.slice(runIdx, stopIdx > 0 ? stopIdx : undefined);
-
-  const timeLineRe = /(\d+\.?\d*)\s*\[min\]/g;
-  const steps: { time: number; pctB: number; flow: number }[] = [];
-  const segments: { time: number; text: string }[] = [];
-  let lastMatch: RegExpExecArray | null = null;
+  // Find all time markers in the full text
+  const timeMarkerRe = /(\d+\.?\d*)\s*\[min\]/g;
+  const timeMarkers: { time: number; index: number }[] = [];
   let m: RegExpExecArray | null;
-
-  while ((m = timeLineRe.exec(section)) !== null) {
-    if (lastMatch) {
-      segments.push({ time: parseFloat(lastMatch[1]), text: section.slice(lastMatch.index, m.index) });
+  while ((m = timeMarkerRe.exec(text)) !== null) {
+    const t = parseFloat(m[1]);
+    if (Number.isFinite(t) && t >= 0 && t <= 120) {
+      timeMarkers.push({ time: t, index: m.index });
     }
-    lastMatch = m;
-  }
-  if (lastMatch) {
-    segments.push({ time: parseFloat(lastMatch[1]), text: section.slice(lastMatch.index) });
   }
 
+  if (timeMarkers.length === 0) return [];
+
+  const segments: { time: number; text: string }[] = [];
+  for (let i = 0; i < timeMarkers.length; i++) {
+    const start = timeMarkers[i].index;
+    const end = i + 1 < timeMarkers.length
+      ? timeMarkers[i + 1].index
+      : Math.min(start + 2000, text.length);
+    const segText = text.slice(start, end);
+    if (!/Flow\.Nominal:/.test(segText) && !/%B\.Value:/.test(segText)) continue;
+    segments.push({ time: timeMarkers[i].time, text: segText });
+  }
+
+  const steps: { time: number; pctB: number; flow: number }[] = [];
   for (const seg of segments) {
     const flowMatch = seg.text.match(/Flow\.Nominal:\s*([\d.]+)/);
     const pctBMatch = seg.text.match(/%B\.Value:\s*([\d.]+)/);
@@ -399,10 +444,17 @@ function parseGradientTimetable(text: string): { time: number; pctB: number; flo
     steps.push({ time: seg.time, pctB, flow });
   }
 
-  if (steps.length > 0 && steps[0].time > 0) {
-    steps.unshift({ time: 0, pctB: steps[0].pctB, flow: steps[0].flow });
+  // Deduplicate by time
+  const seen = new Map<number, { time: number; pctB: number; flow: number }>();
+  for (const s of steps) {
+    if (!seen.has(s.time) || s.flow > 0) seen.set(s.time, s);
   }
-  return steps;
+  const deduped = Array.from(seen.values()).sort((a, b) => a.time - b.time);
+
+  if (deduped.length > 0 && deduped[0].time > 0) {
+    deduped.unshift({ time: 0, pctB: deduped[0].pctB, flow: deduped[0].flow });
+  }
+  return deduped;
 }
 
 // ---- MS Method Summary parser ----
