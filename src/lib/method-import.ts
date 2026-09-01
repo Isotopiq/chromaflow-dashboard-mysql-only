@@ -62,6 +62,12 @@ export type MsGlobalSettings = {
   mildTrapping: boolean | null;
 };
 
+export type PumpGradient = {
+  pumpName: string;       // e.g. "PumpModuleRed.RightPumpRed"
+  pumpLabel: string;      // e.g. "Right Pump (Red)"
+  gradient: { time: number; pctB: number; flow: number }[];
+};
+
 export type ParsedMethodFile = {
   // LC parameters (from Overview section)
   name: string | null;
@@ -75,6 +81,8 @@ export type ParsedMethodFile = {
   injectionVolumeUl: number | null;
   pressureLimitBar: number | null;
   gradient: { time: number; pctB: number; flow: number }[];
+  // Per-pump gradients (when multiple pumps are present in the .meth file)
+  pumpGradients: PumpGradient[];
   // MS parameters (from Method Summary section)
   msGlobalSettings: MsGlobalSettings | null;
   msScans: MsScan[];
@@ -127,8 +135,22 @@ export async function parseMethodFile(file: File): Promise<ParsedMethodFile> {
   const lc = parseOverviewText(lcText);
   const ms = parseMsMethodSummary(msText);
 
+  // If we have per-pump gradients, pick the active pump (highest flow) as
+  // the default gradient. The user can override via the import UI.
+  let defaultGradient = lc.gradient;
+  if (lc.pumpGradients.length > 0) {
+    // Pick the pump with the highest max flow as the "active" pump
+    const activePump = lc.pumpGradients.reduce((best, pg) => {
+      const bestMaxFlow = Math.max(...best.gradient.map((g) => g.flow), 0);
+      const pgMaxFlow = Math.max(...pg.gradient.map((g) => g.flow), 0);
+      return pgMaxFlow > bestMaxFlow ? pg : best;
+    });
+    defaultGradient = activePump.gradient;
+  }
+
   return {
     ...lc,
+    gradient: defaultGradient,
     msGlobalSettings: ms.global,
     msScans: ms.scans,
     rawText: lcText.slice(0, 3000) + "\n---MS---\n" + msText.slice(0, 3000),
@@ -200,7 +222,24 @@ function parseOverviewText(text: string): Omit<ParsedMethodFile, "msGlobalSettin
   const mobilePhaseB = mpBMatch ? mpBMatch[1] : mpB1Match ? mpB1Match[1] : null;
 
   const injectionVolumeUl = getNum(/InjectVolume:\s*([\d.]+)/);
-  const gradient = parseGradientTimetable(text);
+
+  // Parse per-pump gradients (detects multiple pumps like LeftPumpBlue / RightPumpRed)
+  const pumpGradients = parsePumpGradients(text);
+
+  // Use the legacy parser as a fallback if per-pump parsing found nothing
+  let gradient: { time: number; pctB: number; flow: number }[];
+  if (pumpGradients.length > 0) {
+    // Pick the pump with the highest max flow as the default
+    const activePump = pumpGradients.reduce((best, pg) => {
+      const bestMaxFlow = Math.max(...best.gradient.map((g) => g.flow), 0);
+      const pgMaxFlow = Math.max(...pg.gradient.map((g) => g.flow), 0);
+      return pgMaxFlow > bestMaxFlow ? pg : best;
+    });
+    gradient = activePump.gradient;
+  } else {
+    gradient = parseGradientTimetable(text);
+  }
+
   const flowRate = gradient.length > 0
     ? gradient.find((g) => g.flow > 0)?.flow ?? gradient[0].flow
     : null;
@@ -217,10 +256,118 @@ function parseOverviewText(text: string): Omit<ParsedMethodFile, "msGlobalSettin
     injectionVolumeUl,
     pressureLimitBar,
     gradient,
+    pumpGradients,
   };
 }
 
-/** Parse the gradient timetable from the "Run" section. */
+/**
+ * Detect and parse per-pump gradient timetables.
+ * Thermo Vanquish .meth files with dual pumps contain entries like:
+ *   PumpModuleBlue.LeftPumpBlue.Flow.Nominal: 0.000 [ml/min]
+ *   PumpModuleBlue.LeftPumpBlue.%B.Value: 0.0 [%]
+ *   PumpModuleRed.RightPumpRed.Flow.Nominal: 0.260 [ml/min]
+ *   PumpModuleRed.RightPumpRed.%B.Value: 35.0 [%]
+ * This function detects all pump prefixes and returns a gradient per pump.
+ */
+function parsePumpGradients(text: string): PumpGradient[] {
+  const runIdx = text.indexOf("[min] Run");
+  if (runIdx < 0) return [];
+  const stopIdx = text.indexOf("Stop Run", runIdx);
+  const section = text.slice(runIdx, stopIdx > 0 ? stopIdx : undefined);
+
+  // Detect all unique pump prefixes from Flow.Nominal lines
+  // e.g. "PumpModuleBlue.LeftPumpBlue.Flow.Nominal:" → prefix "PumpModuleBlue.LeftPumpBlue"
+  const pumpPrefixes = new Set<string>();
+  const pumpRe = /([A-Za-z0-9_.]+)\.Flow\.Nominal:\s*[\d.]+/g;
+  let m: RegExpExecArray | null;
+  while ((m = pumpRe.exec(section)) !== null) {
+    // Only capture prefixes that look like pump module names (contain "Pump")
+    if (/Pump/i.test(m[1])) {
+      pumpPrefixes.add(m[1]);
+    }
+  }
+
+  if (pumpPrefixes.size === 0) return [];
+
+  const results: PumpGradient[] = [];
+
+  for (const prefix of pumpPrefixes) {
+    // Build a human-readable label from the prefix
+    // "PumpModuleRed.RightPumpRed" → "Right Pump (Red)"
+    // "PumpModuleBlue.LeftPumpBlue" → "Left Pump (Blue)"
+    let label = prefix;
+    const colorMatch = prefix.match(/(Red|Blue|Green|Yellow)/i);
+    const sideMatch = prefix.match(/(Left|Right|Rear|Front)/i);
+    const parts: string[] = [];
+    if (sideMatch) parts.push(sideMatch[1] + " Pump");
+    else parts.push("Pump");
+    if (colorMatch) parts.push(`(${colorMatch[1]})`);
+    label = parts.join(" ");
+
+    const gradient = parseGradientForPump(section, prefix);
+    if (gradient.length > 0) {
+      results.push({ pumpName: prefix, pumpLabel: label, gradient });
+    }
+  }
+
+  return results;
+}
+
+/** Parse the gradient timetable for a specific pump prefix. */
+function parseGradientForPump(
+  section: string,
+  prefix: string,
+): { time: number; pctB: number; flow: number }[] {
+  const timeLineRe = /(\d+\.?\d*)\s*\[min\]/g;
+  const steps: { time: number; pctB: number; flow: number }[] = [];
+  const segments: { time: number; text: string }[] = [];
+  let lastMatch: RegExpExecArray | null = null;
+  let m: RegExpExecArray | null;
+
+  while ((m = timeLineRe.exec(section)) !== null) {
+    if (lastMatch) {
+      segments.push({ time: parseFloat(lastMatch[1]), text: section.slice(lastMatch.index, m.index) });
+    }
+    lastMatch = m;
+  }
+  if (lastMatch) {
+    segments.push({ time: parseFloat(lastMatch[1]), text: section.slice(lastMatch.index) });
+  }
+
+  // Build regexes that match only this pump's Flow and %B values
+  const flowRe = new RegExp(
+    prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\.Flow\\.Nominal:\\s*([\\d.]+)",
+  );
+  const pctBRe = new RegExp(
+    prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\.%B\\.Value:\\s*([\\d.]+)",
+  );
+
+  for (const seg of segments) {
+    const flowMatch = seg.text.match(flowRe);
+    const pctBMatch = seg.text.match(pctBRe);
+    if (!flowMatch && !pctBMatch) continue; // No data for this pump in this segment
+    const flow = flowMatch ? parseFloat(flowMatch[1]) : 0;
+    const pctB = pctBMatch ? parseFloat(pctBMatch[1]) : 0;
+    if (seg.time === 0 && flow === 0 && pctB === 0) {
+      // Skip 0/0 entries at t=0 (idle pump placeholder)
+      // Only skip if this pump has other entries with actual flow
+      const hasOtherFlow = segments.some((s) => {
+        if (s.time === 0) return false;
+        const fm = s.text.match(flowRe);
+        return fm && parseFloat(fm[1]) > 0;
+      });
+      if (hasOtherFlow) continue;
+    }
+    steps.push({ time: seg.time, pctB, flow });
+  }
+
+  if (steps.length > 0 && steps[0].time > 0) {
+    steps.unshift({ time: 0, pctB: steps[0].pctB, flow: steps[0].flow });
+  }
+  return steps;
+}
+
+/** Parse the gradient timetable from the "Run" section (legacy, single-pump). */
 function parseGradientTimetable(text: string): { time: number; pctB: number; flow: number }[] {
   const runIdx = text.indexOf("[min] Run");
   if (runIdx < 0) return [];
@@ -535,12 +682,16 @@ export function buildFieldGroups(parsed: ParsedMethodFile): FieldGroup[] {
     lcFields.push({ key: "columnTemp", label: "Column temperature", value: `${parsed.columnTempC} °C` });
   if (parsed.injectionVolumeUl != null)
     lcFields.push({ key: "injectionVolume", label: "Injection volume", value: `${parsed.injectionVolumeUl} µL` });
-  if (parsed.gradient.length > 0)
+  if (parsed.gradient.length > 0) {
+    const pumpInfo = parsed.pumpGradients.length > 1
+      ? ` [from ${parsed.pumpGradients.find((pg) => pg.gradient === parsed.gradient)?.pumpLabel ?? "auto"}]`
+      : "";
     lcFields.push({
       key: "gradient",
       label: "Gradient timetable",
-      value: `${parsed.gradient.length} steps (${parsed.gradient[0].pctB}%→${parsed.gradient[parsed.gradient.length - 1].pctB}% B over ${parsed.gradient[parsed.gradient.length - 1].time} min)`,
+      value: `${parsed.gradient.length} steps (${parsed.gradient[0].pctB}%→${parsed.gradient[parsed.gradient.length - 1].pctB}% B over ${parsed.gradient[parsed.gradient.length - 1].time} min)${pumpInfo}`,
     });
+  }
   if (parsed.runTimeMin != null)
     lcFields.push({
       key: "notes",

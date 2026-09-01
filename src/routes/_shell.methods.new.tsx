@@ -77,6 +77,7 @@ function NewMethod() {
   const [selectedFields, setSelectedFields] = useState<Set<ImportableField>>(new Set());
   const [parsing, setParsing] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [selectedPump, setSelectedPump] = useState<string>(""); // pump prefix
 
   async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -105,14 +106,19 @@ function NewMethod() {
     if (!parsedFile) return;
     const p = parsedFile;
 
+    // If the user selected a specific pump, use its gradient
+    const effectiveGradient = selectedPump
+      ? (p.pumpGradients.find((pg) => pg.pumpName === selectedPump)?.gradient ?? p.gradient)
+      : p.gradient;
+
     if (selectedFields.has("name") && p.name) setName(p.name);
     if (selectedFields.has("mobilePhaseA") && p.mobilePhaseA) setMpA(p.mobilePhaseA);
     if (selectedFields.has("mobilePhaseB") && p.mobilePhaseB) setMpB(p.mobilePhaseB);
     if (selectedFields.has("flowRate") && p.flowRate != null) setFlow(p.flowRate);
     if (selectedFields.has("columnTemp") && p.columnTempC != null) setTemp(p.columnTempC);
     if (selectedFields.has("injectionVolume") && p.injectionVolumeUl != null) setInj(p.injectionVolumeUl);
-    if (selectedFields.has("gradient") && p.gradient.length > 0) {
-      setGradient(p.gradient.map((g) => ({ time: g.time, pctB: g.pctB, flow: g.flow })));
+    if (selectedFields.has("gradient") && effectiveGradient.length > 0) {
+      setGradient(effectiveGradient.map((g) => ({ time: g.time, pctB: g.pctB, flow: g.flow })));
     }
     if (selectedFields.has("notes")) {
       const noteParts: string[] = [];
@@ -624,6 +630,35 @@ function NewMethod() {
           </DialogHeader>
           {parsedFile && (
             <div className="max-h-[500px] space-y-2 overflow-y-auto">
+              {/* Pump selector — shown when multiple pumps are detected */}
+              {parsedFile.pumpGradients.length > 1 && (
+                <div className="rounded-md border border-primary/30 bg-primary/5 p-3">
+                  <div className="flex items-center gap-3">
+                    <Label className="text-xs font-semibold whitespace-nowrap">
+                      Gradient source pump:
+                    </Label>
+                    <Select
+                      value={selectedPump || parsedFile.pumpGradients.find((pg) => pg.gradient === parsedFile.gradient)?.pumpName || "__auto__"}
+                      onValueChange={(v) => setSelectedPump(v === "__auto__" ? "" : v)}
+                    >
+                      <SelectTrigger className="h-8 flex-1 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {parsedFile.pumpGradients.map((pg) => (
+                          <SelectItem key={pg.pumpName} value={pg.pumpName} className="text-xs">
+                            {pg.pumpLabel} — {pg.gradient.length} steps, max flow {Math.max(...pg.gradient.map((g) => g.flow)).toFixed(3)} mL/min
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="mt-1.5 text-[10px] text-muted-foreground">
+                    This instrument method contains gradients for {parsedFile.pumpGradients.length} pumps.
+                    Select the active pump to import its gradient. The idle pump (0 flow) is auto-detected and excluded by default.
+                  </div>
+                </div>
+              )}
               {buildFieldGroups(parsedFile).map((group) => {
                 const isExpanded = expandedGroups.has(group.title);
                 const groupKeys = group.fields.map((f) => f.key);
