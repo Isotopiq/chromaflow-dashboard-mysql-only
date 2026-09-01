@@ -147,12 +147,13 @@ function NewMethod() {
         ? msScans.filter((s) => keepTypes.has(s.scanType))
         : [];
       setMsScans([...importedMs1, ...importedDdms2, ...kept]);
-      // Set ionization from the MS1 polarity
+      // Set ionization from MS1 polarity(ies)
       if (importedMs1.length > 0) {
-        const pol = importedMs1[0].polarity;
-        if (pol === "Both") setIon("ESI±");
-        else if (pol === "Positive") setIon("ESI+");
-        else if (pol === "Negative") setIon("ESI-");
+        const polarities = new Set(importedMs1.map((s) => s.polarity).filter(Boolean));
+        if (polarities.has("Positive") && polarities.has("Negative")) setIon("ESI±");
+        else if (polarities.has("Both")) setIon("ESI±");
+        else if (polarities.has("Positive")) setIon("ESI+");
+        else if (polarities.has("Negative")) setIon("ESI-");
       }
     }
 

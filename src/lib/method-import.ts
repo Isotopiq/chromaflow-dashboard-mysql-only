@@ -126,12 +126,14 @@ export async function parseMethodFile(file: File): Promise<ParsedMethodFile> {
   const fullText = decodeUtf16LERange(bytes, 0, bytes.length);
 
   // Extract the MS method summary section (UTF-16LE)
-  // Look for "Method Summary" which appears in the MS method section
-  const msSummaryIdx = findUtf16LEPattern(bytes, "Method Summary");
+  // Look for "Method Summary" which appears in the MS method section.
+  // Use the full file text for MS scan parsing, because experiments can
+  // be split across multiple OLE streams (e.g. Experiment 1 in one stream
+  // and Experiment 2 in another, far apart in the file).
+  const msSummaryCharIdx = fullText.indexOf("Method Summary");
   let msText = "";
-  if (msSummaryIdx >= 0) {
-    const sectionBytes = Math.min(80_000, bytes.length - msSummaryIdx);
-    msText = decodeUtf16LERange(bytes, msSummaryIdx, sectionBytes);
+  if (msSummaryCharIdx >= 0) {
+    msText = fullText.slice(msSummaryCharIdx);
   }
 
   if (!lcText && !msText) {
@@ -771,45 +773,88 @@ export function buildFieldGroups(parsed: ParsedMethodFile): FieldGroup[] {
       groups.push({ title: "MS Global Settings", fields: msGlobalFields });
   }
 
-  // MS1 Scan
+  // MS1 Scans — one per experiment (e.g. positive + negative polarity)
   const ms1Scans = parsed.msScans.filter((s) => s.scanType === "MS1");
   if (ms1Scans.length > 0) {
-    const s = ms1Scans[0];
-    const summary: string[] = [];
-    if (s.orbitrapResolution) summary.push(`R=${s.orbitrapResolution}`);
-    if (s.scanRangeMz) summary.push(`${s.scanRangeMz[0]}-${s.scanRangeMz[1]} m/z`);
-    if (s.polarity) summary.push(s.polarity);
-    if (s.agcTarget) summary.push(`AGC=${s.agcTarget}`);
-    groups.push({
-      title: "MS1 Scan",
-      fields: [{
-        key: "ms1Scan",
-        label: s.experimentName || "Full MS Scan",
+    const fields: FieldLabel[] = ms1Scans.map((s, i) => {
+      const summary: string[] = [];
+      if (s.orbitrapResolution) summary.push(`R=${s.orbitrapResolution}`);
+      if (s.scanRangeMz) summary.push(`${s.scanRangeMz[0]}-${s.scanRangeMz[1]} m/z`);
+      if (s.polarity) summary.push(s.polarity);
+      if (s.agcTarget) summary.push(`AGC=${s.agcTarget}`);
+      return {
+        key: "ms1Scan" as ImportableField,
+        label: ms1Scans.length > 1
+          ? `MS1 Scan ${i + 1}: ${s.experimentName || "Full MS Scan"}`
+          : (s.experimentName || "Full MS Scan"),
         value: summary.join(", "),
-      }],
+      };
     });
+    groups.push({ title: "MS1 Scan", fields });
   }
 
-  // ddMS2 Scans
+  // ddMS2 Scans — grouped per experiment
   const ddms2Scans = parsed.msScans.filter((s) => s.scanType === "ddMS2");
   if (ddms2Scans.length > 0) {
-    const summary: string[] = [];
-    for (const s of ddms2Scans) {
-      const parts: string[] = [];
-      if (s.orbitrapResolution) parts.push(`R=${s.orbitrapResolution}`);
-      if (s.isolationWindowMz != null) parts.push(`ISO=${s.isolationWindowMz} m/z`);
-      if (s.maxInjectionTimeMs != null) parts.push(`${s.maxInjectionTimeMs}ms`);
-      if (s.maxMultiplexedIons != null) parts.push(`mux=${s.maxMultiplexedIons}`);
-      summary.push(parts.join(", "));
+    // Group ddMS2 scans by experiment name (from the MS1 scan order)
+    // If there are multiple experiments, show separate groups
+    const expNames = ms1Scans.map((s) => s.experimentName || "");
+    if (expNames.length > 1) {
+      // Multiple experiments: show ddMS2 scans per experiment
+      // We can't directly know which ddMS2 belongs to which experiment,
+      // but they appear in order in the scans array. Split them by
+      // counting — each experiment's ddMS2 scans follow its MS1 scan.
+      let scanIdx = 0;
+      for (let expIdx = 0; expIdx < expNames.length; expIdx++) {
+        // Count ddMS2 scans until the next MS1 scan or end
+        const ddScans: MsScan[] = [];
+        while (scanIdx < ddms2Scans.length) {
+          ddScans.push(ddms2Scans[scanIdx]);
+          scanIdx++;
+          // Heuristic: if there are more experiments, split evenly
+          // This is a best-effort approach since the .meth format
+          // doesn't explicitly tag each ddMS2 scan with its experiment
+          if (expIdx < expNames.length - 1 && ddScans.length >= Math.ceil(ddms2Scans.length / expNames.length)) {
+            break;
+          }
+        }
+        if (ddScans.length === 0) continue;
+        const summary = ddScans.map((s) => {
+          const parts: string[] = [];
+          if (s.orbitrapResolution) parts.push(`R=${s.orbitrapResolution}`);
+          if (s.isolationWindowMz != null) parts.push(`ISO=${s.isolationWindowMz} m/z`);
+          if (s.maxInjectionTimeMs != null) parts.push(`${s.maxInjectionTimeMs}ms`);
+          if (s.maxMultiplexedIons != null) parts.push(`mux=${s.maxMultiplexedIons}`);
+          return parts.join(", ");
+        });
+        groups.push({
+          title: `ddMS2 Scans — ${expNames[expIdx]}`,
+          fields: [{
+            key: "ddMS2Scans",
+            label: `${ddScans.length} ddMS2 scan event${ddScans.length === 1 ? "" : "s"}`,
+            value: summary.join("; "),
+          }],
+        });
+      }
+    } else {
+      // Single experiment: show all ddMS2 scans together
+      const summary = ddms2Scans.map((s) => {
+        const parts: string[] = [];
+        if (s.orbitrapResolution) parts.push(`R=${s.orbitrapResolution}`);
+        if (s.isolationWindowMz != null) parts.push(`ISO=${s.isolationWindowMz} m/z`);
+        if (s.maxInjectionTimeMs != null) parts.push(`${s.maxInjectionTimeMs}ms`);
+        if (s.maxMultiplexedIons != null) parts.push(`mux=${s.maxMultiplexedIons}`);
+        return parts.join(", ");
+      });
+      groups.push({
+        title: "ddMS2 Scans",
+        fields: [{
+          key: "ddMS2Scans",
+          label: `${ddms2Scans.length} ddMS2 scan event${ddms2Scans.length === 1 ? "" : "s"}`,
+          value: summary.join("; "),
+        }],
+      });
     }
-    groups.push({
-      title: "ddMS2 Scans",
-      fields: [{
-        key: "ddMS2Scans",
-        label: `${ddms2Scans.length} ddMS2 scan event${ddms2Scans.length === 1 ? "" : "s"}`,
-        value: summary.join("; "),
-      }],
-    });
   }
 
   // Method file attachment
