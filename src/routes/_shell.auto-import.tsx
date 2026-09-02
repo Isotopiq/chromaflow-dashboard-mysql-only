@@ -11,7 +11,7 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { FolderSync, Plus, Trash2, RefreshCw } from "lucide-react";
+import { FolderSync, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useServerFn } from "@tanstack/react-start";
 import { upsertWatchFolder, deleteWatchFolder } from "@/lib/v3-functions";
