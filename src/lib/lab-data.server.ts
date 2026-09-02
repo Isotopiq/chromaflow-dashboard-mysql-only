@@ -5,6 +5,9 @@ import { createSignedDownloadUrl } from "@/lib/storage.server";
 import type {
   Method, Run, Column, Batch, Analyte, Peak, User,
   ColumnInjection, CompoundList, MethodColumnListDefault,
+  RtAlignment, ISAssignment, SampleQueue, SampleQueueEntry,
+  MethodTemplate, ReportJob, CustomColumn, ImportWatchFolder,
+  ImportedFile, NceOptimization,
 } from "@/lib/lab-types";
 
 // ---------- Mappers ----------
@@ -76,6 +79,11 @@ export function mapPeak(r: any): Peak {
     r2: r.r2 != null ? Number(r.r2) : undefined,
     asymmetry: r.asymmetry != null ? Number(r.asymmetry) : undefined,
     notes: r.notes ?? "",
+    alignedRt: r.aligned_rt != null ? Number(r.aligned_rt) : undefined,
+    isNormalizedArea: r.is_normalized_area != null ? Number(r.is_normalized_area) : undefined,
+    customValues: r.custom_values ?? undefined,
+    adductType: r.adduct_type ?? undefined,
+    deconvolved: r.deconvolved === true,
   };
 }
 
@@ -165,6 +173,144 @@ export function mapListDefault(r: any): MethodColumnListDefault {
   };
 }
 
+// ---- V3 Mappers ----
+export function mapRtAlignment(r: any): RtAlignment {
+  return {
+    id: r.id,
+    batchId: r.batch_id ?? null,
+    referenceRunId: r.reference_run_id ?? null,
+    alignmentMethod: (r.alignment_method as RtAlignment["alignmentMethod"]) ?? "landmark",
+    shiftJson: r.shift_json ?? {},
+    createdAt: String(r.created_at),
+  };
+}
+
+export function mapISAssignment(r: any): ISAssignment {
+  return {
+    id: r.id,
+    analyteId: r.analyte_id,
+    isAnalyteId: r.is_analyte_id,
+    methodId: r.method_id ?? null,
+    createdAt: String(r.created_at),
+  };
+}
+
+export function mapSampleQueue(r: any, entries: SampleQueueEntry[] = []): SampleQueue & { entries: SampleQueueEntry[] } {
+  return {
+    id: r.id,
+    name: r.name,
+    batchId: r.batch_id ?? null,
+    instrument: r.instrument ?? "",
+    createdBy: r.created_by ?? null,
+    createdAt: String(r.created_at),
+    entries,
+  };
+}
+
+export function mapSampleQueueEntry(r: any): SampleQueueEntry {
+  return {
+    id: r.id,
+    queueId: r.queue_id,
+    position: Number(r.position ?? 0),
+    sampleName: r.sample_name ?? "",
+    sampleType: (r.sample_type as SampleQueueEntry["sampleType"]) ?? "unknown",
+    vialPosition: r.vial_position ?? "",
+    trayCode: r.tray_code ?? "",
+    methodPath: r.method_path ?? "",
+    methodId: r.method_id ?? null,
+    columnId: r.column_id ?? null,
+    injectionVolume: Number(r.injection_volume ?? 0),
+    dilutionFactor: Number(r.dilution_factor ?? 1),
+    status: (r.status as SampleQueueEntry["status"]) ?? "pending",
+    runId: r.run_id ?? null,
+    createdAt: String(r.created_at),
+  };
+}
+
+export function mapMethodTemplate(r: any): MethodTemplate {
+  return {
+    id: r.id,
+    name: r.name,
+    description: r.description ?? "",
+    templateJson: r.template_json ?? {},
+    createdBy: r.created_by ?? null,
+    createdAt: String(r.created_at),
+  };
+}
+
+export function mapReportJob(r: any): ReportJob {
+  return {
+    id: r.id,
+    title: r.title,
+    template: r.template ?? "standard",
+    runIds: r.run_ids ?? [],
+    batchId: r.batch_id ?? null,
+    includeSections: r.include_sections ?? [],
+    outputFormat: (r.output_format as ReportJob["outputFormat"]) ?? "pdf",
+    storagePath: r.storage_path ?? null,
+    emailTo: r.email_to ?? [],
+    emailSentAt: r.email_sent_at ?? null,
+    status: (r.status as ReportJob["status"]) ?? "pending",
+    createdBy: r.created_by ?? null,
+    createdAt: String(r.created_at),
+  };
+}
+
+export function mapCustomColumn(r: any): CustomColumn {
+  return {
+    id: r.id,
+    methodId: r.method_id ?? null,
+    name: r.name,
+    formula: r.formula,
+    unit: r.unit ?? "",
+    displayOrder: Number(r.display_order ?? 0),
+    createdBy: r.created_by ?? null,
+    createdAt: String(r.created_at),
+  };
+}
+
+export function mapImportWatchFolder(r: any): ImportWatchFolder {
+  return {
+    id: r.id,
+    path: r.path,
+    enabled: r.enabled !== false,
+    methodId: r.method_id ?? null,
+    columnId: r.column_id ?? null,
+    batchId: r.batch_id ?? null,
+    filePattern: r.file_pattern ?? "*.mzXML",
+    createdBy: r.created_by ?? null,
+    createdAt: String(r.created_at),
+  };
+}
+
+export function mapImportedFile(r: any): ImportedFile {
+  return {
+    id: r.id,
+    folderId: r.folder_id,
+    filePath: r.file_path,
+    fileName: r.file_name,
+    status: (r.status as ImportedFile["status"]) ?? "pending",
+    runId: r.run_id ?? null,
+    errorMessage: r.error_message ?? null,
+    createdAt: String(r.created_at),
+  };
+}
+
+export function mapNceOptimization(r: any): NceOptimization {
+  return {
+    id: r.id,
+    analyteId: r.analyte_id,
+    methodId: r.method_id ?? null,
+    nceTested: r.nce_tested != null ? Number(r.nce_tested) : null,
+    bestNce: r.best_nce != null ? Number(r.best_nce) : null,
+    bestFragmentCount: r.best_fragment_count ?? null,
+    spectraJson: r.spectra_json ?? [],
+    notes: r.notes ?? "",
+    createdBy: r.created_by ?? null,
+    createdAt: String(r.created_at),
+  };
+}
+
 export async function mapUser(profile: any, role: string): Promise<User> {
   const name = profile.display_name ?? "user";
   const avatarPath = profile.avatar_url ?? null;
@@ -205,6 +351,25 @@ export async function fetchAllForUser(db: Db) {
   const compoundListsRaw = await db.many("select * from public.compound_lists order by name");
   const listEntries = await db.many("select * from public.compound_list_entries");
   const listDefaults = await db.many("select * from public.method_column_list_defaults");
+
+  // V3 tables — wrapped in try/catch so missing tables don't break the app
+  // during the transition (schema migration runs on next container start).
+  let isAssignments: any[] = [];
+  let sampleQueues: any[] = [];
+  let sampleQueueEntries: any[] = [];
+  let methodTemplates: any[] = [];
+  let reportJobs: any[] = [];
+  let customColumns: any[] = [];
+  let importWatchFolders: any[] = [];
+  let nceOptimizations: any[] = [];
+  try { isAssignments = await db.many("select * from public.is_assignments"); } catch { /* table may not exist yet */ }
+  try { sampleQueues = await db.many("select * from public.sample_queues order by created_at desc"); } catch {}
+  try { sampleQueueEntries = await db.many("select * from public.sample_queue_entries order by position"); } catch {}
+  try { methodTemplates = await db.many("select * from public.method_templates order by name"); } catch {}
+  try { reportJobs = await db.many("select * from public.report_jobs order by created_at desc"); } catch {}
+  try { customColumns = await db.many("select * from public.custom_columns order by display_order"); } catch {}
+  try { importWatchFolders = await db.many("select * from public.import_watch_folders"); } catch {}
+  try { nceOptimizations = await db.many("select * from public.nce_optimization"); } catch {}
 
   // Fetch per-column RT overrides for all analytes.
   const columnRts = await db.many<any>(
@@ -255,6 +420,14 @@ export async function fetchAllForUser(db: Db) {
     entriesByList.set(e.list_id, arr);
   }
 
+  // Group sample queue entries by queue_id
+  const entriesByQueue = new Map<string, any[]>();
+  for (const e of sampleQueueEntries) {
+    const arr = entriesByQueue.get(e.queue_id) ?? [];
+    arr.push(mapSampleQueueEntry(e));
+    entriesByQueue.set(e.queue_id, arr);
+  }
+
   return {
     columns: columns.map(mapColumn),
     methods: methods.map(mapMethod),
@@ -269,6 +442,16 @@ export async function fetchAllForUser(db: Db) {
       mapCompoundList(cl, entriesByList.get(cl.id) ?? []),
     ),
     listDefaults: listDefaults.map(mapListDefault),
+    // V3 data
+    isAssignments: isAssignments.map(mapISAssignment),
+    sampleQueues: sampleQueues.map((sq: any) =>
+      mapSampleQueue(sq, entriesByQueue.get(sq.id) ?? []),
+    ),
+    methodTemplates: methodTemplates.map(mapMethodTemplate),
+    reportJobs: reportJobs.map(mapReportJob),
+    customColumns: customColumns.map(mapCustomColumn),
+    importWatchFolders: importWatchFolders.map(mapImportWatchFolder),
+    nceOptimizations: nceOptimizations.map(mapNceOptimization),
   };
 }
 

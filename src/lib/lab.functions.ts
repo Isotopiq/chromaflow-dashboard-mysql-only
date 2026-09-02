@@ -23,9 +23,12 @@ import {
   mapInjection,
   mapCompoundList,
   mapListDefault,
+  mapISAssignment,
   listAllUsersAdmin,
   setUserRoleAdmin,
 } from "./lab-data.server";
+import type { ISAssignment } from "@/lib/lab-types";
+import { normalizeByIS } from "@/lib/is-normalization";
 
 // ---- Bootstrap: load everything for the current user ----
 export const loadAll = createServerFn({ method: "GET" })
@@ -1883,4 +1886,161 @@ export const updateCompoundListFromCsv = createServerFn({ method: "POST" })
     const list = await db.one<any>("select * from public.compound_lists where id=$1", [data.id]);
     const entries = await db.many<any>("select analyte_id from public.compound_list_entries where list_id=$1", [data.id]);
     return mapCompoundList(list, entries.map((e) => e.analyte_id));
+  });
+
+// ---- IS assignments (internal standard assignment) ----
+
+const CreateISAssignmentInput = z.object({
+  analyteId: z.string().uuid(),
+  isAnalyteId: z.string().uuid(),
+  methodId: z.string().uuid().nullable().optional(),
+});
+
+export const createISAssignment = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) => CreateISAssignmentInput.parse(d))
+  .handler(async ({ data, context }) => {
+    const ctx = context as any;
+    requirePermission(ctx, "canEdit");
+    const { userId, db } = ctx;
+    const row = await db.one<any>(
+      `insert into public.is_assignments (analyte_id, is_analyte_id, method_id, created_by)
+       values ($1, $2, $3, $4)
+       on conflict (analyte_id, method_id) do update set
+         is_analyte_id = excluded.is_analyte_id,
+         created_by = excluded.created_by
+       returning *`,
+      [data.analyteId, data.isAnalyteId, data.methodId ?? null, userId],
+    );
+    return mapISAssignment(row) as ISAssignment;
+  });
+
+const DeleteISAssignmentInput = z.object({
+  id: z.string().uuid(),
+});
+
+export const deleteISAssignment = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) => DeleteISAssignmentInput.parse(d))
+  .handler(async ({ data, context }) => {
+    const ctx = context as any;
+    requirePermission(ctx, "canEdit");
+    const { db } = ctx;
+    await db.query("delete from public.is_assignments where id = $1", [data.id]);
+    return { ok: true };
+  });
+
+const NormalizeBatchByISInput = z.object({
+  batchId: z.string().uuid(),
+});
+
+export const normalizeBatchByIS = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) => NormalizeBatchByISInput.parse(d))
+  .handler(async ({ data, context }) => {
+    const { userId, db } = context as {
+      userId: string;
+      email: string;
+      isAdmin: boolean;
+      db: import("@/db/index.server").Db;
+    };
+
+    // Get all runs in the batch, ordered by acquisition time (injection order).
+    const runs = await db.many<any>(
+      "select id from public.runs where batch_id = $1 order by acquired_at asc",
+      [data.batchId],
+    );
+    if (runs.length === 0) return { normalized: 0 };
+
+    const runIds = runs.map((r) => r.id);
+
+    // Fetch all IS assignments. If method_id is set on an assignment, it only
+    // applies to runs using that method; otherwise it's global.
+    let isAssignments: any[] = [];
+    try {
+      isAssignments = await db.many<any>(
+        "select * from public.is_assignments",
+      );
+    } catch {
+      return { normalized: 0 };
+    }
+
+    // Build a lookup: analyteId -> isAnalyteId (global, method_id is null).
+    const globalISMap = new Map<string, string>();
+    // methodId -> (analyteId -> isAnalyteId)
+    const methodISMap = new Map<string, Map<string, string>>();
+    for (const a of isAssignments) {
+      if (a.method_id) {
+        let m = methodISMap.get(a.method_id);
+        if (!m) { m = new Map(); methodISMap.set(a.method_id, m); }
+        m.set(a.analyte_id, a.is_analyte_id);
+      } else {
+        globalISMap.set(a.analyte_id, a.is_analyte_id);
+      }
+    }
+
+    // Fetch all peaks for the batch's runs, including analyte_id.
+    const peaks = await db.many<any>(
+      "select id, run_id, analyte_id, area from public.peaks where run_id = any($1::uuid[])",
+      [runIds],
+    );
+
+    // Fetch method_id for each run so we can apply method-specific IS assignments.
+    const runMethodMap = new Map<string, string | null>();
+    for (const r of runs) {
+      const runRow = await db.maybe<any>(
+        "select method_id from public.runs where id = $1",
+        [r.id],
+      );
+      runMethodMap.set(r.id, runRow?.method_id ?? null);
+    }
+
+    // Group peaks by run_id for IS peak lookup.
+    const peaksByRun = new Map<string, any[]>();
+    for (const p of peaks) {
+      const arr = peaksByRun.get(p.run_id) ?? [];
+      arr.push(p);
+      peaksByRun.set(p.run_id, arr);
+    }
+
+    let normalized = 0;
+
+    for (const run of runs) {
+      const runPeaks = peaksByRun.get(run.id) ?? [];
+      if (runPeaks.length === 0) continue;
+
+      const methodId = runMethodMap.get(run.id);
+      const methodIS = methodId ? methodISMap.get(methodId) : undefined;
+
+      // Build a map of isAnalyteId -> peak area for this run (IS peaks).
+      const isAreaByAnalyte = new Map<string, number>();
+      for (const p of runPeaks) {
+        if (p.analyte_id) {
+          isAreaByAnalyte.set(p.analyte_id, Number(p.area));
+        }
+      }
+
+      for (const p of runPeaks) {
+        if (!p.analyte_id) continue;
+
+        // Determine which IS analyte is assigned to this analyte.
+        // Method-specific assignment takes priority over global.
+        const isAnalyteId = methodIS?.get(p.analyte_id) ?? globalISMap.get(p.analyte_id);
+        if (!isAnalyteId) continue;
+
+        const isArea = isAreaByAnalyte.get(isAnalyteId);
+        if (isArea == null) continue;
+
+        const normalizedArea = normalizeByIS(Number(p.area), isArea);
+        if (normalizedArea == null) continue;
+
+        await db.query(
+          "update public.peaks set is_normalized_area = $1 where id = $2",
+          [normalizedArea, p.id],
+        );
+        normalized++;
+      }
+    }
+
+    return { normalized };
   });

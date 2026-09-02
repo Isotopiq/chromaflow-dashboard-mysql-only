@@ -18,6 +18,16 @@ export type Peak = {
   asymmetry?: number;
   /** Free-text reviewer notes saved server-side. */
   notes?: string;
+  /** RT after alignment correction (V3). */
+  alignedRt?: number;
+  /** Area normalized by internal standard (V3). */
+  isNormalizedArea?: number;
+  /** Custom formula column values (V3). */
+  customValues?: Record<string, number>;
+  /** Detected adduct type, e.g. "[M+Na]+" (V3). */
+  adductType?: string;
+  /** Whether this peak was resolved by deconvolution (V3). */
+  deconvolved?: boolean;
 };
 
 export type Run = {
@@ -218,4 +228,151 @@ export type MethodColumnListDefault = {
   methodId: string;
   columnId: string;
   listId: string;
+};
+
+// ---- V3 Feature Types ----
+
+export type RtAlignment = {
+  id: string;
+  batchId: string | null;
+  referenceRunId: string | null;
+  alignmentMethod: "landmark" | "linear";
+  shiftJson: Record<string, number>;
+  createdAt: string;
+};
+
+export type ISAssignment = {
+  id: string;
+  analyteId: string;
+  isAnalyteId: string;
+  methodId: string | null;
+  createdAt: string;
+};
+
+export type SampleQueue = {
+  id: string;
+  name: string;
+  batchId: string | null;
+  instrument: string;
+  createdBy: string | null;
+  createdAt: string;
+};
+
+export type SampleQueueEntry = {
+  id: string;
+  queueId: string;
+  position: number;
+  sampleName: string;
+  sampleType: "unknown" | "blank" | "standard" | "qc" | "double_blank" | "system_suitability";
+  vialPosition: string;
+  trayCode: string;
+  methodPath: string;
+  methodId: string | null;
+  columnId: string | null;
+  injectionVolume: number;
+  dilutionFactor: number;
+  status: "pending" | "running" | "complete" | "failed";
+  runId: string | null;
+  createdAt: string;
+};
+
+export type MethodTemplate = {
+  id: string;
+  name: string;
+  description: string;
+  templateJson: Partial<Method>;
+  createdBy: string | null;
+  createdAt: string;
+};
+
+export type ReportJob = {
+  id: string;
+  title: string;
+  template: string;
+  runIds: string[];
+  batchId: string | null;
+  includeSections: string[];
+  outputFormat: "pdf" | "xlsx" | "csv";
+  storagePath: string | null;
+  emailTo: string[];
+  emailSentAt: string | null;
+  status: "pending" | "generating" | "ready" | "sent" | "failed";
+  createdBy: string | null;
+  createdAt: string;
+};
+
+export type AdductDetection = {
+  id: string;
+  peakId: string;
+  analyteId: string | null;
+  adductType: string;
+  mzObserved: number;
+  mzTheoretical: number;
+  ppmError: number;
+  isInSourceFragment: boolean;
+  createdAt: string;
+};
+
+export type CustomColumn = {
+  id: string;
+  methodId: string | null;
+  name: string;
+  formula: string;
+  unit: string;
+  displayOrder: number;
+  createdBy: string | null;
+  createdAt: string;
+};
+
+export type ImportWatchFolder = {
+  id: string;
+  path: string;
+  enabled: boolean;
+  methodId: string | null;
+  columnId: string | null;
+  batchId: string | null;
+  filePattern: string;
+  createdBy: string | null;
+  createdAt: string;
+};
+
+export type ImportedFile = {
+  id: string;
+  folderId: string;
+  filePath: string;
+  fileName: string;
+  status: "pending" | "processing" | "imported" | "failed";
+  runId: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+};
+
+export type PeakDeconvolution = {
+  id: string;
+  peakId: string;
+  componentCount: number;
+  componentsJson: Array<{
+    rt: number;
+    area: number;
+    height: number;
+    fwhm: number;
+    gaussianParams: [number, number, number];
+  }>;
+  createdAt: string;
+};
+
+export type NceOptimization = {
+  id: string;
+  analyteId: string;
+  methodId: string | null;
+  nceTested: number | null;
+  bestNce: number | null;
+  bestFragmentCount: number | null;
+  spectraJson: Array<{
+    nce: number;
+    fragments: Array<{ mz: number; intensity: number }>;
+  }>;
+  notes: string;
+  createdBy: string | null;
+  createdAt: string;
 };

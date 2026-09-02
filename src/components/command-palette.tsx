@@ -10,13 +10,16 @@ import {
   PackageOpen,
   FileText,
   ArrowRight,
+  ListChecks,
+  ListOrdered,
+  Copy,
 } from "lucide-react";
 
 type SearchResult = {
   id: string;
   label: string;
   sublabel?: string;
-  entityType: "run" | "method" | "column" | "batch" | "analyte";
+  entityType: "run" | "method" | "column" | "batch" | "analyte" | "compoundList" | "queue" | "template";
   route: string;
   icon: React.ComponentType<{ className?: string }>;
 };
@@ -27,6 +30,9 @@ const ENTITY_META = {
   column: { icon: Columns3, label: "Column" },
   batch: { icon: PackageOpen, label: "Batch" },
   analyte: { icon: Beaker, label: "Analyte" },
+  compoundList: { icon: ListChecks, label: "Compound list" },
+  queue: { icon: ListOrdered, label: "Sample queue" },
+  template: { icon: Copy, label: "Template" },
 } as const;
 
 export function CommandPalette({
@@ -36,7 +42,7 @@ export function CommandPalette({
   open: boolean;
   onClose: () => void;
 }) {
-  const { runs, methods, columns, batches, analytes } = useLab();
+  const { runs, methods, columns, batches, analytes, compoundLists, sampleQueues, methodTemplates } = useLab();
   const [query, setQuery] = useState("");
   const [selectedIdx, setSelectedIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -105,8 +111,38 @@ export function CommandPalette({
         icon: Beaker,
       });
     }
+    for (const cl of compoundLists) {
+      items.push({
+        id: `clist-${cl.id}`,
+        label: cl.name,
+        sublabel: `${cl.analyteIds?.length ?? 0} compounds`,
+        entityType: "compoundList",
+        route: `/compound-lists`,
+        icon: ListChecks,
+      });
+    }
+    for (const sq of sampleQueues) {
+      items.push({
+        id: `queue-${sq.id}`,
+        label: sq.name,
+        sublabel: `${sq.entries?.length ?? 0} entries`,
+        entityType: "queue",
+        route: `/queues/${sq.id}`,
+        icon: ListOrdered,
+      });
+    }
+    for (const t of methodTemplates) {
+      items.push({
+        id: `template-${t.id}`,
+        label: t.name,
+        sublabel: t.description || "Method template",
+        entityType: "template",
+        route: `/templates`,
+        icon: Copy,
+      });
+    }
     return items;
-  }, [runs, methods, columns, batches, analytes]);
+  }, [runs, methods, columns, batches, analytes, compoundLists, sampleQueues, methodTemplates]);
 
   // Filter results
   const results = useMemo(() => {

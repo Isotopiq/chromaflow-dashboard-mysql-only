@@ -14,6 +14,13 @@ export function downloadJson(filename: string, data: unknown) {
   triggerDownload(blob, filename.endsWith(".json") ? filename : `${filename}.json`);
 }
 
+export async function downloadXlsx(filename: string, blob: Blob) {
+  triggerDownload(
+    blob,
+    filename.endsWith(".xlsx") ? filename : `${filename}.xlsx`,
+  );
+}
+
 function triggerDownload(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");

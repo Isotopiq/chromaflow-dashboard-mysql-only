@@ -22,6 +22,7 @@ import {
   getRunEICBatch,
   listReports,
 } from "@/lib/lab.functions";
+import { createReportJob, sendReportEmail } from "@/lib/v3-functions";
 import { renderReportPdf } from "@/lib/pdf-report";
 import { ShareDialog } from "@/components/share-dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -753,7 +754,134 @@ function Reports() {
           ))}
         </div>
       </Card>
+
+      {/* V3: Report Jobs with email delivery */}
+      <ReportJobsSection />
     </div>
+  );
+}
+
+function ReportJobsSection() {
+  const { reportJobs, runs, batches } = useLab();
+  const qc = useQueryClient();
+  const [title, setTitle] = useState("");
+  const [selectedRuns, setSelectedRuns] = useState<string[]>([]);
+  const [format, setFormat] = useState<"pdf" | "xlsx">("pdf");
+  const [emailTo, setEmailTo] = useState("");
+  const [creating, setCreating] = useState(false);
+
+  const createJobFn = useServerFn(createReportJob);
+  const sendEmailFn = useServerFn(sendReportEmail);
+  const upsertLocal = useLab((s) => s.upsertReportJobLocal);
+
+  async function createJob() {
+    if (!title.trim()) { toast.error("Title required."); return; }
+    setCreating(true);
+    try {
+      const emails = emailTo.split(",").map((e) => e.trim()).filter(Boolean);
+      const job = await createJobFn({
+        data: {
+          title: title.trim(),
+          runIds: selectedRuns,
+          outputFormat: format,
+          emailTo: emails,
+        },
+      });
+      upsertLocal(job);
+      toast.success("Report job created. Generating…");
+      setTitle(""); setSelectedRuns([]); setEmailTo("");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed to create report job");
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function sendEmail(jobId: string, to: string) {
+    const emails = to.split(",").map((e) => e.trim()).filter(Boolean);
+    try {
+      await sendEmailFn({ data: { id: jobId, to: emails } });
+      toast.success("Email sent.");
+      qc.invalidateQueries({ queryKey: ["lab"] });
+    } catch (e: any) {
+      toast.error(e?.message ?? "Email failed");
+    }
+  }
+
+  return (
+    <Card className="border-border bg-card p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <FileText className="h-4 w-4 text-primary" />
+        <div className="text-sm font-medium">Report jobs (V3)</div>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2 mb-4">
+        <div className="space-y-2">
+          <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Report title" />
+          <select
+            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+            value={format}
+            onChange={(e) => setFormat(e.target.value as "pdf" | "xlsx")}
+          >
+            <option value="pdf">PDF</option>
+            <option value="xlsx">Excel (.xlsx)</option>
+          </select>
+          <Input value={emailTo} onChange={(e) => setEmailTo(e.target.value)} placeholder="email@example.com, (optional)" />
+        </div>
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Runs to include</div>
+          <div className="max-h-40 overflow-y-auto space-y-1 rounded-md border border-border p-2">
+            {runs.slice(0, 50).map((r) => (
+              <label key={r.id} className="flex items-center gap-2 text-xs">
+                <Checkbox
+                  checked={selectedRuns.includes(r.id)}
+                  onCheckedChange={(v) =>
+                    setSelectedRuns(v ? [...selectedRuns, r.id] : selectedRuns.filter((x) => x !== r.id))
+                  }
+                />
+                <span className="truncate font-mono">{r.name}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      </div>
+      <Button onClick={createJob} disabled={creating} size="sm">
+        {creating ? "Creating…" : "Create report job"}
+      </Button>
+
+      {reportJobs.length > 0 && (
+        <div className="mt-4 border-t border-border pt-3">
+          <div className="text-xs font-medium mb-2">Job history</div>
+          <div className="space-y-2">
+            {reportJobs.map((job) => (
+              <div key={job.id} className="flex items-center justify-between rounded-md border border-border p-2 text-xs">
+                <div>
+                  <div className="font-medium">{job.title}</div>
+                  <div className="text-muted-foreground">
+                    {job.outputFormat.toUpperCase()} · {job.status} · {new Date(job.createdAt).toLocaleString()}
+                  </div>
+                </div>
+                {job.status === "ready" && job.emailTo.length === 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const to = prompt("Send to (comma-separated emails):");
+                      if (to) sendEmail(job.id, to);
+                    }}
+                  >
+                    <Share2 className="mr-1 h-3 w-3" /> Email
+                  </Button>
+                )}
+                {job.status === "sent" && (
+                  <Badge className="bg-green-100 text-green-700 text-[10px]">Sent</Badge>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </Card>
   );
 }
 

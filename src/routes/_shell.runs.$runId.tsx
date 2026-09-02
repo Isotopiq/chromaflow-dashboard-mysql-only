@@ -1,7 +1,7 @@
 import { createFileRoute, Link, notFound, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLab, useAnnotatePeak } from "@/lib/store";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +24,7 @@ import {
 import { ChromatogramPlot } from "@/components/chromatogram-plot";
 import { PeakTable } from "@/components/peak-table";
 import { MS2Viewer } from "@/components/ms2-viewer";
+import { FlaskConical, Split, ScanSearch, FileSpreadsheet } from "lucide-react";
 import { SystemSuitability } from "@/components/system-suitability";
 import { ago } from "@/lib/time";
 import { toast } from "sonner";
@@ -65,6 +66,7 @@ function RunDetail() {
   const updateRunNameFn = useServerFn(updateRunName);
   const updateRunMethodColumnFn = useServerFn(updateRunMethodColumn);
   const nav = useNavigate();
+  const qc = useQueryClient();
   const run = runs.find((r) => r.id === runId);
   if (!run) throw notFound();
   const method = methods.find((m) => m.id === run.methodId);
@@ -1343,6 +1345,182 @@ function RunDetail() {
           <SystemSuitability peaks={run.peaks} />
         </Card>
       </div>
+
+      {/* V3 Advanced Analysis */}
+      <Card className="border-border bg-card p-4 mt-4">
+        <div className="mb-3 flex items-center gap-2">
+          <FlaskConical className="h-4 w-4 text-primary" />
+          <div className="text-sm font-medium">Advanced analysis (V3)</div>
+        </div>
+        <div className="grid gap-3 md:grid-cols-3">
+          <div className="space-y-2">
+            <div className="text-xs font-medium">Peak deconvolution</div>
+            <p className="text-[11px] text-muted-foreground">
+              Resolve overlapping peaks using second-derivative analysis and Gaussian curve fitting.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              disabled={!effectiveSelected || effectiveSelected.id.startsWith("eic-")}
+              onClick={async () => {
+                if (!effectiveSelected) return;
+                try {
+                  const { deconvolvePeakServer } = await import("@/lib/deconvolution-functions");
+                  const fn = useServerFn(deconvolvePeakServer);
+                  const res = await fn({ data: { peakId: effectiveSelected.id } });
+                  toast.success(`Found ${res.componentCount} component(s).`);
+                  qc.invalidateQueries({ queryKey: ["lab"] });
+                } catch (e: any) {
+                  toast.error(e?.message ?? "Deconvolution failed");
+                }
+              }}
+            >
+              <Split className="mr-1 h-3.5 w-3.5" /> Deconvolve selected peak
+            </Button>
+          </div>
+
+          <div className="space-y-2">
+            <div className="text-xs font-medium">Adduct detection</div>
+            <p className="text-[11px] text-muted-foreground">
+              Scan all peaks for common adducts and in-source fragments.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={async () => {
+                try {
+                  const { detectAdductsServer } = await import("@/lib/adduct-functions");
+                  const fn = useServerFn(detectAdductsServer);
+                  const res = await fn({ data: { runId: run.id } });
+                  toast.success(`Detected ${res.count} adduct matches.`);
+                  qc.invalidateQueries({ queryKey: ["lab"] });
+                } catch (e: any) {
+                  toast.error(e?.message ?? "Adduct detection failed");
+                }
+              }}
+            >
+              <ScanSearch className="mr-1 h-3.5 w-3.5" /> Detect adducts
+            </Button>
+          </div>
+
+          <div className="space-y-2">
+            <div className="text-xs font-medium">Export peak table (Excel)</div>
+            <p className="text-[11px] text-muted-foreground">
+              Download all peaks as a real .xlsx file with formatting.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={async () => {
+                try {
+                  const { exportPeakTableXlsx } = await import("@/lib/excel-export");
+                  const { downloadXlsx } = await import("@/lib/exports");
+                  const blob = await exportPeakTableXlsx([{ name: run.name, peaks: run.peaks }]);
+                  downloadXlsx(`${run.name}_peaks.xlsx`, blob);
+                  toast.success("Excel file downloaded.");
+                } catch (e: any) {
+                  toast.error(e?.message ?? "Export failed");
+                }
+              }}
+            >
+              <FileSpreadsheet className="mr-1 h-3.5 w-3.5" /> Export .xlsx
+            </Button>
+          </div>
+        </div>
+
+        {/* Custom calculation columns */}
+        <div className="mt-4 border-t border-border pt-3">
+          <div className="text-xs font-medium mb-2">Custom calculation columns</div>
+          <CustomColumnsSection runId={run.id} methodId={run.methodId} peaks={run.peaks} />
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function CustomColumnsSection({ runId, methodId, peaks }: { runId: string; methodId?: string; peaks: any[] }) {
+  const { customColumns } = useLab();
+  const upsertLocal = useLab((s) => s.upsertCustomColumnLocal);
+  const removeLocal = useLab((s) => s.removeCustomColumnLocal);
+  const [newName, setNewName] = useState("");
+  const [newFormula, setNewFormula] = useState("");
+  const [newUnit, setNewUnit] = useState("");
+
+  const methodCols = customColumns.filter((c) => c.methodId === methodId);
+
+  async function addColumn() {
+    if (!newName.trim() || !newFormula.trim()) return;
+    try {
+      const { upsertCustomColumn } = await import("@/lib/v3-functions");
+      const fn = useServerFn(upsertCustomColumn);
+      const col = await fn({
+        data: { methodId: methodId ?? null, name: newName.trim(), formula: newFormula.trim(), unit: newUnit.trim() },
+      });
+      upsertLocal(col);
+      setNewName(""); setNewFormula(""); setNewUnit("");
+      toast.success("Custom column added");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed to add column");
+    }
+  }
+
+  async function removeColumn(id: string) {
+    try {
+      const { deleteCustomColumn } = await import("@/lib/v3-functions");
+      const fn = useServerFn(deleteCustomColumn);
+      await fn({ data: { id } });
+      removeLocal(id);
+    } catch (e: any) {
+      toast.error(e?.message ?? "Delete failed");
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      {methodCols.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {methodCols.map((col) => (
+            <div key={col.id} className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px]">
+              <span className="font-mono">{col.name}</span>
+              <span className="text-muted-foreground">= {col.formula}</span>
+              {col.unit && <span className="text-muted-foreground">({col.unit})</span>}
+              <button
+                onClick={() => removeColumn(col.id)}
+                className="ml-1 text-muted-foreground hover:text-destructive"
+              >×</button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="flex flex-wrap gap-2">
+        <Input
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          placeholder="Column name"
+          className="h-7 w-32 text-xs"
+        />
+        <Input
+          value={newFormula}
+          onChange={(e) => setNewFormula(e.target.value)}
+          placeholder="e.g. area / IS_area"
+          className="h-7 flex-1 text-xs font-mono"
+        />
+        <Input
+          value={newUnit}
+          onChange={(e) => setNewUnit(e.target.value)}
+          placeholder="unit"
+          className="h-7 w-20 text-xs"
+        />
+        <Button size="sm" variant="outline" onClick={addColumn} disabled={!newName.trim() || !newFormula.trim()}>
+          Add
+        </Button>
+      </div>
+      <p className="text-[10px] text-muted-foreground">
+        Variables: area, height, rt, fwhm, sn, mz, IS_area, slope, intercept. Functions: log, ln, sqrt, abs, exp, min, max.
+      </p>
     </div>
   );
 }

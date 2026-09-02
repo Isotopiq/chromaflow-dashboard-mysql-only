@@ -1,5 +1,10 @@
 import { create } from "zustand";
-import type { Method, Run, Column, Batch, Analyte, User, Peak, ColumnInjection, CompoundList, MethodColumnListDefault } from "./lab-types";
+import type {
+  Method, Run, Column, Batch, Analyte, User, Peak,
+  ColumnInjection, CompoundList, MethodColumnListDefault,
+  ISAssignment, SampleQueue, MethodTemplate, ReportJob,
+  CustomColumn, ImportWatchFolder, NceOptimization,
+} from "./lab-types";
 
 const EMPTY_USER: User = {
   id: "",
@@ -20,6 +25,14 @@ type State = {
   injections: ColumnInjection[];
   compoundLists: CompoundList[];
   listDefaults: MethodColumnListDefault[];
+  // V3 state
+  isAssignments: ISAssignment[];
+  sampleQueues: (SampleQueue & { entries: any[] })[];
+  methodTemplates: MethodTemplate[];
+  reportJobs: ReportJob[];
+  customColumns: CustomColumn[];
+  importWatchFolders: ImportWatchFolder[];
+  nceOptimizations: NceOptimization[];
   currentUser: User;
   hydrated: boolean;
   setAll: (s: {
@@ -32,6 +45,13 @@ type State = {
     compoundLists: CompoundList[];
     listDefaults: MethodColumnListDefault[];
     currentUser: User;
+    isAssignments?: ISAssignment[];
+    sampleQueues?: (SampleQueue & { entries: any[] })[];
+    methodTemplates?: MethodTemplate[];
+    reportJobs?: ReportJob[];
+    customColumns?: CustomColumn[];
+    importWatchFolders?: ImportWatchFolder[];
+    nceOptimizations?: NceOptimization[];
   }) => void;
   upsertMethodLocal: (m: Method) => void;
   removeMethodLocal: (id: string) => void;
@@ -59,6 +79,20 @@ type State = {
   upsertCompoundListLocal: (cl: CompoundList) => void;
   removeCompoundListLocal: (id: string) => void;
   setListDefaultLocal: (d: MethodColumnListDefault | null, methodId: string, columnId: string) => void;
+  // V3 local actions
+  upsertISAssignmentLocal: (a: ISAssignment) => void;
+  removeISAssignmentLocal: (id: string) => void;
+  upsertSampleQueueLocal: (q: SampleQueue & { entries: any[] }) => void;
+  removeSampleQueueLocal: (id: string) => void;
+  upsertMethodTemplateLocal: (t: MethodTemplate) => void;
+  removeMethodTemplateLocal: (id: string) => void;
+  upsertReportJobLocal: (j: ReportJob) => void;
+  upsertCustomColumnLocal: (c: CustomColumn) => void;
+  removeCustomColumnLocal: (id: string) => void;
+  upsertImportWatchFolderLocal: (f: ImportWatchFolder) => void;
+  removeImportWatchFolderLocal: (id: string) => void;
+  upsertNceOptimizationLocal: (n: NceOptimization) => void;
+  removeNceOptimizationLocal: (id: string) => void;
 };
 
 export const useLab = create<State>((set) => ({
@@ -71,6 +105,14 @@ export const useLab = create<State>((set) => ({
   injections: [],
   compoundLists: [],
   listDefaults: [],
+  // V3 initial state
+  isAssignments: [],
+  sampleQueues: [],
+  methodTemplates: [],
+  reportJobs: [],
+  customColumns: [],
+  importWatchFolders: [],
+  nceOptimizations: [],
   currentUser: EMPTY_USER,
   hydrated: false,
   setAll: (s) =>
@@ -84,6 +126,13 @@ export const useLab = create<State>((set) => ({
       compoundLists: s.compoundLists,
       listDefaults: s.listDefaults,
       currentUser: s.currentUser,
+      isAssignments: s.isAssignments ?? [],
+      sampleQueues: s.sampleQueues ?? [],
+      methodTemplates: s.methodTemplates ?? [],
+      reportJobs: s.reportJobs ?? [],
+      customColumns: s.customColumns ?? [],
+      importWatchFolders: s.importWatchFolders ?? [],
+      nceOptimizations: s.nceOptimizations ?? [],
       hydrated: true,
     })),
   upsertMethodLocal: (m) =>
@@ -232,6 +281,61 @@ export const useLab = create<State>((set) => ({
       );
       return { listDefaults: d ? [...filtered, d] : filtered };
     }),
+  // V3 local actions
+  upsertISAssignmentLocal: (a) =>
+    set((s) => ({
+      isAssignments: s.isAssignments.some((x) => x.id === a.id)
+        ? s.isAssignments.map((x) => (x.id === a.id ? a : x))
+        : [...s.isAssignments, a],
+    })),
+  removeISAssignmentLocal: (id) =>
+    set((s) => ({ isAssignments: s.isAssignments.filter((x) => x.id !== id) })),
+  upsertSampleQueueLocal: (q) =>
+    set((s) => ({
+      sampleQueues: s.sampleQueues.some((x) => x.id === q.id)
+        ? s.sampleQueues.map((x) => (x.id === q.id ? q : x))
+        : [q, ...s.sampleQueues],
+    })),
+  removeSampleQueueLocal: (id) =>
+    set((s) => ({ sampleQueues: s.sampleQueues.filter((x) => x.id !== id) })),
+  upsertMethodTemplateLocal: (t) =>
+    set((s) => ({
+      methodTemplates: s.methodTemplates.some((x) => x.id === t.id)
+        ? s.methodTemplates.map((x) => (x.id === t.id ? t : x))
+        : [t, ...s.methodTemplates],
+    })),
+  removeMethodTemplateLocal: (id) =>
+    set((s) => ({ methodTemplates: s.methodTemplates.filter((x) => x.id !== id) })),
+  upsertReportJobLocal: (j) =>
+    set((s) => ({
+      reportJobs: s.reportJobs.some((x) => x.id === j.id)
+        ? s.reportJobs.map((x) => (x.id === j.id ? j : x))
+        : [j, ...s.reportJobs],
+    })),
+  upsertCustomColumnLocal: (c) =>
+    set((s) => ({
+      customColumns: s.customColumns.some((x) => x.id === c.id)
+        ? s.customColumns.map((x) => (x.id === c.id ? c : x))
+        : [...s.customColumns, c],
+    })),
+  removeCustomColumnLocal: (id) =>
+    set((s) => ({ customColumns: s.customColumns.filter((x) => x.id !== id) })),
+  upsertImportWatchFolderLocal: (f) =>
+    set((s) => ({
+      importWatchFolders: s.importWatchFolders.some((x) => x.id === f.id)
+        ? s.importWatchFolders.map((x) => (x.id === f.id ? f : x))
+        : [...s.importWatchFolders, f],
+    })),
+  removeImportWatchFolderLocal: (id) =>
+    set((s) => ({ importWatchFolders: s.importWatchFolders.filter((x) => x.id !== id) })),
+  upsertNceOptimizationLocal: (n) =>
+    set((s) => ({
+      nceOptimizations: s.nceOptimizations.some((x) => x.id === n.id)
+        ? s.nceOptimizations.map((x) => (x.id === n.id ? n : x))
+        : [...s.nceOptimizations, n],
+    })),
+  removeNceOptimizationLocal: (id) =>
+    set((s) => ({ nceOptimizations: s.nceOptimizations.filter((x) => x.id !== id) })),
 }));
 
 // Backwards-compat helpers used by older pages — they map to *Local + server fn.

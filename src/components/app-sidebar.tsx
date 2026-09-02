@@ -13,6 +13,9 @@ import {
   UserCog,
   TrendingUp,
   ListChecks,
+  ListOrdered,
+  Copy,
+  FolderSync,
 } from "lucide-react";
 import logoLightUrl from "@/assets/isotopiq-logo-light.png";
 import logoDarkUrl from "@/assets/isotopiq-logo-dark.png";
@@ -56,6 +59,7 @@ const groups: Array<{
       { title: "Overlay workspace", url: "/overlay", icon: FileBarChart },
       { title: "Analyte comparison", url: "/analytes", icon: Beaker },
       { title: "Compound lists", url: "/compound-lists", icon: ListChecks },
+      { title: "Sample queues", url: "/queues", icon: ListOrdered },
     ],
   },
   {
@@ -63,6 +67,7 @@ const groups: Array<{
     items: [
       { title: "Column library", url: "/columns", icon: Columns3 },
       { title: "Batches", url: "/batches", icon: PackageOpen },
+      { title: "Templates", url: "/templates", icon: Copy },
     ],
   },
   {
@@ -75,7 +80,10 @@ const groups: Array<{
   },
   {
     label: "Settings",
-    items: [{ title: "Account", url: "/account", icon: UserCog }],
+    items: [
+      { title: "Account", url: "/account", icon: UserCog },
+      { title: "Auto-import", url: "/auto-import", icon: FolderSync },
+    ],
   },
   {
     label: "Admin",

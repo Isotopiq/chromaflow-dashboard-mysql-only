@@ -24,6 +24,19 @@ export type CurveFit = {
   points: CalibrationPoint[];
 };
 
+export type QuadCurveFit = {
+  a: number;
+  b: number;
+  c: number;
+  rSquared: number;
+  lod: number | null;
+  loq: number | null;
+  rangeLow: number;
+  rangeHigh: number;
+  points: CalibrationPoint[];
+  residuals: Array<{ conc: number; response: number; predicted: number; residual: number }>;
+};
+
 export type Weighting = "none" | "1/x" | "1/x2";
 
 /**
@@ -284,4 +297,132 @@ export function runSystemSuitability(
   });
 
   return results;
+}
+
+// ---- Quadratic curve fitting ----
+
+/**
+ * Fit a quadratic calibration curve y = a*x² + b*x + c using ordinary least squares.
+ * Computes R², LOD/LOQ from residual standard deviation, and per-point residuals.
+ */
+export function fitQuadraticCurve(
+  points: CalibrationPoint[],
+  lodN = 3,
+  loqN = 10,
+): QuadCurveFit | null {
+  const active = points.filter((p) => !p.excluded && p.concentration > 0 && p.response > 0);
+  if (active.length < 3) return null;
+
+  // Build normal equations for y = a*x² + b*x + c:
+  //   [ Σx⁴  Σx³  Σx² ] [a]   [Σx²y]
+  //   [ Σx³  Σx²  Σx  ] [b] = [Σxy ]
+  //   [ Σx²  Σx   Σ1  ] [c]   [Σy  ]
+  const n = active.length;
+  let s4 = 0, s3 = 0, s2 = 0, s1 = 0, s0 = n;
+  let s2y = 0, s1y = 0, s0y = 0;
+
+  for (let i = 0; i < n; i++) {
+    const x = active[i].concentration;
+    const y = active[i].response;
+    const x2 = x * x;
+    const x3 = x2 * x;
+    const x4 = x3 * x;
+    s4 += x4; s3 += x3; s2 += x2; s1 += x;
+    s2y += x2 * y; s1y += x * y; s0y += y;
+  }
+
+  // Solve 3×3 system via Cramer's rule.
+  const det =
+    s4 * (s2 * s0 - s1 * s1) -
+    s3 * (s3 * s0 - s1 * s2) +
+    s2 * (s3 * s1 - s2 * s2);
+  if (Math.abs(det) < 1e-30) return null;
+
+  const a =
+    (s2y * (s2 * s0 - s1 * s1) -
+      s1y * (s3 * s0 - s1 * s2) +
+      s0y * (s3 * s1 - s2 * s2)) / det;
+  const b =
+    (s4 * (s1y * s0 - s0y * s1) -
+      s3 * (s2y * s0 - s0y * s2) +
+      s2 * (s2y * s1 - s1y * s2)) / det;
+  const c =
+    (s4 * (s2 * s0y - s1 * s1y) -
+      s3 * (s3 * s0y - s1 * s2y) +
+      s2 * (s3 * s1y - s2 * s2y)) / det;
+
+  // Predicted values and residuals.
+  const residuals: Array<{ conc: number; response: number; predicted: number; residual: number }> = [];
+  let ssRes = 0;
+  let ssTot = 0;
+  const meanY = s0y / n;
+  for (let i = 0; i < n; i++) {
+    const x = active[i].concentration;
+    const y = active[i].response;
+    const yPred = a * x * x + b * x + c;
+    const resid = y - yPred;
+    ssRes += resid * resid;
+    ssTot += (y - meanY) * (y - meanY);
+    residuals.push({ conc: x, response: y, predicted: yPred, residual: resid });
+  }
+  const rSquared = ssTot > 0 ? Math.max(0, 1 - ssRes / ssTot) : 1;
+
+  // LOD/LOQ from residual standard deviation.
+  // sigma = sqrt(SS_res / (n - 3))  (3 parameters fitted)
+  // We approximate the slope at the centroid for LOD/LOQ conversion.
+  const sigma = n > 3 ? Math.sqrt(ssRes / (n - 3)) : Math.sqrt(ssRes / Math.max(1, n));
+  const meanX = s1 / n;
+  const slopeAtCentroid = 2 * a * meanX + b;
+  const lod = slopeAtCentroid > 0 ? (lodN * sigma) / slopeAtCentroid : null;
+  const loq = slopeAtCentroid > 0 ? (loqN * sigma) / slopeAtCentroid : null;
+
+  const concentrations = active.map((p) => p.concentration);
+  const rangeLow = Math.min(...concentrations);
+  const rangeHigh = Math.max(...concentrations);
+
+  return {
+    a,
+    b,
+    c,
+    rSquared,
+    lod,
+    loq,
+    rangeLow,
+    rangeHigh,
+    points: active,
+    residuals,
+  };
+}
+
+/**
+ * Back-calculate concentration from a response using a fitted quadratic curve.
+ * Solves a*x² + b*x + (c - y) = 0 for x, returns the positive root.
+ */
+export function calcConcentrationQuad(
+  response: number,
+  a: number,
+  b: number,
+  c: number,
+): number | null {
+  // Rearrange y = a*x² + b*x + c  →  a*x² + b*x + (c - y) = 0
+  const cc = c - response;
+
+  if (Math.abs(a) < 1e-30) {
+    // Degenerate to linear: b*x + cc = 0
+    if (Math.abs(b) < 1e-30) return null;
+    const x = -cc / b;
+    return x > 0 ? x : 0;
+  }
+
+  const disc = b * b - 4 * a * cc;
+  if (disc < 0) return null;
+
+  const sqrtDisc = Math.sqrt(disc);
+  const x1 = (-b + sqrtDisc) / (2 * a);
+  const x2 = (-b - sqrtDisc) / (2 * a);
+
+  // Prefer the smallest positive root (physically meaningful concentration).
+  const candidates = [x1, x2].filter((x) => x > 0);
+  if (candidates.length === 0) return 0;
+  return Math.min(...candidates);
 }

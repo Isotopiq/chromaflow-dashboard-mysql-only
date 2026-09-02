@@ -31,7 +31,7 @@ import {
 } from "@/components/ui/popover";
 import { StatusDot } from "@/components/status-dot";
 import { SaveStatus, type SaveState } from "@/components/save-status";
-import { ArrowLeft, Download, Plus, Sparkles, X } from "lucide-react";
+import { ArrowLeft, Download, Plus, Sparkles, X, AlignHorizontalJustifyCenter } from "lucide-react";
 import { toast } from "sonner";
 import {
   upsertBatch,
@@ -39,7 +39,14 @@ import {
   setRunBatch,
   autoAnnotateBatch,
 } from "@/lib/lab.functions";
+import { runRtAlignment, clearRtAlignment } from "@/lib/alignment.functions";
+import { batchPeakPick, getBatchHeatmap, getBatchPCA } from "@/lib/analysis.functions";
+import { BatchHeatmap } from "@/components/batch-heatmap";
+import { PcaPlot } from "@/components/pca-plot";
+import { BatchPeakSummary } from "@/components/batch-peak-summary";
 import type { Batch, Run } from "@/lib/lab-types";
+import type { PCAResult } from "@/lib/pca-math";
+import { Grid3x3, ScatterChart, Zap } from "lucide-react";
 
 export const Route = createFileRoute("/_shell/batches/$batchId")({
   component: BatchDetailGate,
@@ -183,6 +190,104 @@ function BatchDetail({ batch }: { batch: Batch }) {
       toast.error(e?.message ?? "Auto-annotate failed");
     } finally {
       setAnnotating(false);
+    }
+  }
+
+  // ---- RT Alignment ----
+  const alignFn = useServerFn(runRtAlignment);
+  const clearAlignFn = useServerFn(clearRtAlignment);
+  const [alignRefRun, setAlignRefRun] = useState("");
+  const [alignMethod, setAlignMethod] = useState<"landmark" | "linear">("landmark");
+  const [aligning, setAligning] = useState(false);
+
+  // Auto-pick reference run: the one with the most annotated peaks
+  useEffect(() => {
+    if (!alignRefRun && batchRuns.length > 0) {
+      const best = batchRuns.reduce((best, r) =>
+        r.peaks.filter((p) => p.analyteId).length >
+        best.peaks.filter((p) => p.analyteId).length ? r : best,
+      );
+      setAlignRefRun(best.id);
+    }
+  }, [batchRuns, alignRefRun]);
+
+  async function runAlignment() {
+    if (!alignRefRun) { toast.error("Select a reference run."); return; }
+    setAligning(true);
+    try {
+      const res = await alignFn({
+        data: { batchId: batch.id, referenceRunId: alignRefRun, method: alignMethod },
+      });
+      toast.success(`Aligned ${res.aligned} peaks across ${res.runs} runs.`);
+      qc.invalidateQueries({ queryKey: ["lab"] });
+    } catch (e: any) {
+      toast.error(e?.message ?? "RT alignment failed");
+    } finally {
+      setAligning(false);
+    }
+  }
+
+  async function clearAlignment() {
+    setAligning(true);
+    try {
+      await clearAlignFn({ data: { batchId: batch.id } });
+      toast.success("Cleared RT alignment for this batch.");
+      qc.invalidateQueries({ queryKey: ["lab"] });
+    } catch (e: any) {
+      toast.error(e?.message ?? "Clear alignment failed");
+    } finally {
+      setAligning(false);
+    }
+  }
+
+  // ---- Batch analysis (peak picking, heatmap, PCA) ----
+  const peakPickFn = useServerFn(batchPeakPick);
+  const heatmapFn = useServerFn(getBatchHeatmap);
+  const pcaFn = useServerFn(getBatchPCA);
+  const [analysisTab, setAnalysisTab] = useState<"none" | "heatmap" | "pca" | "peakpick">("none");
+  const [picking, setPicking] = useState(false);
+  const [heatmapData, setHeatmapData] = useState<any>(null);
+  const [pcaData, setPcaData] = useState<PCAResult | null>(null);
+  const [loadingAnalysis, setLoadingAnalysis] = useState(false);
+  const [pickSummary, setPickSummary] = useState<{ picked: number; runs: number } | null>(null);
+
+  async function runPeakPick() {
+    setPicking(true);
+    try {
+      const res = await peakPickFn({ data: { batchId: batch.id } });
+      setPickSummary(res);
+      toast.success(`Picked ${res.picked} peaks across ${res.runs} runs.`);
+      qc.invalidateQueries({ queryKey: ["lab"] });
+    } catch (e: any) {
+      toast.error(e?.message ?? "Peak picking failed");
+    } finally {
+      setPicking(false);
+    }
+  }
+
+  async function loadHeatmap() {
+    setLoadingAnalysis(true);
+    try {
+      const res = await heatmapFn({ data: { batchId: batch.id } });
+      setHeatmapData(res);
+      setAnalysisTab("heatmap");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed to load heatmap");
+    } finally {
+      setLoadingAnalysis(false);
+    }
+  }
+
+  async function loadPCA() {
+    setLoadingAnalysis(true);
+    try {
+      const res = await pcaFn({ data: { batchId: batch.id } });
+      setPcaData(res);
+      setAnalysisTab("pca");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed to load PCA");
+    } finally {
+      setLoadingAnalysis(false);
     }
   }
 
@@ -405,6 +510,127 @@ function BatchDetail({ batch }: { batch: Batch }) {
           Matches every peak in this batch against your compound library and saves
           annotations server-side.
         </p>
+      </Card>
+
+      <Card className="border-border bg-card p-4">
+        <div className="mb-3 flex items-center gap-2">
+          <AlignHorizontalJustifyCenter className="h-4 w-4 text-primary" />
+          <div className="text-sm font-medium">Retention time alignment</div>
+        </div>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <div className="space-y-1">
+            <Label htmlFor="ref-run">Reference run</Label>
+            <Select value={alignRefRun} onValueChange={setAlignRefRun}>
+              <SelectTrigger id="ref-run"><SelectValue placeholder="Pick reference…" /></SelectTrigger>
+              <SelectContent>
+                {batchRuns.map((r) => (
+                  <SelectItem key={r.id} value={r.id}>
+                    {r.name} ({r.peaks.filter((p) => p.analyteId).length} annotated)
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="align-method">Method</Label>
+            <Select value={alignMethod} onValueChange={(v) => setAlignMethod(v as "landmark" | "linear")}>
+              <SelectTrigger id="align-method"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="landmark">Landmark (piecewise)</SelectItem>
+                <SelectItem value="linear">Linear (single shift)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-end gap-2">
+            <Button
+              onClick={runAlignment}
+              disabled={aligning || batchRuns.length < 2}
+              className="flex-1"
+            >
+              {aligning ? "Aligning…" : "Align RT"}
+            </Button>
+            <Button
+              onClick={clearAlignment}
+              disabled={aligning}
+              variant="outline"
+              size="sm"
+            >
+              Clear
+            </Button>
+          </div>
+        </div>
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          Aligns retention times across all runs using annotated peaks as landmarks.
+          Aligned RT is stored separately and can be used in overlays and comparisons.
+        </p>
+      </Card>
+
+      <Card className="border-border bg-card p-4">
+        <div className="mb-3 flex items-center gap-2">
+          <Zap className="h-4 w-4 text-primary" />
+          <div className="text-sm font-medium">Batch analysis</div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant={analysisTab === "peakpick" ? "default" : "outline"}
+            size="sm"
+            onClick={() => { setAnalysisTab("peakpick"); runPeakPick(); }}
+            disabled={picking || batchRuns.length === 0}
+          >
+            <Zap className="mr-1 h-3.5 w-3.5" />
+            {picking ? "Picking…" : "Batch peak pick"}
+          </Button>
+          <Button
+            variant={analysisTab === "heatmap" ? "default" : "outline"}
+            size="sm"
+            onClick={loadHeatmap}
+            disabled={loadingAnalysis || batchRuns.length === 0}
+          >
+            <Grid3x3 className="mr-1 h-3.5 w-3.5" />
+            {loadingAnalysis && analysisTab === "heatmap" ? "Loading…" : "Heatmap"}
+          </Button>
+          <Button
+            variant={analysisTab === "pca" ? "default" : "outline"}
+            size="sm"
+            onClick={loadPCA}
+            disabled={loadingAnalysis || batchRuns.length < 2}
+          >
+            <ScatterChart className="mr-1 h-3.5 w-3.5" />
+            {loadingAnalysis && analysisTab === "pca" ? "Loading…" : "PCA"}
+          </Button>
+        </div>
+
+        {pickSummary && analysisTab === "peakpick" && (
+          <div className="mt-3 text-xs text-muted-foreground">
+            Picked <span className="font-medium text-foreground">{pickSummary.picked}</span> peaks across{" "}
+            <span className="font-medium text-foreground">{pickSummary.runs}</span> runs.
+          </div>
+        )}
+
+        {heatmapData && analysisTab === "heatmap" && (
+          <div className="mt-3">
+            <BatchHeatmap
+              analytes={heatmapData.analytes}
+              runs={heatmapData.runs}
+              matrix={heatmapData.matrix}
+              onCellClick={(runId, analyteId) => {
+                window.open(`/runs/${runId}`, "_blank");
+              }}
+            />
+          </div>
+        )}
+
+        {pcaData && analysisTab === "pca" && (
+          <div className="mt-3">
+            <PcaPlot result={pcaData} />
+          </div>
+        )}
+
+        {analysisTab === "none" && (
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            Run batch peak picking, generate an analyte × run heatmap, or perform PCA for clustering and outlier detection.
+          </p>
+        )}
       </Card>
 
       <Card className="border-border bg-card p-4">

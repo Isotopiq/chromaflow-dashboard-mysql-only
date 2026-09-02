@@ -17,11 +17,14 @@ import { Route as ShellIndexRouteImport } from './routes/_shell.index'
 import { Route as ShellAccountRouteImport } from './routes/_shell.account'
 import { Route as ShellAdminRouteImport } from './routes/_shell.admin'
 import { Route as ShellAnalytesRouteImport } from './routes/_shell.analytes'
+import { Route as ShellAutoImportRouteImport } from './routes/_shell.auto-import'
 import { Route as ShellBatchesRouteImport } from './routes/_shell.batches'
 import { Route as ShellCompoundListsRouteImport } from './routes/_shell.compound-lists'
 import { Route as ShellOverlayRouteImport } from './routes/_shell.overlay'
 import { Route as ShellQuantRouteImport } from './routes/_shell.quant'
+import { Route as ShellQueuesRouteImport } from './routes/_shell.queues'
 import { Route as ShellReportsRouteImport } from './routes/_shell.reports'
+import { Route as ShellTemplatesRouteImport } from './routes/_shell.templates'
 import { Route as ApiAssetRouteImport } from './routes/api/asset'
 import { Route as ApiUploadRouteImport } from './routes/api/upload'
 import { Route as SharedTokenRouteImport } from './routes/shared.$token'
@@ -33,6 +36,7 @@ import { Route as ShellMethodsIndexRouteImport } from './routes/_shell.methods.i
 import { Route as ShellMethodsMethodIdRouteImport } from './routes/_shell.methods.$methodId'
 import { Route as ShellMethodsCompareRouteImport } from './routes/_shell.methods.compare'
 import { Route as ShellMethodsNewRouteImport } from './routes/_shell.methods.new'
+import { Route as ShellQueuesQueueIdRouteImport } from './routes/_shell.queues.$queueId'
 import { Route as ShellRunsIndexRouteImport } from './routes/_shell.runs.index'
 import { Route as ShellRunsRunIdRouteImport } from './routes/_shell.runs.$runId'
 import { Route as ApiAuthLoginRouteImport } from './routes/api/auth/login'
@@ -85,6 +89,11 @@ const ShellAnalytesRoute = ShellAnalytesRouteImport.update({
   path: '/analytes',
   getParentRoute: () => ShellRoute,
 } as any)
+const ShellAutoImportRoute = ShellAutoImportRouteImport.update({
+  id: '/auto-import',
+  path: '/auto-import',
+  getParentRoute: () => ShellRoute,
+} as any)
 const ShellBatchesRoute = ShellBatchesRouteImport.update({
   id: '/batches',
   path: '/batches',
@@ -105,9 +114,19 @@ const ShellQuantRoute = ShellQuantRouteImport.update({
   path: '/quant',
   getParentRoute: () => ShellRoute,
 } as any)
+const ShellQueuesRoute = ShellQueuesRouteImport.update({
+  id: '/queues',
+  path: '/queues',
+  getParentRoute: () => ShellRoute,
+} as any)
 const ShellReportsRoute = ShellReportsRouteImport.update({
   id: '/reports',
   path: '/reports',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ShellTemplatesRoute = ShellTemplatesRouteImport.update({
+  id: '/templates',
+  path: '/templates',
   getParentRoute: () => ShellRoute,
 } as any)
 const ApiAssetRoute = ApiAssetRouteImport.update({
@@ -164,6 +183,11 @@ const ShellMethodsNewRoute = ShellMethodsNewRouteImport.update({
   id: '/methods/new',
   path: '/methods/new',
   getParentRoute: () => ShellRoute,
+} as any)
+const ShellQueuesQueueIdRoute = ShellQueuesQueueIdRouteImport.update({
+  id: '/$queueId',
+  path: '/$queueId',
+  getParentRoute: () => ShellQueuesRoute,
 } as any)
 const ShellRunsIndexRoute = ShellRunsIndexRouteImport.update({
   id: '/runs/',
@@ -237,11 +261,14 @@ export interface FileRoutesByFullPath {
   '/account': typeof ShellAccountRoute
   '/admin': typeof ShellAdminRoute
   '/analytes': typeof ShellAnalytesRouteWithChildren
+  '/auto-import': typeof ShellAutoImportRoute
   '/batches': typeof ShellBatchesRouteWithChildren
   '/compound-lists': typeof ShellCompoundListsRoute
   '/overlay': typeof ShellOverlayRoute
   '/quant': typeof ShellQuantRoute
+  '/queues': typeof ShellQueuesRouteWithChildren
   '/reports': typeof ShellReportsRoute
+  '/templates': typeof ShellTemplatesRoute
   '/api/asset': typeof ApiAssetRoute
   '/api/upload': typeof ApiUploadRoute
   '/shared/$token': typeof SharedTokenRoute
@@ -251,6 +278,7 @@ export interface FileRoutesByFullPath {
   '/methods/$methodId': typeof ShellMethodsMethodIdRouteWithChildren
   '/methods/compare': typeof ShellMethodsCompareRoute
   '/methods/new': typeof ShellMethodsNewRoute
+  '/queues/$queueId': typeof ShellQueuesQueueIdRoute
   '/runs/$runId': typeof ShellRunsRunIdRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
@@ -273,11 +301,14 @@ export interface FileRoutesByTo {
   '/account': typeof ShellAccountRoute
   '/admin': typeof ShellAdminRoute
   '/analytes': typeof ShellAnalytesRouteWithChildren
+  '/auto-import': typeof ShellAutoImportRoute
   '/batches': typeof ShellBatchesRouteWithChildren
   '/compound-lists': typeof ShellCompoundListsRoute
   '/overlay': typeof ShellOverlayRoute
   '/quant': typeof ShellQuantRoute
+  '/queues': typeof ShellQueuesRouteWithChildren
   '/reports': typeof ShellReportsRoute
+  '/templates': typeof ShellTemplatesRoute
   '/api/asset': typeof ApiAssetRoute
   '/api/upload': typeof ApiUploadRoute
   '/shared/$token': typeof SharedTokenRoute
@@ -287,6 +318,7 @@ export interface FileRoutesByTo {
   '/columns/$columnId': typeof ShellColumnsColumnIdRoute
   '/methods/compare': typeof ShellMethodsCompareRoute
   '/methods/new': typeof ShellMethodsNewRoute
+  '/queues/$queueId': typeof ShellQueuesQueueIdRoute
   '/runs/$runId': typeof ShellRunsRunIdRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
@@ -311,11 +343,14 @@ export interface FileRoutesById {
   '/_shell/account': typeof ShellAccountRoute
   '/_shell/admin': typeof ShellAdminRoute
   '/_shell/analytes': typeof ShellAnalytesRouteWithChildren
+  '/_shell/auto-import': typeof ShellAutoImportRoute
   '/_shell/batches': typeof ShellBatchesRouteWithChildren
   '/_shell/compound-lists': typeof ShellCompoundListsRoute
   '/_shell/overlay': typeof ShellOverlayRoute
   '/_shell/quant': typeof ShellQuantRoute
+  '/_shell/queues': typeof ShellQueuesRouteWithChildren
   '/_shell/reports': typeof ShellReportsRoute
+  '/_shell/templates': typeof ShellTemplatesRoute
   '/api/asset': typeof ApiAssetRoute
   '/api/upload': typeof ApiUploadRoute
   '/shared/$token': typeof SharedTokenRoute
@@ -326,6 +361,7 @@ export interface FileRoutesById {
   '/_shell/methods/$methodId': typeof ShellMethodsMethodIdRouteWithChildren
   '/_shell/methods/compare': typeof ShellMethodsCompareRoute
   '/_shell/methods/new': typeof ShellMethodsNewRoute
+  '/_shell/queues/$queueId': typeof ShellQueuesQueueIdRoute
   '/_shell/runs/$runId': typeof ShellRunsRunIdRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
@@ -351,11 +387,14 @@ export interface FileRouteTypes {
     | '/account'
     | '/admin'
     | '/analytes'
+    | '/auto-import'
     | '/batches'
     | '/compound-lists'
     | '/overlay'
     | '/quant'
+    | '/queues'
     | '/reports'
+    | '/templates'
     | '/api/asset'
     | '/api/upload'
     | '/shared/$token'
@@ -365,6 +404,7 @@ export interface FileRouteTypes {
     | '/methods/$methodId'
     | '/methods/compare'
     | '/methods/new'
+    | '/queues/$queueId'
     | '/runs/$runId'
     | '/api/auth/login'
     | '/api/auth/logout'
@@ -387,11 +427,14 @@ export interface FileRouteTypes {
     | '/account'
     | '/admin'
     | '/analytes'
+    | '/auto-import'
     | '/batches'
     | '/compound-lists'
     | '/overlay'
     | '/quant'
+    | '/queues'
     | '/reports'
+    | '/templates'
     | '/api/asset'
     | '/api/upload'
     | '/shared/$token'
@@ -401,6 +444,7 @@ export interface FileRouteTypes {
     | '/columns/$columnId'
     | '/methods/compare'
     | '/methods/new'
+    | '/queues/$queueId'
     | '/runs/$runId'
     | '/api/auth/login'
     | '/api/auth/logout'
@@ -424,11 +468,14 @@ export interface FileRouteTypes {
     | '/_shell/account'
     | '/_shell/admin'
     | '/_shell/analytes'
+    | '/_shell/auto-import'
     | '/_shell/batches'
     | '/_shell/compound-lists'
     | '/_shell/overlay'
     | '/_shell/quant'
+    | '/_shell/queues'
     | '/_shell/reports'
+    | '/_shell/templates'
     | '/api/asset'
     | '/api/upload'
     | '/shared/$token'
@@ -439,6 +486,7 @@ export interface FileRouteTypes {
     | '/_shell/methods/$methodId'
     | '/_shell/methods/compare'
     | '/_shell/methods/new'
+    | '/_shell/queues/$queueId'
     | '/_shell/runs/$runId'
     | '/api/auth/login'
     | '/api/auth/logout'
@@ -530,6 +578,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellAnalytesRouteImport
       parentRoute: typeof ShellRoute
     }
+    '/_shell/auto-import': {
+      id: '/_shell/auto-import'
+      path: '/auto-import'
+      fullPath: '/auto-import'
+      preLoaderRoute: typeof ShellAutoImportRouteImport
+      parentRoute: typeof ShellRoute
+    }
     '/_shell/batches': {
       id: '/_shell/batches'
       path: '/batches'
@@ -558,11 +613,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellQuantRouteImport
       parentRoute: typeof ShellRoute
     }
+    '/_shell/queues': {
+      id: '/_shell/queues'
+      path: '/queues'
+      fullPath: '/queues'
+      preLoaderRoute: typeof ShellQueuesRouteImport
+      parentRoute: typeof ShellRoute
+    }
     '/_shell/reports': {
       id: '/_shell/reports'
       path: '/reports'
       fullPath: '/reports'
       preLoaderRoute: typeof ShellReportsRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/templates': {
+      id: '/_shell/templates'
+      path: '/templates'
+      fullPath: '/templates'
+      preLoaderRoute: typeof ShellTemplatesRouteImport
       parentRoute: typeof ShellRoute
     }
     '/api/asset': {
@@ -641,6 +710,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/methods/new'
       preLoaderRoute: typeof ShellMethodsNewRouteImport
       parentRoute: typeof ShellRoute
+    }
+    '/_shell/queues/$queueId': {
+      id: '/_shell/queues/$queueId'
+      path: '/$queueId'
+      fullPath: '/queues/$queueId'
+      preLoaderRoute: typeof ShellQueuesQueueIdRouteImport
+      parentRoute: typeof ShellQueuesRoute
     }
     '/_shell/runs/': {
       id: '/_shell/runs/'
@@ -753,6 +829,18 @@ const ShellBatchesRouteWithChildren = ShellBatchesRoute._addFileChildren(
   ShellBatchesRouteChildren,
 )
 
+interface ShellQueuesRouteChildren {
+  ShellQueuesQueueIdRoute: typeof ShellQueuesQueueIdRoute
+}
+
+const ShellQueuesRouteChildren: ShellQueuesRouteChildren = {
+  ShellQueuesQueueIdRoute: ShellQueuesQueueIdRoute,
+}
+
+const ShellQueuesRouteWithChildren = ShellQueuesRoute._addFileChildren(
+  ShellQueuesRouteChildren,
+)
+
 interface ShellMethodsMethodIdRouteChildren {
   ShellMethodsMethodIdEditRoute: typeof ShellMethodsMethodIdEditRoute
   ShellMethodsMethodIdHistoryRoute: typeof ShellMethodsMethodIdHistoryRoute
@@ -772,11 +860,14 @@ interface ShellRouteChildren {
   ShellAccountRoute: typeof ShellAccountRoute
   ShellAdminRoute: typeof ShellAdminRoute
   ShellAnalytesRoute: typeof ShellAnalytesRouteWithChildren
+  ShellAutoImportRoute: typeof ShellAutoImportRoute
   ShellBatchesRoute: typeof ShellBatchesRouteWithChildren
   ShellCompoundListsRoute: typeof ShellCompoundListsRoute
   ShellOverlayRoute: typeof ShellOverlayRoute
   ShellQuantRoute: typeof ShellQuantRoute
+  ShellQueuesRoute: typeof ShellQueuesRouteWithChildren
   ShellReportsRoute: typeof ShellReportsRoute
+  ShellTemplatesRoute: typeof ShellTemplatesRoute
   ShellIndexRoute: typeof ShellIndexRoute
   ShellColumnsColumnIdRoute: typeof ShellColumnsColumnIdRoute
   ShellMethodsMethodIdRoute: typeof ShellMethodsMethodIdRouteWithChildren
@@ -792,11 +883,14 @@ const ShellRouteChildren: ShellRouteChildren = {
   ShellAccountRoute: ShellAccountRoute,
   ShellAdminRoute: ShellAdminRoute,
   ShellAnalytesRoute: ShellAnalytesRouteWithChildren,
+  ShellAutoImportRoute: ShellAutoImportRoute,
   ShellBatchesRoute: ShellBatchesRouteWithChildren,
   ShellCompoundListsRoute: ShellCompoundListsRoute,
   ShellOverlayRoute: ShellOverlayRoute,
   ShellQuantRoute: ShellQuantRoute,
+  ShellQueuesRoute: ShellQueuesRouteWithChildren,
   ShellReportsRoute: ShellReportsRoute,
+  ShellTemplatesRoute: ShellTemplatesRoute,
   ShellIndexRoute: ShellIndexRoute,
   ShellColumnsColumnIdRoute: ShellColumnsColumnIdRoute,
   ShellMethodsMethodIdRoute: ShellMethodsMethodIdRouteWithChildren,

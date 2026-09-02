@@ -782,5 +782,265 @@ create policy "qc: write auth" on public.qc_samples for all
   with check (true);
 
 -- =====================================================================
+-- 9. V3 Feature tables
+-- =====================================================================
+
+-- ---- Peak column additions (idempotent) ----
+do $$ begin alter table public.peaks add column if not exists aligned_rt double precision; exception when others then null; end $$;
+do $$ begin alter table public.peaks add column if not exists is_normalized_area double precision; exception when others then null; end $$;
+do $$ begin alter table public.peaks add column if not exists custom_values jsonb default '{}'::jsonb; exception when others then null; end $$;
+do $$ begin alter table public.peaks add column if not exists adduct_type text; exception when others then null; end $$;
+do $$ begin alter table public.peaks add column if not exists deconvolved boolean default false; exception when others then null; end $$;
+
+-- ---- RT alignment runs ----
+create table if not exists public.rt_alignment_runs (
+  id                uuid primary key default gen_random_uuid(),
+  batch_id          uuid references public.batches(id) on delete cascade,
+  reference_run_id  uuid references public.runs(id) on delete set null,
+  alignment_method  text default 'landmark' check (alignment_method in ('landmark','linear')),
+  shift_json        jsonb default '{}'::jsonb,
+  created_by        uuid references public.app_users(id) on delete set null,
+  created_at        timestamptz not null default now()
+);
+create index if not exists rt_align_batch_idx on public.rt_alignment_runs(batch_id);
+alter table public.rt_alignment_runs enable row level security;
+drop policy if exists "rt_align: read all" on public.rt_alignment_runs;
+drop policy if exists "rt_align: write auth" on public.rt_alignment_runs;
+create policy "rt_align: read all" on public.rt_alignment_runs for select using (true);
+create policy "rt_align: write auth" on public.rt_alignment_runs for all
+  using (true) with check (true);
+
+-- ---- IS assignments ----
+create table if not exists public.is_assignments (
+  id            uuid primary key default gen_random_uuid(),
+  analyte_id    uuid not null references public.analytes(id) on delete cascade,
+  is_analyte_id uuid not null references public.analytes(id) on delete cascade,
+  method_id     uuid references public.methods(id) on delete cascade,
+  created_by    uuid references public.app_users(id) on delete set null,
+  created_at    timestamptz not null default now(),
+  unique (analyte_id, method_id)
+);
+alter table public.is_assignments enable row level security;
+drop policy if exists "is_assign: read all" on public.is_assignments;
+drop policy if exists "is_assign: write auth" on public.is_assignments;
+create policy "is_assign: read all" on public.is_assignments for select using (true);
+create policy "is_assign: write auth" on public.is_assignments for all
+  using (true) with check (true);
+
+-- ---- Sample queues ----
+create table if not exists public.sample_queues (
+  id          uuid primary key default gen_random_uuid(),
+  name        text not null,
+  batch_id    uuid references public.batches(id) on delete set null,
+  instrument  text default '',
+  created_by  uuid references public.app_users(id) on delete set null,
+  created_at  timestamptz not null default now()
+);
+alter table public.sample_queues enable row level security;
+drop policy if exists "sample_queues: read all" on public.sample_queues;
+drop policy if exists "sample_queues: write auth" on public.sample_queues;
+create policy "sample_queues: read all" on public.sample_queues for select using (true);
+create policy "sample_queues: write auth" on public.sample_queues for all
+  using (true) with check (true);
+
+create table if not exists public.sample_queue_entries (
+  id               uuid primary key default gen_random_uuid(),
+  queue_id         uuid not null references public.sample_queues(id) on delete cascade,
+  position         int not null default 0,
+  sample_name      text not null default '',
+  sample_type      text default 'unknown' check (sample_type in ('unknown','blank','standard','qc','double_blank','system_suitability')),
+  vial_position    text default '',
+  tray_code        text default '',
+  method_path      text default '',
+  method_id        uuid references public.methods(id) on delete set null,
+  column_id        uuid references public.columns(id) on delete set null,
+  injection_volume double precision default 0,
+  dilution_factor  double precision default 1,
+  status           text default 'pending' check (status in ('pending','running','complete','failed')),
+  run_id           uuid references public.runs(id) on delete set null,
+  created_at       timestamptz not null default now()
+);
+create index if not exists sample_queue_entries_queue_idx on public.sample_queue_entries(queue_id);
+alter table public.sample_queue_entries enable row level security;
+drop policy if exists "sample_queue_entries: read all" on public.sample_queue_entries;
+drop policy if exists "sample_queue_entries: write auth" on public.sample_queue_entries;
+create policy "sample_queue_entries: read all" on public.sample_queue_entries for select using (true);
+create policy "sample_queue_entries: write auth" on public.sample_queue_entries for all
+  using (true) with check (true);
+
+-- ---- Method templates ----
+create table if not exists public.method_templates (
+  id            uuid primary key default gen_random_uuid(),
+  name          text not null,
+  description   text default '',
+  template_json jsonb not null default '{}'::jsonb,
+  created_by    uuid references public.app_users(id) on delete set null,
+  created_at    timestamptz not null default now()
+);
+alter table public.method_templates enable row level security;
+drop policy if exists "method_templates: read all" on public.method_templates;
+drop policy if exists "method_templates: write auth" on public.method_templates;
+create policy "method_templates: read all" on public.method_templates for select using (true);
+create policy "method_templates: write auth" on public.method_templates for all
+  using (true) with check (true);
+do $$ begin alter table public.methods add column if not exists template_id uuid references public.method_templates(id) on delete set null; exception when others then null; end $$;
+
+-- ---- Report jobs ----
+create table if not exists public.report_jobs (
+  id              uuid primary key default gen_random_uuid(),
+  title           text not null,
+  template        text default 'standard',
+  run_ids         uuid[] not null default '{}',
+  batch_id        uuid references public.batches(id) on delete set null,
+  include_sections text[] default '{}',
+  output_format   text default 'pdf' check (output_format in ('pdf','xlsx','csv')),
+  storage_path    text,
+  email_to        text[] default '{}',
+  email_sent_at   timestamptz,
+  status          text default 'pending' check (status in ('pending','generating','ready','sent','failed')),
+  created_by      uuid references public.app_users(id) on delete set null,
+  created_at      timestamptz not null default now()
+);
+alter table public.report_jobs enable row level security;
+drop policy if exists "report_jobs: read all" on public.report_jobs;
+drop policy if exists "report_jobs: write auth" on public.report_jobs;
+create policy "report_jobs: read all" on public.report_jobs for select using (true);
+create policy "report_jobs: write auth" on public.report_jobs for all
+  using (true) with check (true);
+
+-- ---- Adduct detections ----
+create table if not exists public.adduct_detections (
+  id                     uuid primary key default gen_random_uuid(),
+  peak_id                uuid not null references public.peaks(id) on delete cascade,
+  analyte_id             uuid references public.analytes(id) on delete set null,
+  adduct_type            text not null,
+  mz_observed            double precision,
+  mz_theoretical         double precision,
+  ppm_error              double precision,
+  is_in_source_fragment  boolean default false,
+  created_at             timestamptz not null default now()
+);
+create index if not exists adduct_det_peak_idx on public.adduct_detections(peak_id);
+alter table public.adduct_detections enable row level security;
+drop policy if exists "adduct_det: read all" on public.adduct_detections;
+drop policy if exists "adduct_det: write auth" on public.adduct_detections;
+create policy "adduct_det: read all" on public.adduct_detections for select using (true);
+create policy "adduct_det: write auth" on public.adduct_detections for all
+  using (true) with check (true);
+
+-- ---- Custom calculation columns ----
+create table if not exists public.custom_columns (
+  id            uuid primary key default gen_random_uuid(),
+  method_id     uuid references public.methods(id) on delete cascade,
+  name          text not null,
+  formula       text not null,
+  unit          text default '',
+  display_order int default 0,
+  created_by    uuid references public.app_users(id) on delete set null,
+  created_at    timestamptz not null default now()
+);
+create index if not exists custom_cols_method_idx on public.custom_columns(method_id);
+alter table public.custom_columns enable row level security;
+drop policy if exists "custom_cols: read all" on public.custom_columns;
+drop policy if exists "custom_cols: write auth" on public.custom_columns;
+create policy "custom_cols: read all" on public.custom_columns for select using (true);
+create policy "custom_cols: write auth" on public.custom_columns for all
+  using (true) with check (true);
+
+-- ---- Import watch folders ----
+create table if not exists public.import_watch_folders (
+  id           uuid primary key default gen_random_uuid(),
+  path         text not null,
+  enabled      boolean default true,
+  method_id    uuid references public.methods(id) on delete set null,
+  column_id    uuid references public.columns(id) on delete set null,
+  batch_id     uuid references public.batches(id) on delete set null,
+  file_pattern text default '*.mzXML',
+  created_by   uuid references public.app_users(id) on delete set null,
+  created_at   timestamptz not null default now()
+);
+alter table public.import_watch_folders enable row level security;
+drop policy if exists "watch_folders: read all" on public.import_watch_folders;
+drop policy if exists "watch_folders: write auth" on public.import_watch_folders;
+create policy "watch_folders: read all" on public.import_watch_folders for select using (true);
+create policy "watch_folders: write auth" on public.import_watch_folders for all
+  using (true) with check (true);
+
+create table if not exists public.imported_files (
+  id            uuid primary key default gen_random_uuid(),
+  folder_id     uuid references public.import_watch_folders(id) on delete cascade,
+  file_path     text not null,
+  file_name     text not null,
+  status        text default 'pending' check (status in ('pending','processing','imported','failed')),
+  run_id        uuid references public.runs(id) on delete set null,
+  error_message text,
+  created_at    timestamptz not null default now()
+);
+create index if not exists imported_files_folder_idx on public.imported_files(folder_id);
+alter table public.imported_files enable row level security;
+drop policy if exists "imported_files: read all" on public.imported_files;
+drop policy if exists "imported_files: write auth" on public.imported_files;
+create policy "imported_files: read all" on public.imported_files for select using (true);
+create policy "imported_files: write auth" on public.imported_files for all
+  using (true) with check (true);
+
+-- ---- Peak deconvolution ----
+create table if not exists public.peak_deconvolution (
+  id              uuid primary key default gen_random_uuid(),
+  peak_id         uuid not null references public.peaks(id) on delete cascade,
+  component_count int default 1,
+  components_json  jsonb default '[]'::jsonb,
+  created_at      timestamptz not null default now()
+);
+create index if not exists peak_deconv_peak_idx on public.peak_deconvolution(peak_id);
+alter table public.peak_deconvolution enable row level security;
+drop policy if exists "peak_deconv: read all" on public.peak_deconvolution;
+drop policy if exists "peak_deconv: write auth" on public.peak_deconvolution;
+create policy "peak_deconv: read all" on public.peak_deconvolution for select using (true);
+create policy "peak_deconv: write auth" on public.peak_deconvolution for all
+  using (true) with check (true);
+
+-- ---- NCE optimization ----
+create table if not exists public.nce_optimization (
+  id                  uuid primary key default gen_random_uuid(),
+  analyte_id          uuid not null references public.analytes(id) on delete cascade,
+  method_id           uuid references public.methods(id) on delete set null,
+  nce_tested          double precision,
+  best_nce            double precision,
+  best_fragment_count int,
+  spectra_json        jsonb default '[]'::jsonb,
+  notes               text default '',
+  created_by          uuid references public.app_users(id) on delete set null,
+  created_at          timestamptz not null default now()
+);
+create index if not exists nce_opt_analyte_idx on public.nce_optimization(analyte_id);
+alter table public.nce_optimization enable row level security;
+drop policy if exists "nce_opt: read all" on public.nce_optimization;
+drop policy if exists "nce_opt: write auth" on public.nce_optimization;
+create policy "nce_opt: read all" on public.nce_optimization for select using (true);
+create policy "nce_opt: write auth" on public.nce_optimization for all
+  using (true) with check (true);
+
+-- ---- Additional audit triggers for V3 ----
+drop trigger if exists trg_audit_peaks on public.peaks;
+create trigger trg_audit_peaks after insert or update or delete on public.peaks
+  for each row execute function public.log_audit();
+drop trigger if exists trg_audit_analytes on public.analytes;
+create trigger trg_audit_analytes after insert or update or delete on public.analytes
+  for each row execute function public.log_audit();
+drop trigger if exists trg_audit_compound_lists on public.compound_lists;
+create trigger trg_audit_compound_lists after insert or update or delete on public.compound_lists
+  for each row execute function public.log_audit();
+drop trigger if exists trg_audit_cal_std on public.calibration_standards;
+create trigger trg_audit_cal_std after insert or update or delete on public.calibration_standards
+  for each row execute function public.log_audit();
+drop trigger if exists trg_audit_cal_curve on public.calibration_curves;
+create trigger trg_audit_cal_curve after insert or update or delete on public.calibration_curves
+  for each row execute function public.log_audit();
+drop trigger if exists trg_audit_col_inj on public.column_injections;
+create trigger trg_audit_col_inj after insert or update or delete on public.column_injections
+  for each row execute function public.log_audit();
+
+-- =====================================================================
 -- Done.
 -- =====================================================================

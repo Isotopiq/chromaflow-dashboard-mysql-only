@@ -5,7 +5,9 @@ import type { Db } from "@/db/index.server";
 import { notify } from "@/lib/notifications.functions";
 import {
   fitLinearCurve,
+  fitQuadraticCurve,
   calcConcentration,
+  calcConcentrationQuad,
   calcAccuracy,
   qcPassed,
   type Weighting,
@@ -399,4 +401,112 @@ export const listStandardsForAnalyte = createServerFn({ method: "POST" })
       [data.analyteId],
     );
     return rows.map(mapStandard);
+  });
+
+// ---- Fit a quadratic calibration curve ----
+const FitQuadInput = z.object({
+  analyteId: z.string().uuid(),
+  batchId: z.string().uuid().nullable().optional(),
+  methodId: z.string().uuid().nullable().optional(),
+  name: z.string().max(200).default(""),
+  lodN: z.number().int().min(1).max(20).default(3),
+  loqN: z.number().int().min(1).max(50).default(10),
+});
+
+export const fitCalibrationCurveQuad = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) => FitQuadInput.parse(d))
+  .handler(async ({ data, context }) => {
+    const { userId, db } = context as { userId: string; email: string; isAdmin: boolean; db: Db };
+    // Fetch all non-excluded standards for this analyte
+    const rows = await db.many<any>(
+      `select * from public.calibration_standards
+       where analyte_id = $1 and excluded = false and response is not null
+       order by concentration asc`,
+      [data.analyteId],
+    );
+    if (rows.length < 3) {
+      throw new Error("Need at least 3 non-excluded standards with response values to fit a quadratic curve.");
+    }
+    const points = rows.map((r) => ({
+      concentration: Number(r.concentration),
+      response: Number(r.response),
+    }));
+    const fit = fitQuadraticCurve(points, data.lodN, data.loqN);
+    if (!fit) throw new Error("Quadratic curve fitting failed — check that concentrations and responses are valid.");
+
+    // Store the quadratic coefficients as a JSON string in the `name` field
+    // when model_type='quad'. This is a pragmatic approach since we can't
+    // easily add new columns to the schema.
+    const quadParamsJson = JSON.stringify({ a: fit.a, b: fit.b, c: fit.c });
+    const curveName = data.name || quadParamsJson;
+
+    const curve = await db.one<any>(
+      `insert into public.calibration_curves
+         (analyte_id, batch_id, method_id, name, model_type, weighting,
+          slope, intercept, r_squared, lod, loq, range_low, range_high, created_by)
+       values ($1,$2,$3,$4,'quad','none',$5,$6,$7,$8,$9,$10,$11,$12)
+       returning *`,
+      [data.analyteId, data.batchId ?? null, data.methodId ?? null, curveName,
+       fit.a, fit.b, fit.rSquared,
+       fit.lod, fit.loq, fit.rangeLow, fit.rangeHigh, userId],
+    );
+
+    // Notification for poor curve fit
+    if (fit.rSquared < 0.99) {
+      await notify(
+        db, userId, "calibration_drift",
+        `Quadratic calibration curve R² = ${fit.rSquared.toFixed(4)} — below 0.99`,
+        `Analyte: ${data.analyteId}. Consider reviewing calibration standards.`,
+        `/quant`,
+      );
+    }
+
+    return mapCurve(curve);
+  });
+
+// ---- Calculate concentration for unknown peaks (quadratic) ----
+const CalcQuadInput = z.object({
+  curveId: z.string().uuid(),
+  peakIds: z.array(z.string().uuid()).min(1).max(500),
+});
+
+export const calculateConcentrationsQuad = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) => CalcQuadInput.parse(d))
+  .handler(async ({ data, context }) => {
+    const { db } = context as { userId: string; email: string; isAdmin: boolean; db: Db };
+    const curve = await db.maybe<any>(
+      "select * from public.calibration_curves where id = $1",
+      [data.curveId],
+    );
+    if (!curve || curve.model_type !== "quad" || curve.slope == null || curve.intercept == null) {
+      throw new Error("Quadratic curve not found or not fitted.");
+    }
+
+    // Recover the quadratic coefficients.
+    // slope column stores `a`, intercept column stores `b`.
+    // `c` is stored in the `name` field as JSON (or as the curve name if not JSON).
+    let c = 0;
+    try {
+      const parsed = JSON.parse(curve.name);
+      c = Number(parsed.c);
+    } catch {
+      // If name is not JSON, c defaults to 0 (shouldn't happen for quad curves).
+      c = 0;
+    }
+
+    const a = Number(curve.slope);
+    const b = Number(curve.intercept);
+
+    const peaks = await db.many<any>(
+      "select id, area, height from public.peaks where id = any($1::uuid[])",
+      [data.peakIds],
+    );
+    const results = peaks.map((p) => {
+      const response = curve.weighting === "height" ? Number(p.height) : Number(p.area);
+      const conc = calcConcentrationQuad(response, a, b, c);
+      return { peakId: p.id, response, concentration: conc };
+    });
+    return { results };
   });
