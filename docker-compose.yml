@@ -25,13 +25,10 @@ services:
       - "29473:29473"
     volumes:
       # Persistent storage for PostgreSQL data + uploaded files.
+      # Use a named volume so data survives container recreations.
       # On Easypanel: configure a persistent volume mount for /app/data
-      # in the service's "Storage" tab. If Easypanel doesn't preserve
-      # bind mounts, use a named volume instead:
-      #   - chroma-lab-data:/app/data
-      # The Dockerfile also declares VOLUME ["/app/data"] as a fallback
-      # so Docker auto-creates an anonymous volume if nothing is mounted.
-      - /var/lib/chroma-lab:/app/data
+      # in the service's "Storage" tab with mount path /app/data.
+      - chroma-lab-data:/app/data
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0
@@ -88,3 +85,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 45s
+
+volumes:
+  chroma-lab-data:

@@ -62,11 +62,10 @@ RUN chmod +x /app/docker-entrypoint.sh
 RUN mkdir -p /app/data/uploads /app/data/pgdata && \
     chown -R postgres:postgres /app/data/pgdata
 
-# Declare /app/data as a Docker volume so Docker automatically preserves
-# it across container recreations even if the compose file doesn't
-# explicitly mount a volume. Easypanel may not always honor bind mounts
-# from docker-compose.yml; this ensures persistence as a fallback.
-VOLUME ["/app/data"]
+# NOTE: Do NOT declare VOLUME ["/app/data"] here. The VOLUME directive causes
+# Docker to create a NEW anonymous volume on every container recreation, which
+# wipes data on redeploy. Instead, let Easypanel (or docker-compose) manage the
+# volume explicitly via a named volume mount at /app/data.
 
 EXPOSE 29473
 
