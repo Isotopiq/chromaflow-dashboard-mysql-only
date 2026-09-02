@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
-import { ArrowLeft, Sparkles, Download, Activity, Trash2, Share2, Pencil, Check, X } from "lucide-react";
+import { ArrowLeft, Sparkles, Download, Activity, Trash2, Share2, Pencil, Check, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { ShareDialog } from "@/components/share-dialog";
 import {
   AlertDialog,
@@ -209,6 +209,10 @@ function RunDetail() {
   const [acceptDrifted, setAcceptDrifted] = useState(savedPrefs?.acceptDrifted ?? false);
   const [batchSaving, setBatchSaving] = useState(false);
   const [showOnlyAccepted, setShowOnlyAccepted] = useState(savedPrefs?.showOnlyAccepted ?? false);
+  // Pagination for the overlay chromatogram — only render a subset of traces
+  // per page to keep the chart responsive and the legend readable.
+  const OVERLAY_PAGE_SIZE = 8;
+  const [overlayPage, setOverlayPage] = useState(0);
   const filteredTargets = useMemo(() => {
     const q = targetFilter.trim().toLowerCase();
     if (!q) return libraryTargets;
@@ -254,6 +258,18 @@ function RunDetail() {
   const overlayHasSignal = overlayRuns.some((r) =>
     r.trace.tic.some((v) => Number.isFinite(v) && v > 0),
   );
+
+  // Paginate the overlay: only show OVERLAY_PAGE_SIZE traces per page.
+  const overlayPageCount = Math.max(1, Math.ceil(overlayRuns.length / OVERLAY_PAGE_SIZE));
+  const clampedPage = Math.min(overlayPage, overlayPageCount - 1);
+  const pagedOverlayRuns = overlayRuns.slice(
+    clampedPage * OVERLAY_PAGE_SIZE,
+    (clampedPage + 1) * OVERLAY_PAGE_SIZE,
+  );
+  // Reset page to 0 when the target set changes significantly.
+  useEffect(() => {
+    setOverlayPage(0);
+  }, [batchKey]);
 
   const matchRows = useMemo(() => {
     if (!batchQuery.data) return [];
@@ -854,7 +870,39 @@ function RunDetail() {
           </div>
         ) : overlayRuns.length > 0 ? (
           <>
-            <ChromatogramPlot runs={overlayRuns} height={260} channel="tic" />
+            <div className="flex items-center justify-between gap-2">
+              {overlayPageCount > 1 && (
+                <div className="flex items-center gap-1">
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    className="h-7 w-7"
+                    disabled={clampedPage === 0}
+                    onClick={() => setOverlayPage(Math.max(0, clampedPage - 1))}
+                    aria-label="Previous page"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <span className="text-[10px] font-mono text-muted-foreground">
+                    {clampedPage + 1} / {overlayPageCount}
+                  </span>
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    className="h-7 w-7"
+                    disabled={clampedPage >= overlayPageCount - 1}
+                    onClick={() => setOverlayPage(Math.min(overlayPageCount - 1, clampedPage + 1))}
+                    aria-label="Next page"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+              <span className="text-[10px] text-muted-foreground">
+                Showing {clampedPage * OVERLAY_PAGE_SIZE + 1}–{Math.min((clampedPage + 1) * OVERLAY_PAGE_SIZE, overlayRuns.length)} of {overlayRuns.length} EICs
+              </span>
+            </div>
+            <ChromatogramPlot runs={pagedOverlayRuns} height={260} channel="tic" />
             <div className="mt-3 overflow-x-auto rounded-md border border-border">
               <Table>
                 <TableHeader>
@@ -871,7 +919,10 @@ function RunDetail() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {matchRows.map(({ tr, t, dRt, matched }) => (
+                  {matchRows.slice(
+                    clampedPage * OVERLAY_PAGE_SIZE,
+                    (clampedPage + 1) * OVERLAY_PAGE_SIZE,
+                  ).map(({ tr, t, dRt, matched }) => (
                     <TableRow
                       key={tr.id}
                       onClick={() => onSelectTarget(tr.id, t?.name, tr.mz)}
