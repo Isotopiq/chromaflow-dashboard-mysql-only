@@ -52,6 +52,7 @@ function NewMethod() {
   const [temp, setTemp] = useState(40);
   const [inj, setInj] = useState(2);
   const [ion, setIon] = useState<Method["msIonization"]>("ESI+");
+  const [detector, setDetector] = useState("Orbitrap, full scan");
   const [notes, setNotes] = useState("");
   const [gradient, setGradient] = useState<GradientStep[]>([
     { time: 0, pctB: 5, flow: 0.4 },
@@ -222,7 +223,7 @@ function NewMethod() {
         flowRate: flow,
         columnTemp: temp,
         injectionVolume: inj,
-        detector: "Q-TOF, full scan",
+        detector,
         msIonization: ion,
         msScanRange: scanRange,
         msGlobalSettings,
@@ -403,6 +404,27 @@ function NewMethod() {
                 <SelectItem value="ESI±">ESI ± (polarity switching)</SelectItem>
                 <SelectItem value="APCI+">APCI +</SelectItem>
                 <SelectItem value="APCI-">APCI −</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-[11px]">Detector</Label>
+            <Select value={detector} onValueChange={setDetector}>
+              <SelectTrigger className="mt-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Orbitrap, full scan">Orbitrap, full scan</SelectItem>
+                <SelectItem value="Orbitrap, data-dependent MS2">Orbitrap, data-dependent MS2</SelectItem>
+                <SelectItem value="Orbitrap, PRM">Orbitrap, PRM</SelectItem>
+                <SelectItem value="Orbitrap, AIF">Orbitrap, AIF</SelectItem>
+                <SelectItem value="Q-TOF, full scan">Q-TOF, full scan</SelectItem>
+                <SelectItem value="Q-TOF, data-dependent MS2">Q-TOF, data-dependent MS2</SelectItem>
+                <SelectItem value="QQQ, MRM">QQQ, MRM</SelectItem>
+                <SelectItem value="QQQ, PRM">QQQ, PRM</SelectItem>
+                <SelectItem value="Ion trap, full scan">Ion trap, full scan</SelectItem>
+                <SelectItem value="Ion trap, data-dependent MS2">Ion trap, data-dependent MS2</SelectItem>
+                <SelectItem value="TOF, full scan">TOF, full scan</SelectItem>
               </SelectContent>
             </Select>
           </div>
