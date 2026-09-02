@@ -236,12 +236,12 @@ function QueueDetail({ queue }: { queue: any }) {
                     </TableCell>
                     <TableCell>
                       <Select
-                        value={entry.methodId ?? ""}
-                        onValueChange={(v) => updateEntry(idx, "methodId", v || null)}
+                        value={entry.methodId ?? "none"}
+                        onValueChange={(v) => updateEntry(idx, "methodId", v === "none" ? null : v)}
                       >
                         <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="—" /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">None</SelectItem>
+                          <SelectItem value="none">None</SelectItem>
                           {methods.map((m) => (
                             <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
                           ))}

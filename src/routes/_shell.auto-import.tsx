@@ -97,10 +97,10 @@ function AutoImportPage() {
           </div>
           <div className="space-y-1">
             <Label>Default method</Label>
-            <Select value={methodId} onValueChange={setMethodId}>
+            <Select value={methodId || "none"} onValueChange={(v) => setMethodId(v === "none" ? "" : v)}>
               <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="">None</SelectItem>
+                <SelectItem value="none">None</SelectItem>
                 {methods.map((m) => (
                   <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
                 ))}
@@ -109,10 +109,10 @@ function AutoImportPage() {
           </div>
           <div className="space-y-1">
             <Label>Default column</Label>
-            <Select value={columnId} onValueChange={setColumnId}>
+            <Select value={columnId || "none"} onValueChange={(v) => setColumnId(v === "none" ? "" : v)}>
               <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="">None</SelectItem>
+                <SelectItem value="none">None</SelectItem>
                 {columns.map((c) => (
                   <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                 ))}
@@ -121,10 +121,10 @@ function AutoImportPage() {
           </div>
           <div className="space-y-1">
             <Label>Default batch</Label>
-            <Select value={batchId} onValueChange={setBatchId}>
+            <Select value={batchId || "none"} onValueChange={(v) => setBatchId(v === "none" ? "" : v)}>
               <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="">None</SelectItem>
+                <SelectItem value="none">None</SelectItem>
                 {batches.map((b) => (
                   <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
                 ))}
