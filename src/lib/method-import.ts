@@ -307,31 +307,41 @@ function parsePumpGradients(text: string): PumpGradient[] {
   // Each time marker starts a gradient step. The pump Flow/%B values
   // appear between this time marker and the next one.
   const timeMarkerRe = /(\d+\.?\d*)\s*\[min\]/g;
-  const timeMarkers: { time: number; index: number }[] = [];
+  const timeMarkers: { time: number; index: number; isStopRun: boolean }[] = [];
   while ((m = timeMarkerRe.exec(text)) !== null) {
     const t = parseFloat(m[1]);
     // Only accept reasonable gradient time values (0–120 min)
     if (Number.isFinite(t) && t >= 0 && t <= 120) {
-      timeMarkers.push({ time: t, index: m.index });
+      // Check if this is a "Stop Run" marker (e.g. "33.000 [min] Stop Run")
+      const afterMarker = text.slice(m.index + m[0].length, m.index + m[0].length + 20);
+      const isStopRun = /Stop\s*Run/i.test(afterMarker);
+      timeMarkers.push({ time: t, index: m.index, isStopRun });
     }
   }
 
   if (timeMarkers.length === 0) return [];
 
+  // Find the first "Stop Run" time — this is the end of the gradient.
+  // The last gradient step holds its composition until this time.
+  const stopRunMarker = timeMarkers.find((tm) => tm.isStopRun);
+  const stopRunTime = stopRunMarker?.time ?? null;
+
   // For each time marker, extract the text up to the next time marker
   // (or up to a reasonable limit) and look for pump Flow/%B values.
   const segments: { time: number; text: string }[] = [];
   for (let i = 0; i < timeMarkers.length; i++) {
-    const start = timeMarkers[i].index;
+    const tm = timeMarkers[i];
+    const start = tm.index;
     const end = i + 1 < timeMarkers.length
       ? timeMarkers[i + 1].index
       : Math.min(start + 2000, text.length);
     const segText = text.slice(start, end);
     // Skip segments that don't contain any pump data
-    if (!/Pump.*\.Flow\.Nominal:/.test(segText) && !/Pump.*\.%B\.Value:/.test(segText)) {
+    // (but keep Stop Run segments — they mark the end time)
+    if (!tm.isStopRun && !/Pump.*\.Flow\.Nominal:/.test(segText) && !/Pump.*\.%B\.Value:/.test(segText)) {
       continue;
     }
-    segments.push({ time: timeMarkers[i].time, text: segText });
+    segments.push({ time: tm.time, text: segText });
   }
 
   const results: PumpGradient[] = [];
@@ -347,7 +357,7 @@ function parsePumpGradients(text: string): PumpGradient[] {
     if (colorMatch) parts.push(`(${colorMatch[1]})`);
     label = parts.join(" ");
 
-    const gradient = parseGradientForPump(segments, prefix);
+    const gradient = parseGradientForPump(segments, prefix, stopRunTime);
     if (gradient.length > 0) {
       results.push({ pumpName: prefix, pumpLabel: label, gradient });
     }
@@ -358,10 +368,15 @@ function parsePumpGradients(text: string): PumpGradient[] {
 
 /** Parse the gradient timetable for a specific pump prefix.
  * Accepts pre-split segments (time + text) from parsePumpGradients.
+ * If stopRunTime is provided and the last gradient step is before it,
+ * a final step is added at stopRunTime carrying forward the last known
+ * flow and %B values (the gradient holds its final composition until
+ * the run stops).
  */
 function parseGradientForPump(
   segments: { time: number; text: string }[],
   prefix: string,
+  stopRunTime: number | null = null,
 ): { time: number; pctB: number; flow: number }[] {
   const steps: { time: number; pctB: number; flow: number }[] = [];
 
@@ -399,7 +414,18 @@ function parseGradientForPump(
       seen.set(s.time, s);
     }
   }
-  const deduped = Array.from(seen.values()).sort((a, b) => a.time - b.time);
+  let deduped = Array.from(seen.values()).sort((a, b) => a.time - b.time);
+
+  // If we know the run end time (from "Stop Run" marker) and the last
+  // gradient step is before it, add a final step at the stop time
+  // carrying forward the last known flow and %B. This represents the
+  // hold at final composition until the run ends.
+  if (stopRunTime != null && deduped.length > 0) {
+    const lastStep = deduped[deduped.length - 1];
+    if (lastStep.time < stopRunTime) {
+      deduped.push({ time: stopRunTime, pctB: lastStep.pctB, flow: lastStep.flow });
+    }
+  }
 
   if (deduped.length > 0 && deduped[0].time > 0) {
     deduped.unshift({ time: 0, pctB: deduped[0].pctB, flow: deduped[0].flow });
@@ -412,34 +438,42 @@ function parseGradientForPump(
  * can be split across OLE streams.
  */
 function parseGradientTimetable(text: string): { time: number; pctB: number; flow: number }[] {
-  // Find all time markers in the full text
+  // Find all time markers in the full text, detecting "Stop Run" markers
   const timeMarkerRe = /(\d+\.?\d*)\s*\[min\]/g;
-  const timeMarkers: { time: number; index: number }[] = [];
+  const timeMarkers: { time: number; index: number; isStopRun: boolean }[] = [];
   let m: RegExpExecArray | null;
   while ((m = timeMarkerRe.exec(text)) !== null) {
     const t = parseFloat(m[1]);
     if (Number.isFinite(t) && t >= 0 && t <= 120) {
-      timeMarkers.push({ time: t, index: m.index });
+      const afterMarker = text.slice(m.index + m[0].length, m.index + m[0].length + 20);
+      const isStopRun = /Stop\s*Run/i.test(afterMarker);
+      timeMarkers.push({ time: t, index: m.index, isStopRun });
     }
   }
 
   if (timeMarkers.length === 0) return [];
 
+  // Find the run end time from the first "Stop Run" marker
+  const stopRunMarker = timeMarkers.find((tm) => tm.isStopRun);
+  const stopRunTime = stopRunMarker?.time ?? null;
+
   const segments: { time: number; text: string }[] = [];
   for (let i = 0; i < timeMarkers.length; i++) {
-    const start = timeMarkers[i].index;
+    const tm = timeMarkers[i];
+    const start = tm.index;
     const end = i + 1 < timeMarkers.length
       ? timeMarkers[i + 1].index
       : Math.min(start + 2000, text.length);
     const segText = text.slice(start, end);
-    if (!/Flow\.Nominal:/.test(segText) && !/%B\.Value:/.test(segText)) continue;
-    segments.push({ time: timeMarkers[i].time, text: segText });
+    if (!tm.isStopRun && !/Flow\.Nominal:/.test(segText) && !/%B\.Value:/.test(segText)) continue;
+    segments.push({ time: tm.time, text: segText });
   }
 
   const steps: { time: number; pctB: number; flow: number }[] = [];
   for (const seg of segments) {
     const flowMatch = seg.text.match(/Flow\.Nominal:\s*([\d.]+)/);
     const pctBMatch = seg.text.match(/%B\.Value:\s*([\d.]+)/);
+    if (!flowMatch && !pctBMatch) continue;
     const flow = flowMatch ? parseFloat(flowMatch[1]) : 0;
     const pctB = pctBMatch ? parseFloat(pctBMatch[1]) : 0;
     if (seg.time === 0 && flow === 0) continue;
@@ -451,7 +485,15 @@ function parseGradientTimetable(text: string): { time: number; pctB: number; flo
   for (const s of steps) {
     if (!seen.has(s.time) || s.flow > 0) seen.set(s.time, s);
   }
-  const deduped = Array.from(seen.values()).sort((a, b) => a.time - b.time);
+  let deduped = Array.from(seen.values()).sort((a, b) => a.time - b.time);
+
+  // Add final step at stop-run time carrying forward last known values
+  if (stopRunTime != null && deduped.length > 0) {
+    const lastStep = deduped[deduped.length - 1];
+    if (lastStep.time < stopRunTime) {
+      deduped.push({ time: stopRunTime, pctB: lastStep.pctB, flow: lastStep.flow });
+    }
+  }
 
   if (deduped.length > 0 && deduped[0].time > 0) {
     deduped.unshift({ time: 0, pctB: deduped[0].pctB, flow: deduped[0].flow });
