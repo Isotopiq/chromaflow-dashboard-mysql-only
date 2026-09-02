@@ -53,6 +53,8 @@ function NewMethod() {
   const [inj, setInj] = useState(2);
   const [ion, setIon] = useState<Method["msIonization"]>("ESI+");
   const [detector, setDetector] = useState("Orbitrap, full scan");
+  const [scanRangeLow, setScanRangeLow] = useState(100);
+  const [scanRangeHigh, setScanRangeHigh] = useState(1500);
   const [notes, setNotes] = useState("");
   const [gradient, setGradient] = useState<GradientStep[]>([
     { time: 0, pctB: 5, flow: 0.4 },
@@ -155,6 +157,12 @@ function NewMethod() {
         else if (polarities.has("Both")) setIon("ESI±");
         else if (polarities.has("Positive")) setIon("ESI+");
         else if (polarities.has("Negative")) setIon("ESI-");
+        // Auto-set scan range from the first MS1 scan
+        const ms1 = importedMs1[0];
+        if (ms1.scanRangeMz) {
+          setScanRangeLow(ms1.scanRangeMz[0]);
+          setScanRangeHigh(ms1.scanRangeMz[1]);
+        }
       }
     }
 
@@ -207,9 +215,8 @@ function NewMethod() {
   const submit = async () => {
     if (!name.trim()) return toast.error("Name required");
     try {
-      // Derive MS scan range from MS1 scan if available
-      const ms1Scan = msScans.find((s) => s.scanType === "MS1");
-      const scanRange: [number, number] = ms1Scan?.scanRangeMz ?? [100, 1500];
+      // Use scan range from form fields (auto-populated from import, user-editable)
+      const scanRange: [number, number] = [scanRangeLow, scanRangeHigh];
 
       const saved = await upsertMethod({
         id: undefined as any,
@@ -427,6 +434,24 @@ function NewMethod() {
                 <SelectItem value="TOF, full scan">TOF, full scan</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+          <div>
+            <Label className="text-[11px]">Scan range low (m/z)</Label>
+            <Input
+              type="number"
+              value={scanRangeLow}
+              onChange={(e) => setScanRangeLow(+e.target.value)}
+              className="mt-1"
+            />
+          </div>
+          <div>
+            <Label className="text-[11px]">Scan range high (m/z)</Label>
+            <Input
+              type="number"
+              value={scanRangeHigh}
+              onChange={(e) => setScanRangeHigh(+e.target.value)}
+              className="mt-1"
+            />
           </div>
         </div>
 
