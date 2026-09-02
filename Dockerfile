@@ -51,6 +51,9 @@ COPY --from=builder /app/dist ./dist
 # Schema + seed for auto-migration on startup.
 COPY chroma_lab_full_schema.sql /app/schema.sql
 COPY seed_common_analytes.sql /app/seed.sql
+# Strip CRLF line endings (file may have Windows line endings from git checkout
+# on Windows; psql in Alpine chokes on \r in $$ ... $$ PL/pgSQL blocks).
+RUN sed -i 's/\r$//' /app/schema.sql /app/seed.sql
 # Entrypoint script that starts postgres + app together.
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod +x /app/docker-entrypoint.sh

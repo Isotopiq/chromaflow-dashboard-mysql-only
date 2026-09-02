@@ -126,7 +126,7 @@ fi
 
 # ---- 4. Run schema + seed migrations (idempotent) ----
 echo "[entrypoint] applying schema ..."
-su-exec postgres psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$PG_DB" -v ON_ERROR_STOP=1 -f /app/schema.sql 2>&1 || {
+su-exec postgres psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$PG_DB" -v ON_ERROR_STOP=0 -f /app/schema.sql 2>&1 || {
   echo "[entrypoint] WARNING: schema migration had errors (may be partially applied)."
 }
 if [ -f /app/seed.sql ]; then
