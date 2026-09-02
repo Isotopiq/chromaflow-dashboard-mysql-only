@@ -22,7 +22,8 @@ import {
   getRunEICBatch,
   listReports,
 } from "@/lib/lab.functions";
-import { createReportJob, sendReportEmail } from "@/lib/v3-functions";
+import { createReportJob } from "@/lib/v3-functions";
+import { sendReportEmail } from "@/lib/report-functions";
 import { renderReportPdf } from "@/lib/pdf-report";
 import { ShareDialog } from "@/components/share-dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
