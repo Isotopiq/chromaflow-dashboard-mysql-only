@@ -126,7 +126,10 @@ fi
 
 # ---- 4. Run schema + seed migrations (idempotent) ----
 echo "[entrypoint] applying schema ..."
-su-exec postgres psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$PG_DB" -v ON_ERROR_STOP=1 -f /app/schema.sql 2>&1 || {
+# Use ON_ERROR_STOP=0 so psql continues past any individual statement error.
+# The schema is designed to be idempotent; individual failures (e.g. adding a
+# column that already exists) should not prevent the rest from running.
+su-exec postgres psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$PG_DB" -v ON_ERROR_STOP=0 -f /app/schema.sql 2>&1 || {
   echo "[entrypoint] WARNING: schema migration had errors (may be partially applied)."
 }
 if [ -f /app/seed.sql ]; then
