@@ -208,7 +208,7 @@ function RunDetail() {
   const [selectedListId, setSelectedListId] = useState<string>(savedPrefs?.selectedListId ?? "");
   const [acceptDrifted, setAcceptDrifted] = useState(savedPrefs?.acceptDrifted ?? false);
   const [batchSaving, setBatchSaving] = useState(false);
-  const [showOnlyAccepted, setShowOnlyAccepted] = useState(false);
+  const [showOnlyAccepted, setShowOnlyAccepted] = useState(savedPrefs?.showOnlyAccepted ?? false);
   const filteredTargets = useMemo(() => {
     const q = targetFilter.trim().toLowerCase();
     if (!q) return libraryTargets;
@@ -320,10 +320,10 @@ function RunDetail() {
     try {
       localStorage.setItem(
         prefsKey,
-        JSON.stringify({ selectedListId, acceptDrifted, hideUnannotated }),
+        JSON.stringify({ selectedListId, acceptDrifted, hideUnannotated, showOnlyAccepted }),
       );
     } catch { /* ignore quota errors */ }
-  }, [prefsKey, selectedListId, acceptDrifted, hideUnannotated]);
+  }, [prefsKey, selectedListId, acceptDrifted, hideUnannotated, showOnlyAccepted]);
 
   const hasDetected = run.peaks.length > 0;
   const hasLibrary = derivedPeaks.length > 0;
