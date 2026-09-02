@@ -31,6 +31,17 @@ const EXPORT_TABLES = [
   "calibration_standards",
   "calibration_curves",
   "qc_samples",
+  // V3 tables
+  "rt_alignment_runs",
+  "is_assignments",
+  "sample_queues",
+  "sample_queue_entries",
+  "method_templates",
+  "report_jobs",
+  "custom_columns",
+  "import_watch_folders",
+  "imported_files",
+  "nce_optimization",
 ] as const;
 
 type ExportPayload = {
@@ -60,7 +71,7 @@ export const exportDatabase = createServerFn({ method: "GET" })
     const payload: ExportPayload = {
       version: "1.0",
       exportedAt: new Date().toISOString(),
-      schemaVersion: "v2",
+      schemaVersion: "v3",
       tables,
     };
 
