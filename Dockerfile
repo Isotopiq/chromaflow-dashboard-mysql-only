@@ -56,7 +56,9 @@ COPY seed_common_analytes.sql /app/seed.sql
 RUN sed -i 's/\r$//' /app/schema.sql /app/seed.sql
 # Entrypoint script that starts postgres + app together.
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
-RUN chmod +x /app/docker-entrypoint.sh
+# Strip CRLF line endings (file has Windows line endings from git checkout on
+# Windows; the shebang #!/bin/sh\r would cause "not found" errors in Alpine).
+RUN sed -i 's/\r$//' /app/docker-entrypoint.sh && chmod +x /app/docker-entrypoint.sh
 
 # Persistent data: postgres + uploads share /app/data.
 RUN mkdir -p /app/data/uploads /app/data/pgdata && \
