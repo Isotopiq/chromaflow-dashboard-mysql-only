@@ -127,13 +127,19 @@ export async function parseMethodFile(file: File): Promise<ParsedMethodFile> {
 
   // Extract the MS method summary section (UTF-16LE)
   // Look for "Method Summary" which appears in the MS method section.
-  // Use the full file text for MS scan parsing, because experiments can
-  // be split across multiple OLE streams (e.g. Experiment 1 in one stream
-  // and Experiment 2 in another, far apart in the file).
+  // IMPORTANT: A .meth file can contain MULTIPLE method summaries (e.g. if
+  // it was copied from another method or has embedded instrument configs).
+  // We must only parse the FIRST one — subsequent ones belong to different
+  // methods and would inject stale/wrong data.
   const msSummaryCharIdx = fullText.indexOf("Method Summary");
   let msText = "";
   if (msSummaryCharIdx >= 0) {
-    msText = fullText.slice(msSummaryCharIdx);
+    // Find the SECOND "Method Summary" — if it exists, cut the text before it
+    // so we only parse the first method's MS experiments.
+    const secondMsIdx = fullText.indexOf("Method Summary", msSummaryCharIdx + 15);
+    msText = secondMsIdx > 0
+      ? fullText.slice(msSummaryCharIdx, secondMsIdx)
+      : fullText.slice(msSummaryCharIdx, msSummaryCharIdx + 200_000);
   }
 
   if (!lcText && !msText) {
@@ -142,7 +148,23 @@ export async function parseMethodFile(file: File): Promise<ParsedMethodFile> {
     );
   }
 
-  const lc = parseOverviewText(lcText, fullText);
+  // For gradient parsing, limit the full text to the LC overview + Run section
+  // only. The full file can contain multiple method summaries (from copied
+  // methods) with their own time markers and pump values, which would inject
+  // stale gradient data from a different method.
+  // We find the "Stop Run" marker that ends the gradient, and cut everything
+  // after the first MS "Method Summary" section.
+  const msSummaryIdxForGradient = fullText.indexOf("Method Summary");
+  const gradientTextEnd = msSummaryIdxForGradient > 0
+    ? msSummaryIdxForGradient
+    : fullText.length;
+  // Also make sure we include the "Stop Run" marker if it's before the MS section
+  const stopRunIdx = fullText.indexOf("Stop Run", 0);
+  const gradientText = stopRunIdx > 0 && stopRunIdx < gradientTextEnd
+    ? fullText.slice(0, stopRunIdx + 200)
+    : fullText.slice(0, gradientTextEnd);
+
+  const lc = parseOverviewText(lcText, gradientText);
   const ms = parseMsMethodSummary(msText);
 
   // If we have per-pump gradients, pick the active pump (highest flow) as
@@ -224,15 +246,20 @@ function parseOverviewText(
   const name = get(/Name:\s*(.+)/);
   const instrument = get(/Instrument:\s*(.+)/);
   const runTimeMin = getNum(/Run time:\s*([\d.]+)/);
-  const columnTempC = getNum(/TCC2_CC\.Temperature\.Nominal:\s*([\d.]+)/);
+  const columnTempC = getNum(/TCC2(?:_CC|\.TCC2_CC)\.Temperature\.Nominal:\s*([\d.]+)/);
   const sampleTempC = getNum(/SamplerModule\.Temperature\.Nominal:\s*([\d.]+)/);
   const pressureLimitBar = getNum(/RightPumpRed\.Pressure\.UpperLimit:\s*([\d.]+)/);
 
-  const mpAMatch = text.match(/%A1_Equate:\s*"([^"]+)"/);
-  const mpBMatch = text.match(/%B3_Equate:\s*"([^"]+)"/);
-  const mpB1Match = text.match(/%B1_Equate:\s*"([^"]+)"/);
-  const mobilePhaseA = mpAMatch ? mpAMatch[1] : null;
-  const mobilePhaseB = mpBMatch ? mpBMatch[1] : mpB1Match ? mpB1Match[1] : null;
+  // Mobile phase parsing: try multiple patterns.
+  // Thermo .meth files store solvents as %A3_Equate / %B3_Equate (or %A1, %B1)
+  // under each pump prefix. The actual solvent name is a quoted string; placeholder
+  // values like "A1", "%A2", "%B1" should be skipped in favor of real solvent names.
+  const allEquateMatches = [...text.matchAll(/%A(\d)_Equate:\s*"([^"]+)"/g)];
+  const allBEquateMatches = [...text.matchAll(/%B(\d)_Equate:\s*"([^"]+)"/g)];
+  // Pick the first non-placeholder value for A and B
+  const isPlaceholder = (v: string) => /^(%?[AB]\d|[AB]\d)$/i.test(v.trim());
+  const mobilePhaseA = allEquateMatches.map((m) => m[2]).find((v) => !isPlaceholder(v)) ?? null;
+  const mobilePhaseB = allBEquateMatches.map((m) => m[2]).find((v) => !isPlaceholder(v)) ?? null;
 
   const injectionVolumeUl = getNum(/InjectVolume:\s*([\d.]+)/);
 
@@ -562,18 +589,23 @@ function parseMsGlobalSettings(text: string): MsGlobalSettings | null {
 function parseMsScans(text: string): MsScan[] {
   const scans: MsScan[] = [];
 
+  // Safety: if the text contains a second "Method Summary" (from a different
+  // method embedded in the same .meth file), cut everything after it.
+  const secondMsIdx = text.indexOf("Method Summary", 20);
+  const scanText = secondMsIdx > 0 ? text.slice(0, secondMsIdx) : text;
+
   // Split by "Experiment N" markers
   const expRe = /Experiment\s+(\d+)/g;
   const expPositions: { idx: number; num: number }[] = [];
   let m: RegExpExecArray | null;
-  while ((m = expRe.exec(text)) !== null) {
+  while ((m = expRe.exec(scanText)) !== null) {
     expPositions.push({ idx: m.index, num: parseInt(m[1], 10) });
   }
 
   for (let i = 0; i < expPositions.length; i++) {
     const start = expPositions[i].idx;
-    const end = i + 1 < expPositions.length ? expPositions[i + 1].idx : text.length;
-    const expSection = text.slice(start, end);
+    const end = i + 1 < expPositions.length ? expPositions[i + 1].idx : scanText.length;
+    const expSection = scanText.slice(start, end);
 
     // Within each experiment, there may be:
     //   1. A MasterScan (MS1) section
