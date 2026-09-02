@@ -31,6 +31,8 @@ import {
   Copy,
   Trash2,
   Plus,
+  Download,
+  Database,
 } from "lucide-react";
 import {
   listAdminUsers,
@@ -40,6 +42,7 @@ import {
   resetAuditEvents,
   createUploadUrl,
 } from "@/lib/lab.functions";
+import { exportDatabase, importDatabase } from "@/lib/db-port.functions";
 import {
   setBranding,
   createInviteCode,
@@ -87,6 +90,7 @@ function Admin() {
           <TabsTrigger value="branding">Branding</TabsTrigger>
           <TabsTrigger value="storage">Storage</TabsTrigger>
           <TabsTrigger value="audit">Audit log</TabsTrigger>
+          <TabsTrigger value="data">Data</TabsTrigger>
         </TabsList>
         <TabsContent value="users" className="mt-4">
           <UsersTab />
@@ -104,6 +108,9 @@ function Admin() {
         </TabsContent>
         <TabsContent value="audit" className="mt-4">
           <AuditTab />
+        </TabsContent>
+        <TabsContent value="data" className="mt-4">
+          <DataTab />
         </TabsContent>
       </Tabs>
     </div>
@@ -1380,6 +1387,156 @@ function BrandingAsset({
         )}
       </div>
     </Card>
+  );
+}
+
+
+function DataTab() {
+  const exportFn = useServerFn(exportDatabase);
+  const importFn = useServerFn(importDatabase);
+  const qc = useQueryClient();
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importMode, setImportMode] = useState<"merge" | "replace">("merge");
+  const [importResult, setImportResult] = useState<any>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  async function handleExport() {
+    setExporting(true);
+    try {
+      const payload = await exportFn();
+      const blob = new Blob([JSON.stringify(payload, null, 2)], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `chroma-lab-export-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Database exported.");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Export failed");
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const text = await file.text();
+      const payload = JSON.parse(text);
+      if (!payload.tables) {
+        throw new Error("Invalid export file: missing 'tables' key.");
+      }
+      const result = await importFn({ data: { payload, mode: importMode } });
+      setImportResult(result);
+      toast.success(
+        `Imported ${result.totalInserted} rows (${result.totalSkipped} skipped).`,
+      );
+      qc.invalidateQueries({ queryKey: ["lab"] });
+    } catch (e: any) {
+      toast.error(e?.message ?? "Import failed");
+    } finally {
+      setImporting(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <Card className="border-border bg-card p-4">
+        <div className="mb-3 flex items-center gap-2">
+          <Download className="h-4 w-4 text-primary" />
+          <div className="text-sm font-medium">Export database</div>
+        </div>
+        <p className="mb-3 text-xs text-muted-foreground">
+          Download all runs, methods, columns, batches, analytes, peaks, compound lists,
+          calibration data, and settings as a JSON file. This file can be imported into
+          another CHROMA.LAB instance.
+        </p>
+        <Button onClick={handleExport} disabled={exporting}>
+          <Download className="mr-2 h-4 w-4" />
+          {exporting ? "Exporting…" : "Export all data"}
+        </Button>
+      </Card>
+
+      <Card className="border-border bg-card p-4">
+        <div className="mb-3 flex items-center gap-2">
+          <Database className="h-4 w-4 text-primary" />
+          <div className="text-sm font-medium">Import database</div>
+        </div>
+        <p className="mb-3 text-xs text-muted-foreground">
+          Restore data from a previously exported JSON file. In <strong>merge</strong> mode,
+          existing records are kept and new ones are added. In <strong>replace</strong> mode,
+          all existing data is deleted first.
+        </p>
+        <div className="mb-3 flex items-center gap-4">
+          <label className="flex items-center gap-2 text-xs">
+            <input
+              type="radio"
+              checked={importMode === "merge"}
+              onChange={() => setImportMode("merge")}
+            />
+            Merge (keep existing + add new)
+          </label>
+          <label className="flex items-center gap-2 text-xs">
+            <input
+              type="radio"
+              checked={importMode === "replace"}
+              onChange={() => setImportMode("replace")}
+            />
+            Replace (delete all, then import)
+          </label>
+        </div>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".json"
+          className="hidden"
+          onChange={handleImportFile}
+        />
+        <Button
+          variant={importMode === "replace" ? "destructive" : "default"}
+          onClick={() => fileRef.current?.click()}
+          disabled={importing}
+        >
+          <Upload className="mr-2 h-4 w-4" />
+          {importing ? "Importing…" : `Import (${importMode})`}
+        </Button>
+        {importMode === "replace" && (
+          <p className="mt-2 text-[11px] text-destructive">
+            Warning: Replace mode will delete ALL existing data before importing.
+          </p>
+        )}
+        {importResult && (
+          <div className="mt-3 rounded-md border border-border p-3 text-xs">
+            <div className="font-medium">
+              Inserted {importResult.totalInserted} rows, skipped {importResult.totalSkipped}.
+            </div>
+            <details className="mt-2">
+              <summary className="cursor-pointer text-muted-foreground">
+                Per-table breakdown
+              </summary>
+              <div className="mt-2 space-y-1">
+                {Object.entries(importResult.perTable).map(([table, r]: [string, any]) => (
+                  <div key={table} className="flex justify-between font-mono text-[11px]">
+                    <span>{table}</span>
+                    <span>
+                      {r.inserted} inserted, {r.skipped} skipped
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </details>
+          </div>
+        )}
+      </Card>
+    </div>
   );
 }
 
