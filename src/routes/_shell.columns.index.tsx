@@ -7,7 +7,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { StatusDot } from "@/components/status-dot";
 import { Button } from "@/components/ui/button";
-import { Plus, RotateCcw, Trash2 } from "lucide-react";
+import { Plus, RotateCcw, Trash2, Pencil } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,6 +35,7 @@ function ColumnsList() {
   const serviceFn = useServerFn(logColumnService);
   const deleteFn = useServerFn(deleteColumn);
   const [open, setOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<Column | null>(null);
   const [resetTarget, setResetTarget] = useState<Column | null>(null);
   const [resetting, setResetting] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Column | null>(null);
@@ -84,8 +85,11 @@ function ColumnsList() {
     try {
       const saved = await upsertFn({ data: values as any });
       upsertColumnLocal(saved);
-      toast.success(`Column "${saved.name}" added`);
+      toast.success(
+        values.id ? `Column "${saved.name}" updated` : `Column "${saved.name}" added`,
+      );
       setOpen(false);
+      setEditTarget(null);
     } catch (err: any) {
       toast.error(err?.message ?? "Failed to save column");
     }
@@ -146,6 +150,20 @@ function ColumnsList() {
                       <Badge variant="outline" className="text-[10px] capitalize">
                         {c.status}
                       </Badge>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-6 w-6"
+                        aria-label="Edit column"
+                        title="Edit column"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setEditTarget(c);
+                        }}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
                       <Button
                         size="icon"
                         variant="ghost"
@@ -217,7 +235,18 @@ function ColumnsList() {
         </div>
       )}
 
-      <ColumnFormDialog open={open} onOpenChange={setOpen} onSubmit={handleSubmit} />
+      <ColumnFormDialog
+        open={open || !!editTarget}
+        onOpenChange={(o) => {
+          if (!o) {
+            setOpen(false);
+            setEditTarget(null);
+          }
+        }}
+        initial={editTarget ?? undefined}
+        onSubmit={handleSubmit}
+        title={editTarget ? "Edit column" : "Add column"}
+      />
 
       <AlertDialog
         open={!!resetTarget}
