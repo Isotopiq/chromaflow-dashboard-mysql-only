@@ -253,6 +253,7 @@ export const archiveMethod = createServerFn({ method: "POST" })
 const ColumnInput = z.object({
   id: z.string().optional(),
   name: z.string().min(1).max(200),
+  manufacturer: z.string().max(200).default(""),
   chemistry: z.string().max(200).default(""),
   dimensions: z.string().max(100).default(""),
   particleSize: z.string().max(50).default(""),
@@ -274,19 +275,19 @@ export const upsertColumn = createServerFn({ method: "POST" })
     if (data.id) {
       row = await db.one(
         `update public.columns set
-           name=$1, chemistry=$2, dimensions=$3, particle_size=$4, serial=$5,
-           rated_injections=$6, used_injections=$7, status=$8, notes_md=$9, updated_at=now()
-         where id=$10 returning *`,
-        [data.name, data.chemistry, data.dimensions, data.particleSize, data.serial,
+           name=$1, manufacturer=$2, chemistry=$3, dimensions=$4, particle_size=$5, serial=$6,
+           rated_injections=$7, used_injections=$8, status=$9, notes_md=$10, updated_at=now()
+         where id=$11 returning *`,
+        [data.name, data.manufacturer, data.chemistry, data.dimensions, data.particleSize, data.serial,
          data.ratedInjections, data.usedInjections, data.status, data.notes, data.id],
       );
     } else {
       row = await db.one(
         `insert into public.columns
-           (name, chemistry, dimensions, particle_size, serial, rated_injections,
+           (name, manufacturer, chemistry, dimensions, particle_size, serial, rated_injections,
             used_injections, status, notes_md, owner_id)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning *`,
-        [data.name, data.chemistry, data.dimensions, data.particleSize, data.serial,
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) returning *`,
+        [data.name, data.manufacturer, data.chemistry, data.dimensions, data.particleSize, data.serial,
          data.ratedInjections, data.usedInjections, data.status, data.notes, userId],
       );
     }
