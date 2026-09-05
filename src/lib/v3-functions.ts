@@ -355,7 +355,8 @@ export const deleteBufferExchangeEvent = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { db } = context as { db: Db };
+    const { db, isAdmin } = context as { userId: string; email: string; isAdmin: boolean; db: Db };
+    if (!isAdmin) throw new Response("Forbidden — admin only", { status: 403 });
     await db.query("delete from public.buffer_exchange_events where id=$1", [data.id]);
     return { ok: true };
   });
@@ -417,9 +418,54 @@ export const deleteQcRun = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { db } = context as { db: Db };
+    const { db, isAdmin } = context as { userId: string; email: string; isAdmin: boolean; db: Db };
+    if (!isAdmin) throw new Response("Forbidden — admin only", { status: 403 });
     await db.query("delete from public.qc_runs where id=$1", [data.id]);
     return { ok: true };
+  });
+
+const UpdateQcRunInput = z.object({
+  id: z.string().uuid(),
+  columnId: z.string().uuid().nullable().optional(),
+  batchId: z.string().uuid().nullable().optional(),
+  name: z.string().min(1).optional(),
+  qcType: z.enum(["system_suitability", "column_qc", "batch_qc", "reference_standard"]).optional(),
+});
+
+export const updateQcRun = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) => UpdateQcRunInput.parse(d))
+  .handler(async ({ data, context }) => {
+    const { db, isAdmin } = context as { userId: string; email: string; isAdmin: boolean; db: Db };
+    if (!isAdmin) throw new Response("Forbidden — admin only", { status: 403 });
+    const sets: string[] = [];
+    const params: any[] = [];
+    if (data.columnId !== undefined) {
+      params.push(data.columnId);
+      sets.push(`column_id=$${params.length}`);
+    }
+    if (data.batchId !== undefined) {
+      params.push(data.batchId);
+      sets.push(`batch_id=$${params.length}`);
+    }
+    if (data.name !== undefined) {
+      params.push(data.name);
+      sets.push(`name=$${params.length}`);
+    }
+    if (data.qcType !== undefined) {
+      params.push(data.qcType);
+      sets.push(`qc_type=$${params.length}`);
+    }
+    if (sets.length === 0) {
+      const row = await db.one<any>(`select * from public.qc_runs where id=$1`, [data.id]);
+      return mapQcRun(row);
+    }
+    params.push(data.id);
+    const row = await db.one<any>(
+      `update public.qc_runs set ${sets.join(", ")} where id=$${params.length} returning *`,
+      params,
+    );
+    return mapQcRun(row);
   });
 
 // =====================================================================

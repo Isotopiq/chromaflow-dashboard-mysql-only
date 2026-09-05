@@ -18,10 +18,10 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { ChromatogramPlot } from "@/components/chromatogram-plot";
-import { HeartPulse, Upload, Trash2 } from "lucide-react";
+import { HeartPulse, Upload, Trash2, Unlink } from "lucide-react";
 import { toast } from "sonner";
 import {
-  createQcRun, deleteQcRun,
+  createQcRun, deleteQcRun, updateQcRun,
 } from "@/lib/v3-functions";
 import type { QcRun, Column, Batch, CompoundList, Run, Peak } from "@/lib/lab-types";
 
@@ -32,12 +32,14 @@ export const Route = createFileRoute("/_shell/qc-health")({
 function QcHealthPage() {
   const {
     columns, batches, methods, runs, analytes, compoundLists,
-    qcRuns, bufferExchangeEvents,
+    qcRuns, bufferExchangeEvents, currentUser,
     upsertQcRunLocal, removeQcRunLocal,
   } = useLab();
 
+  const isAdmin = currentUser?.role === "admin";
   const createQcFn = useServerFn(createQcRun);
   const deleteQcFn = useServerFn(deleteQcRun);
+  const updateQcFn = useServerFn(updateQcRun);
 
   const [columnId, setColumnId] = useState<string>(columns[0]?.id ?? "__none__");
   const [batchId, setBatchId] = useState<string>("__none__");
@@ -229,6 +231,26 @@ function QcHealthPage() {
     }
   };
 
+  const handleUnlinkColumn = async (q: QcRun) => {
+    try {
+      const updated = await updateQcFn({ data: { id: q.id, columnId: null } });
+      upsertQcRunLocal(updated);
+      toast.success("QC run unlinked from column");
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to unlink QC run");
+    }
+  };
+
+  const handleUnlinkBatch = async (q: QcRun) => {
+    try {
+      const updated = await updateQcFn({ data: { id: q.id, batchId: null } });
+      upsertQcRunLocal(updated);
+      toast.success("QC run unlinked from batch");
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to unlink QC run");
+    }
+  };
+
   const cellClass = (value: number, median: number, threshold = 20) => {
     if (median === 0) return "py-1.5 text-xs font-mono";
     const dev = Math.abs(((value - median) / median) * 100);
@@ -328,14 +350,16 @@ function QcHealthPage() {
                   <TableHead className="h-8 text-[10px] uppercase">Name</TableHead>
                   <TableHead className="h-8 text-[10px] uppercase">Type</TableHead>
                   <TableHead className="h-8 text-[10px] uppercase">Column</TableHead>
+                  <TableHead className="h-8 text-[10px] uppercase">Batch</TableHead>
                   <TableHead className="h-8 text-[10px] uppercase">Acquired</TableHead>
                   <TableHead className="h-8 text-[10px] uppercase">Run</TableHead>
-                  <TableHead className="h-8 w-16" />
+                  <TableHead className="h-8 w-24" />
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredQcRuns.map((q: QcRun) => {
                   const col = columns.find((c) => c.id === q.columnId);
+                  const bat = batches.find((b) => b.id === q.batchId);
                   const run = runs.find((r) => r.id === q.runId);
                   return (
                     <TableRow key={q.id}>
@@ -343,13 +367,44 @@ function QcHealthPage() {
                       <TableCell className="py-1.5 text-xs">
                         <Badge variant="outline" className="text-[10px]">{q.qcType.replace(/_/g, " ")}</Badge>
                       </TableCell>
-                      <TableCell className="py-1.5 text-xs">{col?.name ?? "—"}</TableCell>
+                      <TableCell className="py-1.5 text-xs">
+                        {col?.name ?? <span className="text-muted-foreground italic">unlinked</span>}
+                      </TableCell>
+                      <TableCell className="py-1.5 text-xs">
+                        {bat?.name ?? <span className="text-muted-foreground italic">—</span>}
+                      </TableCell>
                       <TableCell className="py-1.5 text-xs font-mono">{new Date(q.acquiredAt).toLocaleDateString()}</TableCell>
                       <TableCell className="py-1.5 text-xs font-mono">{run?.name ?? "—"}</TableCell>
                       <TableCell className="py-1.5">
-                        <button onClick={() => handleDelete(q.id)} className="text-muted-foreground hover:text-destructive">
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                        {isAdmin && (
+                          <div className="flex items-center gap-1">
+                            {q.columnId && (
+                              <button
+                                onClick={() => handleUnlinkColumn(q)}
+                                className="text-muted-foreground hover:text-foreground"
+                                title="Unlink from column"
+                              >
+                                <Unlink className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                            {q.batchId && (
+                              <button
+                                onClick={() => handleUnlinkBatch(q)}
+                                className="text-muted-foreground hover:text-foreground"
+                                title="Unlink from batch"
+                              >
+                                <Unlink className="h-3 w-3" />
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleDelete(q.id)}
+                              className="text-muted-foreground hover:text-destructive"
+                              title="Delete QC run"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        )}
                       </TableCell>
                     </TableRow>
                   );

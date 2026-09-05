@@ -40,7 +40,8 @@ const KIND_ICON: Record<Kind, React.ReactNode> = {
 };
 
 export function BufferExchangePanel({ column }: { column: Column }) {
-  const { batches, upsertBufferExchangeEventLocal, removeBufferExchangeEventLocal } = useLab();
+  const { batches, currentUser, upsertBufferExchangeEventLocal, removeBufferExchangeEventLocal } = useLab();
+  const isAdmin = currentUser?.role === "admin";
   const listFn = useServerFn(listBufferExchangeEvents);
   const logFn = useServerFn(logBufferExchange);
   const delFn = useServerFn(deleteBufferExchangeEvent);
@@ -181,15 +182,17 @@ export function BufferExchangePanel({ column }: { column: Column }) {
                 {ev.reason && <p className="mt-1 whitespace-pre-wrap">{ev.reason}</p>}
               </div>
             </div>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-6 w-6 shrink-0"
-              onClick={() => remove(ev.id)}
-              aria-label="Delete entry"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
+            {isAdmin && (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-6 w-6 shrink-0"
+                onClick={() => remove(ev.id)}
+                aria-label="Delete entry"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            )}
           </div>
         ))}
       </div>
