@@ -87,6 +87,15 @@ const ImportInput = z.object({
   mode: z.enum(["merge", "replace"]).default("merge"),
 });
 
+// Columns that are FK references to app_users(id). When importing from
+// another deployment (e.g. V2 → V3), these user IDs won't exist in the
+// target database because app_users is not exported for security reasons.
+// We remap non-existent user IDs to the current importing user.
+const USER_FK_COLUMNS = new Set([
+  "created_by", "uploaded_by", "owner_id", "performed_by",
+  "annotated_by", "resolved_by", "actor_id", "updated_by",
+]);
+
 export const importDatabase = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => ImportInput.parse(d))
@@ -97,6 +106,42 @@ export const importDatabase = createServerFn({ method: "POST" })
     if (!payload || !payload.tables) {
       throw new Error("Invalid export file: missing tables data.");
     }
+
+    // Collect all user IDs referenced in the export
+    const referencedUserIds = new Set<string>();
+    for (const table of EXPORT_TABLES) {
+      const rows = payload.tables[table];
+      if (!rows) continue;
+      for (const row of rows) {
+        for (const col of Object.keys(row)) {
+          if (USER_FK_COLUMNS.has(col) && row[col]) {
+            referencedUserIds.add(String(row[col]));
+          }
+        }
+      }
+    }
+
+    // Check which user IDs exist in the target database
+    const validUserIds = new Set<string>();
+    if (referencedUserIds.size > 0) {
+      try {
+        const existingUsers = await db.many<{ id: string }>(
+          `select id from public.app_users where id = any($1::uuid[])`,
+          [[...referencedUserIds]],
+        );
+        for (const u of existingUsers) validUserIds.add(u.id);
+      } catch {
+        // If app_users query fails, all user FKs will be remapped
+      }
+    }
+
+    // Remap function: replace non-existent user IDs with current user
+    const remapUser = (val: any): any => {
+      if (val == null) return null;
+      const sid = String(val);
+      if (validUserIds.has(sid)) return val;
+      return userId; // remap to current importing user
+    };
 
     const results: Record<string, { inserted: number; skipped: number }> = {};
 
@@ -125,11 +170,13 @@ export const importDatabase = createServerFn({ method: "POST" })
 
       for (const row of rows) {
         try {
-          // Build insert query dynamically
+          // Build insert query dynamically, remapping user FKs
           const cols = Object.keys(row);
           const placeholders = cols.map((_, i) => `$${i + 1}`).join(", ");
           const values = cols.map((c) => {
             const v = row[c];
+            // Remap user FK columns to current user if original doesn't exist
+            if (USER_FK_COLUMNS.has(c)) return remapUser(v);
             // Convert arrays to PostgreSQL format
             if (Array.isArray(v)) return v;
             // Pass objects as-is (pg handles JSONB)
