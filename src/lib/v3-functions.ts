@@ -319,8 +319,6 @@ const BufferExchangeInput = z.object({
   kind: z.enum(["buffer_a", "buffer_b", "both", "solvent_lot", "mobile_phase_prep"]),
   oldDescription: z.string().default(""),
   newDescription: z.string().default(""),
-  oldLot: z.string().default(""),
-  newLot: z.string().default(""),
   reason: z.string().default(""),
 });
 
@@ -343,10 +341,10 @@ export const logBufferExchange = createServerFn({ method: "POST" })
     const { userId, db } = context as { userId: string; db: Db };
     const row = await db.one<any>(
       `insert into public.buffer_exchange_events
-         (column_id, batch_id, kind, old_description, new_description, old_lot, new_lot, reason, performed_by)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning *`,
+         (column_id, batch_id, kind, old_description, new_description, reason, performed_by)
+       values ($1,$2,$3,$4,$5,$6,$7) returning *`,
       [data.columnId, data.batchId ?? null, data.kind, data.oldDescription,
-       data.newDescription, data.oldLot, data.newLot, data.reason, userId],
+       data.newDescription, data.reason, userId],
     );
     return mapBufferExchangeEvent(row);
   });
@@ -359,6 +357,24 @@ export const deleteBufferExchangeEvent = createServerFn({ method: "POST" })
     if (!isAdmin) throw new Response("Forbidden — admin only", { status: 403 });
     await db.query("delete from public.buffer_exchange_events where id=$1", [data.id]);
     return { ok: true };
+  });
+
+const UpdateBufferExchangeInput = z.object({
+  id: z.string().uuid(),
+  performedBy: z.string().uuid().nullable().optional(),
+});
+
+export const updateBufferExchangeEvent = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) => UpdateBufferExchangeInput.parse(d))
+  .handler(async ({ data, context }) => {
+    const { db, isAdmin } = context as { userId: string; email: string; isAdmin: boolean; db: Db };
+    if (!isAdmin) throw new Response("Forbidden — admin only", { status: 403 });
+    const row = await db.one<any>(
+      `update public.buffer_exchange_events set performed_by=$1 where id=$2 returning *`,
+      [data.performedBy ?? null, data.id],
+    );
+    return mapBufferExchangeEvent(row);
   });
 
 // =====================================================================

@@ -436,3 +436,18 @@ export type ColumnHistoryEntry = {
   diff: Record<string, any> | null;
   createdAt: string;
 };
+
+// ---- Literature Search ----
+
+export type LiteratureResult = {
+  id: string;
+  title: string;
+  authors: string[];
+  journal: string;
+  year: number | null;
+  abstract: string;
+  doi: string | null;
+  url: string;
+  matchedMetabolites: string[];
+  source: "europepmc" | "pubmed";
+};

@@ -18,6 +18,7 @@ import {
   FolderSync,
   HeartPulse,
   AlertTriangle,
+  BookOpen,
 } from "lucide-react";
 import logoLightUrl from "@/assets/isotopiq-logo-light.png";
 import logoDarkUrl from "@/assets/isotopiq-logo-dark.png";
@@ -52,6 +53,7 @@ const groups: Array<{
     items: [
       { title: "Method log", url: "/methods", icon: FlaskConical },
       { title: "Compare methods", url: "/methods/compare", icon: Layers },
+      { title: "Literature Search", url: "/literature", icon: BookOpen },
     ],
   },
   {

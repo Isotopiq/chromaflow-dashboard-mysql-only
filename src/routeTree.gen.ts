@@ -21,6 +21,7 @@ import { Route as ShellAnomaliesRouteImport } from './routes/_shell.anomalies'
 import { Route as ShellAutoImportRouteImport } from './routes/_shell.auto-import'
 import { Route as ShellBatchesRouteImport } from './routes/_shell.batches'
 import { Route as ShellCompoundListsRouteImport } from './routes/_shell.compound-lists'
+import { Route as ShellLiteratureRouteImport } from './routes/_shell.literature'
 import { Route as ShellOverlayRouteImport } from './routes/_shell.overlay'
 import { Route as ShellQcHealthRouteImport } from './routes/_shell.qc-health'
 import { Route as ShellQuantRouteImport } from './routes/_shell.quant'
@@ -109,6 +110,11 @@ const ShellBatchesRoute = ShellBatchesRouteImport.update({
 const ShellCompoundListsRoute = ShellCompoundListsRouteImport.update({
   id: '/compound-lists',
   path: '/compound-lists',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ShellLiteratureRoute = ShellLiteratureRouteImport.update({
+  id: '/literature',
+  path: '/literature',
   getParentRoute: () => ShellRoute,
 } as any)
 const ShellOverlayRoute = ShellOverlayRouteImport.update({
@@ -277,6 +283,7 @@ export interface FileRoutesByFullPath {
   '/auto-import': typeof ShellAutoImportRoute
   '/batches': typeof ShellBatchesRouteWithChildren
   '/compound-lists': typeof ShellCompoundListsRoute
+  '/literature': typeof ShellLiteratureRoute
   '/overlay': typeof ShellOverlayRoute
   '/qc-health': typeof ShellQcHealthRoute
   '/quant': typeof ShellQuantRoute
@@ -319,6 +326,7 @@ export interface FileRoutesByTo {
   '/auto-import': typeof ShellAutoImportRoute
   '/batches': typeof ShellBatchesRouteWithChildren
   '/compound-lists': typeof ShellCompoundListsRoute
+  '/literature': typeof ShellLiteratureRoute
   '/overlay': typeof ShellOverlayRoute
   '/qc-health': typeof ShellQcHealthRoute
   '/quant': typeof ShellQuantRoute
@@ -363,6 +371,7 @@ export interface FileRoutesById {
   '/_shell/auto-import': typeof ShellAutoImportRoute
   '/_shell/batches': typeof ShellBatchesRouteWithChildren
   '/_shell/compound-lists': typeof ShellCompoundListsRoute
+  '/_shell/literature': typeof ShellLiteratureRoute
   '/_shell/overlay': typeof ShellOverlayRoute
   '/_shell/qc-health': typeof ShellQcHealthRoute
   '/_shell/quant': typeof ShellQuantRoute
@@ -409,6 +418,7 @@ export interface FileRouteTypes {
     | '/auto-import'
     | '/batches'
     | '/compound-lists'
+    | '/literature'
     | '/overlay'
     | '/qc-health'
     | '/quant'
@@ -451,6 +461,7 @@ export interface FileRouteTypes {
     | '/auto-import'
     | '/batches'
     | '/compound-lists'
+    | '/literature'
     | '/overlay'
     | '/qc-health'
     | '/quant'
@@ -494,6 +505,7 @@ export interface FileRouteTypes {
     | '/_shell/auto-import'
     | '/_shell/batches'
     | '/_shell/compound-lists'
+    | '/_shell/literature'
     | '/_shell/overlay'
     | '/_shell/qc-health'
     | '/_shell/quant'
@@ -628,6 +640,13 @@ declare module '@tanstack/react-router' {
       path: '/compound-lists'
       fullPath: '/compound-lists'
       preLoaderRoute: typeof ShellCompoundListsRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/literature': {
+      id: '/_shell/literature'
+      path: '/literature'
+      fullPath: '/literature'
+      preLoaderRoute: typeof ShellLiteratureRouteImport
       parentRoute: typeof ShellRoute
     }
     '/_shell/overlay': {
@@ -902,6 +921,7 @@ interface ShellRouteChildren {
   ShellAutoImportRoute: typeof ShellAutoImportRoute
   ShellBatchesRoute: typeof ShellBatchesRouteWithChildren
   ShellCompoundListsRoute: typeof ShellCompoundListsRoute
+  ShellLiteratureRoute: typeof ShellLiteratureRoute
   ShellOverlayRoute: typeof ShellOverlayRoute
   ShellQcHealthRoute: typeof ShellQcHealthRoute
   ShellQuantRoute: typeof ShellQuantRoute
@@ -927,6 +947,7 @@ const ShellRouteChildren: ShellRouteChildren = {
   ShellAutoImportRoute: ShellAutoImportRoute,
   ShellBatchesRoute: ShellBatchesRouteWithChildren,
   ShellCompoundListsRoute: ShellCompoundListsRoute,
+  ShellLiteratureRoute: ShellLiteratureRoute,
   ShellOverlayRoute: ShellOverlayRoute,
   ShellQcHealthRoute: ShellQcHealthRoute,
   ShellQuantRoute: ShellQuantRoute,

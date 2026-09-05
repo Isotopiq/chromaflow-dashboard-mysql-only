@@ -14,11 +14,12 @@ import { Badge } from "@/components/ui/badge";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Droplets, FlaskRound, Trash2 } from "lucide-react";
+import { Droplets, FlaskRound, Trash2, Pencil } from "lucide-react";
 import { useLab } from "@/lib/store";
-import type { Column, BufferExchangeEvent, Batch } from "@/lib/lab-types";
+import type { Column, BufferExchangeEvent, Batch, User } from "@/lib/lab-types";
 import {
   listBufferExchangeEvents, logBufferExchange, deleteBufferExchangeEvent,
+  updateBufferExchangeEvent,
 } from "@/lib/v3-functions";
 
 type Kind = BufferExchangeEvent["kind"];
@@ -40,24 +41,35 @@ const KIND_ICON: Record<Kind, React.ReactNode> = {
 };
 
 export function BufferExchangePanel({ column }: { column: Column }) {
-  const { batches, currentUser, upsertBufferExchangeEventLocal, removeBufferExchangeEventLocal } = useLab();
+  const { batches, users, currentUser, upsertBufferExchangeEventLocal, removeBufferExchangeEventLocal } = useLab();
   const isAdmin = currentUser?.role === "admin";
   const listFn = useServerFn(listBufferExchangeEvents);
   const logFn = useServerFn(logBufferExchange);
   const delFn = useServerFn(deleteBufferExchangeEvent);
+  const updateFn = useServerFn(updateBufferExchangeEvent);
 
   const [events, setEvents] = useState<BufferExchangeEvent[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  // Log dialog state
   const [kind, setKind] = useState<Kind>("buffer_a");
   const [oldDesc, setOldDesc] = useState("");
   const [newDesc, setNewDesc] = useState("");
-  const [oldLot, setOldLot] = useState("");
-  const [newLot, setNewLot] = useState("");
   const [reason, setReason] = useState("");
   const [batchId, setBatchId] = useState<string>("__none__");
+
+  // Edit performer dialog state
+  const [editTarget, setEditTarget] = useState<BufferExchangeEvent | null>(null);
+  const [editPerformer, setEditPerformer] = useState<string>("__none__");
+  const [savingPerformer, setSavingPerformer] = useState(false);
+
+  const resolveUserName = (userId: string | null): string => {
+    if (!userId) return "Unknown";
+    const u = users.find((x: User) => x.id === userId);
+    return u?.name ?? "Unknown user";
+  };
 
   const load = async () => {
     try {
@@ -79,8 +91,6 @@ export function BufferExchangePanel({ column }: { column: Column }) {
     setKind(k);
     setOldDesc("");
     setNewDesc("");
-    setOldLot("");
-    setNewLot("");
     setReason("");
     setBatchId("__none__");
     setOpen(true);
@@ -94,8 +104,7 @@ export function BufferExchangePanel({ column }: { column: Column }) {
         data: {
           columnId: column.id,
           batchId: batchId !== "__none__" ? batchId : null,
-          kind, oldDescription: oldDesc, newDescription: newDesc,
-          oldLot, newLot, reason,
+          kind, oldDescription: oldDesc, newDescription: newDesc, reason,
         },
       });
       upsertBufferExchangeEventLocal(res);
@@ -116,6 +125,34 @@ export function BufferExchangePanel({ column }: { column: Column }) {
       setEvents((prev) => (prev ?? []).filter((e) => e.id !== id));
     } catch (err: any) {
       toast.error(err?.message ?? "Failed to delete entry");
+    }
+  };
+
+  const openEditPerformer = (ev: BufferExchangeEvent) => {
+    setEditTarget(ev);
+    setEditPerformer(ev.performedBy ?? "__none__");
+  };
+
+  const savePerformer = async () => {
+    if (!editTarget) return;
+    setSavingPerformer(true);
+    try {
+      const updated = await updateFn({
+        data: {
+          id: editTarget.id,
+          performedBy: editPerformer !== "__none__" ? editPerformer : null,
+        },
+      });
+      upsertBufferExchangeEventLocal(updated);
+      setEvents((prev) =>
+        (prev ?? []).map((e) => (e.id === updated.id ? updated : e)),
+      );
+      toast.success("Performer updated");
+      setEditTarget(null);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to update performer");
+    } finally {
+      setSavingPerformer(false);
     }
   };
 
@@ -170,6 +207,7 @@ export function BufferExchangePanel({ column }: { column: Column }) {
                       {ev.oldDescription || "—"} → {ev.newDescription || "—"}
                     </Badge>
                   )}
+                  {/* Show lot for legacy entries that have lot data */}
                   {(ev.oldLot || ev.newLot) && (
                     <span className="font-mono text-[10px] text-muted-foreground">
                       lot {ev.oldLot || "—"} → {ev.newLot || "—"}
@@ -177,26 +215,44 @@ export function BufferExchangePanel({ column }: { column: Column }) {
                   )}
                 </div>
                 <div className="text-[10px] text-muted-foreground">
-                  {new Date(ev.createdAt).toLocaleString()}
+                  <span className="font-medium text-foreground/70">
+                    {new Date(ev.createdAt).toLocaleString()}
+                  </span>
+                  <span className="mx-1">·</span>
+                  <span>by <span className="font-medium text-foreground/70">{resolveUserName(ev.performedBy)}</span></span>
                 </div>
                 {ev.reason && <p className="mt-1 whitespace-pre-wrap">{ev.reason}</p>}
               </div>
             </div>
             {isAdmin && (
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-6 w-6 shrink-0"
-                onClick={() => remove(ev.id)}
-                aria-label="Delete entry"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
+              <div className="flex shrink-0 items-center gap-0.5">
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-6 w-6"
+                  onClick={() => openEditPerformer(ev)}
+                  aria-label="Edit performer"
+                  title="Reassign performer"
+                >
+                  <Pencil className="h-3 w-3" />
+                </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-6 w-6"
+                  onClick={() => remove(ev.id)}
+                  aria-label="Delete entry"
+                  title="Delete entry"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
             )}
           </div>
         ))}
       </div>
 
+      {/* Log buffer exchange dialog */}
       <Dialog open={open} onOpenChange={(o) => !busy && setOpen(o)}>
         <DialogContent className="max-w-lg">
           <form onSubmit={submit}>
@@ -242,31 +298,8 @@ export function BufferExchangePanel({ column }: { column: Column }) {
                     id="be-new-desc"
                     value={newDesc}
                     onChange={(e) => setNewDesc(e.target.value)}
-                    placeholder="e.g. 0.1% formic acid in water (lot B)"
+                    placeholder="e.g. 0.1% formic acid in water (fresh prep)"
                     maxLength={200}
-                  />
-                </div>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div>
-                  <Label htmlFor="be-old-lot">Old lot #</Label>
-                  <Input
-                    id="be-old-lot"
-                    value={oldLot}
-                    onChange={(e) => setOldLot(e.target.value)}
-                    placeholder="Lot number"
-                    maxLength={100}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="be-new-lot">New lot #</Label>
-                  <Input
-                    id="be-new-lot"
-                    value={newLot}
-                    onChange={(e) => setNewLot(e.target.value)}
-                    placeholder="Lot number"
-                    maxLength={100}
                   />
                 </div>
               </div>
@@ -297,6 +330,10 @@ export function BufferExchangePanel({ column }: { column: Column }) {
                   placeholder="Why was the buffer exchanged?"
                 />
               </div>
+
+              <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-[10px] text-muted-foreground">
+                Logged as <span className="font-medium text-foreground/70">{currentUser?.name ?? "current user"}</span> at {new Date().toLocaleString()}
+              </div>
             </div>
 
             <DialogFooter className="gap-2 sm:gap-2">
@@ -313,6 +350,45 @@ export function BufferExchangePanel({ column }: { column: Column }) {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit performer dialog (admin only) */}
+      <Dialog open={!!editTarget} onOpenChange={(o) => !savingPerformer && !o && setEditTarget(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Reassign performer</DialogTitle>
+            <DialogDescription>
+              Select which user performed this buffer exchange.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Label htmlFor="be-performer">Performed by</Label>
+            <Select value={editPerformer} onValueChange={setEditPerformer}>
+              <SelectTrigger id="be-performer">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">Unknown / none</SelectItem>
+                {users.map((u: User) => (
+                  <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setEditTarget(null)}
+              disabled={savingPerformer}
+            >
+              Cancel
+            </Button>
+            <Button type="button" onClick={savePerformer} disabled={savingPerformer}>
+              {savingPerformer ? "Saving…" : "Update"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </Card>
