@@ -223,7 +223,10 @@ function UsersTab() {
   );
 }
 
-const TABLES = ["", "runs", "methods", "annotations"];
+const TABLES = ["", "runs", "methods", "annotations", "peaks", "analytes",
+  "compound_lists", "calibration_standards", "calibration_curves",
+  "column_injections", "columns", "column_service_events", "batches",
+  "buffer_exchange_events", "qc_runs", "anomaly_checks"];
 const ACTIONS = ["", "insert", "update", "delete"] as const;
 
 function AuditTab() {

@@ -46,7 +46,9 @@ import { PcaPlot } from "@/components/pca-plot";
 import { BatchPeakSummary } from "@/components/batch-peak-summary";
 import type { Batch, Run } from "@/lib/lab-types";
 import type { PCAResult } from "@/lib/pca-math";
-import { Grid3x3, ScatterChart, Zap } from "lucide-react";
+import { Grid3x3, ScatterChart, Zap, AlertTriangle, Play, CheckCircle2, Loader2 } from "lucide-react";
+import { runAnomalyChecks, resolveAnomalyCheck } from "@/lib/v3-functions";
+import type { AnomalyCheck } from "@/lib/lab-types";
 
 export const Route = createFileRoute("/_shell/batches/$batchId")({
   component: BatchDetailGate,
@@ -80,7 +82,7 @@ function BatchDetailGate() {
 }
 
 function BatchDetail({ batch }: { batch: Batch }) {
-  const { runs, methods, columns, users } = useLab();
+  const { runs, methods, columns, users, anomalyChecks, upsertAnomalyCheckLocal } = useLab();
   const upsertBatchLocal = useLab((s) => s.upsertBatchLocal);
   const updateBatchNotesLocal = useLab((s) => s.updateBatchNotesLocal);
   const setRunBatchLocal = useLab((s) => s.setRunBatchLocal);
@@ -88,6 +90,8 @@ function BatchDetail({ batch }: { batch: Batch }) {
   const updateBatchNotesFn = useServerFn(updateBatchNotes);
   const setRunBatchFn = useServerFn(setRunBatch);
   const autoAnnotateFn = useServerFn(autoAnnotateBatch);
+  const runAnomalyFn = useServerFn(runAnomalyChecks);
+  const resolveAnomalyFn = useServerFn(resolveAnomalyCheck);
   const qc = useQueryClient();
 
   const batchRuns = useMemo(
@@ -250,6 +254,39 @@ function BatchDetail({ batch }: { batch: Batch }) {
   const [pcaData, setPcaData] = useState<PCAResult | null>(null);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
   const [pickSummary, setPickSummary] = useState<{ picked: number; runs: number } | null>(null);
+  const [runningAnomalies, setRunningAnomalies] = useState(false);
+
+  const batchAnomalies = useMemo(
+    () => anomalyChecks.filter((c) => c.batchId === batch.id && !c.resolved),
+    [anomalyChecks, batch.id],
+  );
+  const batchAnomalyCounts = useMemo(() => ({
+    critical: batchAnomalies.filter((c) => c.severity === "critical").length,
+    warning: batchAnomalies.filter((c) => c.severity === "warning").length,
+    info: batchAnomalies.filter((c) => c.severity === "info").length,
+  }), [batchAnomalies]);
+
+  const handleRunAnomalies = async () => {
+    setRunningAnomalies(true);
+    try {
+      const newChecks = await runAnomalyFn({ data: { batchId: batch.id } });
+      for (const c of newChecks) upsertAnomalyCheckLocal(c);
+      toast.success(`Found ${newChecks.length} anomaly check${newChecks.length === 1 ? "" : "s"}`);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to run anomaly checks");
+    } finally {
+      setRunningAnomalies(false);
+    }
+  };
+
+  const handleResolveAnomaly = async (id: string) => {
+    try {
+      const res = await resolveAnomalyFn({ data: { id } });
+      upsertAnomalyCheckLocal(res);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to resolve");
+    }
+  };
 
   async function runPeakPick() {
     setPicking(true);
@@ -630,6 +667,65 @@ function BatchDetail({ batch }: { batch: Batch }) {
           <p className="mt-2 text-[11px] text-muted-foreground">
             Run batch peak picking, generate an analyte × run heatmap, or perform PCA for clustering and outlier detection.
           </p>
+        )}
+      </Card>
+
+      <Card className="border-border bg-card p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+              Anomaly checks
+            </div>
+            <h2 className="text-sm font-semibold">
+              {batchAnomalies.length} active check{batchAnomalies.length === 1 ? "" : "s"}
+              {batchAnomalyCounts.critical > 0 && (
+                <span className="ml-2 text-destructive">({batchAnomalyCounts.critical} critical)</span>
+              )}
+            </h2>
+          </div>
+          <Button size="sm" variant="outline" onClick={handleRunAnomalies} disabled={runningAnomalies}>
+            {runningAnomalies ? (
+              <><Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> Running…</>
+            ) : (
+              <><Play className="mr-1 h-3.5 w-3.5" /> Run checks</>
+            )}
+          </Button>
+        </div>
+        {batchAnomalies.length === 0 ? (
+          <div className="mt-3 text-xs text-muted-foreground">
+            No active anomalies. Click "Run checks" to scan for RT drift, area RSD, peak-shape degradation, and signal dropoff.
+          </div>
+        ) : (
+          <div className="mt-3 space-y-1 max-h-[300px] overflow-y-auto">
+            {batchAnomalies.map((c: AnomalyCheck) => (
+              <div
+                key={c.id}
+                className="flex items-start justify-between gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-accent/40"
+              >
+                <div className="flex items-start gap-2">
+                  <AlertTriangle
+                    className={`h-3.5 w-3.5 shrink-0 ${
+                      c.severity === "critical" ? "text-destructive" :
+                      c.severity === "warning" ? "text-yellow-600 dark:text-yellow-400" :
+                      "text-blue-600 dark:text-blue-400"
+                    }`}
+                  />
+                  <div>
+                    <span className="font-mono text-[10px] text-muted-foreground">{c.checkType.replace(/_/g, " ")}</span>
+                    <p>{c.message}</p>
+                    <span className="text-[10px] text-muted-foreground">{new Date(c.createdAt).toLocaleString()}</span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleResolveAnomaly(c.id)}
+                  className="shrink-0 text-muted-foreground hover:text-foreground"
+                  title="Resolve"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
         )}
       </Card>
 

@@ -4,6 +4,7 @@ import type {
   ColumnInjection, CompoundList, MethodColumnListDefault,
   ISAssignment, SampleQueue, MethodTemplate, ReportJob,
   CustomColumn, ImportWatchFolder, NceOptimization,
+  BufferExchangeEvent, QcRun, AnomalyCheck,
 } from "./lab-types";
 
 const EMPTY_USER: User = {
@@ -33,6 +34,9 @@ type State = {
   customColumns: CustomColumn[];
   importWatchFolders: ImportWatchFolder[];
   nceOptimizations: NceOptimization[];
+  bufferExchangeEvents: BufferExchangeEvent[];
+  qcRuns: QcRun[];
+  anomalyChecks: AnomalyCheck[];
   currentUser: User;
   hydrated: boolean;
   setAll: (s: {
@@ -52,6 +56,9 @@ type State = {
     customColumns?: CustomColumn[];
     importWatchFolders?: ImportWatchFolder[];
     nceOptimizations?: NceOptimization[];
+    bufferExchangeEvents?: BufferExchangeEvent[];
+    qcRuns?: QcRun[];
+    anomalyChecks?: AnomalyCheck[];
   }) => void;
   upsertMethodLocal: (m: Method) => void;
   removeMethodLocal: (id: string) => void;
@@ -93,6 +100,12 @@ type State = {
   removeImportWatchFolderLocal: (id: string) => void;
   upsertNceOptimizationLocal: (n: NceOptimization) => void;
   removeNceOptimizationLocal: (id: string) => void;
+  upsertBufferExchangeEventLocal: (e: BufferExchangeEvent) => void;
+  removeBufferExchangeEventLocal: (id: string) => void;
+  upsertQcRunLocal: (q: QcRun) => void;
+  removeQcRunLocal: (id: string) => void;
+  upsertAnomalyCheckLocal: (a: AnomalyCheck) => void;
+  removeAnomalyCheckLocal: (id: string) => void;
 };
 
 export const useLab = create<State>((set) => ({
@@ -113,6 +126,9 @@ export const useLab = create<State>((set) => ({
   customColumns: [],
   importWatchFolders: [],
   nceOptimizations: [],
+  bufferExchangeEvents: [],
+  qcRuns: [],
+  anomalyChecks: [],
   currentUser: EMPTY_USER,
   hydrated: false,
   setAll: (s) =>
@@ -133,6 +149,9 @@ export const useLab = create<State>((set) => ({
       customColumns: s.customColumns ?? [],
       importWatchFolders: s.importWatchFolders ?? [],
       nceOptimizations: s.nceOptimizations ?? [],
+      bufferExchangeEvents: s.bufferExchangeEvents ?? [],
+      qcRuns: s.qcRuns ?? [],
+      anomalyChecks: s.anomalyChecks ?? [],
       hydrated: true,
     })),
   upsertMethodLocal: (m) =>
@@ -336,6 +355,30 @@ export const useLab = create<State>((set) => ({
     })),
   removeNceOptimizationLocal: (id) =>
     set((s) => ({ nceOptimizations: s.nceOptimizations.filter((x) => x.id !== id) })),
+  upsertBufferExchangeEventLocal: (e) =>
+    set((s) => ({
+      bufferExchangeEvents: s.bufferExchangeEvents.some((x) => x.id === e.id)
+        ? s.bufferExchangeEvents.map((x) => (x.id === e.id ? e : x))
+        : [e, ...s.bufferExchangeEvents],
+    })),
+  removeBufferExchangeEventLocal: (id) =>
+    set((s) => ({ bufferExchangeEvents: s.bufferExchangeEvents.filter((x) => x.id !== id) })),
+  upsertQcRunLocal: (q) =>
+    set((s) => ({
+      qcRuns: s.qcRuns.some((x) => x.id === q.id)
+        ? s.qcRuns.map((x) => (x.id === q.id ? q : x))
+        : [q, ...s.qcRuns],
+    })),
+  removeQcRunLocal: (id) =>
+    set((s) => ({ qcRuns: s.qcRuns.filter((x) => x.id !== id) })),
+  upsertAnomalyCheckLocal: (a) =>
+    set((s) => ({
+      anomalyChecks: s.anomalyChecks.some((x) => x.id === a.id)
+        ? s.anomalyChecks.map((x) => (x.id === a.id ? a : x))
+        : [a, ...s.anomalyChecks],
+    })),
+  removeAnomalyCheckLocal: (id) =>
+    set((s) => ({ anomalyChecks: s.anomalyChecks.filter((x) => x.id !== id) })),
 }));
 
 // Backwards-compat helpers used by older pages — they map to *Local + server fn.

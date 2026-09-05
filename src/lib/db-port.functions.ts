@@ -42,6 +42,9 @@ const EXPORT_TABLES = [
   "import_watch_folders",
   "imported_files",
   "nce_optimization",
+  "buffer_exchange_events",
+  "qc_runs",
+  "anomaly_checks",
 ] as const;
 
 type ExportPayload = {

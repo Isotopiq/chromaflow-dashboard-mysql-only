@@ -8,6 +8,7 @@ import type {
   RtAlignment, ISAssignment, SampleQueue, SampleQueueEntry,
   MethodTemplate, ReportJob, CustomColumn, ImportWatchFolder,
   ImportedFile, NceOptimization,
+  BufferExchangeEvent, QcRun, AnomalyCheck,
 } from "@/lib/lab-types";
 
 // ---------- Mappers ----------
@@ -311,6 +312,58 @@ export function mapNceOptimization(r: any): NceOptimization {
   };
 }
 
+export function mapBufferExchangeEvent(r: any): BufferExchangeEvent {
+  return {
+    id: r.id,
+    columnId: r.column_id,
+    batchId: r.batch_id ?? null,
+    kind: r.kind,
+    oldDescription: r.old_description ?? "",
+    newDescription: r.new_description ?? "",
+    oldLot: r.old_lot ?? "",
+    newLot: r.new_lot ?? "",
+    reason: r.reason ?? "",
+    performedBy: r.performed_by ?? null,
+    createdAt: String(r.created_at),
+  };
+}
+
+export function mapQcRun(r: any): QcRun {
+  return {
+    id: r.id,
+    columnId: r.column_id,
+    batchId: r.batch_id ?? null,
+    methodId: r.method_id ?? null,
+    runId: r.run_id ?? null,
+    name: r.name,
+    qcType: r.qc_type ?? "system_suitability",
+    filePath: r.file_path ?? null,
+    fileName: r.file_name ?? null,
+    acquiredAt: String(r.acquired_at),
+    uploadedBy: r.uploaded_by ?? null,
+    createdAt: String(r.created_at),
+  };
+}
+
+export function mapAnomalyCheck(r: any): AnomalyCheck {
+  return {
+    id: r.id,
+    scope: r.scope,
+    scopeId: r.scope_id ?? null,
+    batchId: r.batch_id ?? null,
+    columnId: r.column_id ?? null,
+    checkType: r.check_type,
+    severity: r.severity ?? "info",
+    message: r.message,
+    metricsJson: r.metrics_json ?? {},
+    resolved: r.resolved ?? false,
+    resolvedBy: r.resolved_by ?? null,
+    resolvedAt: r.resolved_at ? String(r.resolved_at) : null,
+    createdBy: r.created_by ?? null,
+    createdAt: String(r.created_at),
+  };
+}
+
 export async function mapUser(profile: any, role: string): Promise<User> {
   const name = profile.display_name ?? "user";
   const avatarPath = profile.avatar_url ?? null;
@@ -362,6 +415,9 @@ export async function fetchAllForUser(db: Db) {
   let customColumns: any[] = [];
   let importWatchFolders: any[] = [];
   let nceOptimizations: any[] = [];
+  let bufferExchangeEvents: any[] = [];
+  let qcRuns: any[] = [];
+  let anomalyChecks: any[] = [];
   try { isAssignments = await db.many("select * from public.is_assignments"); } catch { /* table may not exist yet */ }
   try { sampleQueues = await db.many("select * from public.sample_queues order by created_at desc"); } catch {}
   try { sampleQueueEntries = await db.many("select * from public.sample_queue_entries order by position"); } catch {}
@@ -370,6 +426,9 @@ export async function fetchAllForUser(db: Db) {
   try { customColumns = await db.many("select * from public.custom_columns order by display_order"); } catch {}
   try { importWatchFolders = await db.many("select * from public.import_watch_folders"); } catch {}
   try { nceOptimizations = await db.many("select * from public.nce_optimization"); } catch {}
+  try { bufferExchangeEvents = await db.many("select * from public.buffer_exchange_events order by created_at desc"); } catch {}
+  try { qcRuns = await db.many("select * from public.qc_runs order by acquired_at desc"); } catch {}
+  try { anomalyChecks = await db.many("select * from public.anomaly_checks order by created_at desc"); } catch {}
 
   // Fetch per-column RT overrides for all analytes.
   const columnRts = await db.many<any>(
@@ -452,6 +511,9 @@ export async function fetchAllForUser(db: Db) {
     customColumns: customColumns.map(mapCustomColumn),
     importWatchFolders: importWatchFolders.map(mapImportWatchFolder),
     nceOptimizations: nceOptimizations.map(mapNceOptimization),
+    bufferExchangeEvents: bufferExchangeEvents.map(mapBufferExchangeEvent),
+    qcRuns: qcRuns.map(mapQcRun),
+    anomalyChecks: anomalyChecks.map(mapAnomalyCheck),
   };
 }
 

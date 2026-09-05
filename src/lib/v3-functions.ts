@@ -6,8 +6,10 @@ import {
   mapSampleQueue, mapSampleQueueEntry, mapMethodTemplate,
   mapReportJob, mapCustomColumn, mapImportWatchFolder,
   mapImportedFile, mapISAssignment,
+  mapBufferExchangeEvent, mapQcRun, mapAnomalyCheck,
 } from "@/lib/lab-data.server";
 import { parseSldFileFromArrayBuffer } from "@/lib/sld-import";
+import { runAllAnomalyChecks } from "@/lib/anomaly-checks";
 
 // =====================================================================
 // Sample Queue CRUD
@@ -305,4 +307,438 @@ export const createReportJob = createServerFn({ method: "POST" })
        data.includeSections, data.outputFormat, data.emailTo, userId],
     );
     return mapReportJob(row);
+  });
+
+// =====================================================================
+// Buffer Exchange Events
+// =====================================================================
+
+const BufferExchangeInput = z.object({
+  columnId: z.string().uuid(),
+  batchId: z.string().uuid().nullable().optional(),
+  kind: z.enum(["buffer_a", "buffer_b", "both", "solvent_lot", "mobile_phase_prep"]),
+  oldDescription: z.string().default(""),
+  newDescription: z.string().default(""),
+  oldLot: z.string().default(""),
+  newLot: z.string().default(""),
+  reason: z.string().default(""),
+});
+
+export const listBufferExchangeEvents = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) => z.object({ columnId: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { db } = context as { db: Db };
+    const rows = await db.many<any>(
+      `select * from public.buffer_exchange_events where column_id=$1 order by created_at desc`,
+      [data.columnId],
+    );
+    return rows.map(mapBufferExchangeEvent);
+  });
+
+export const logBufferExchange = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) => BufferExchangeInput.parse(d))
+  .handler(async ({ data, context }) => {
+    const { userId, db } = context as { userId: string; db: Db };
+    const row = await db.one<any>(
+      `insert into public.buffer_exchange_events
+         (column_id, batch_id, kind, old_description, new_description, old_lot, new_lot, reason, performed_by)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning *`,
+      [data.columnId, data.batchId ?? null, data.kind, data.oldDescription,
+       data.newDescription, data.oldLot, data.newLot, data.reason, userId],
+    );
+    return mapBufferExchangeEvent(row);
+  });
+
+export const deleteBufferExchangeEvent = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { db } = context as { db: Db };
+    await db.query("delete from public.buffer_exchange_events where id=$1", [data.id]);
+    return { ok: true };
+  });
+
+// =====================================================================
+// QC Runs
+// =====================================================================
+
+const QcRunInput = z.object({
+  columnId: z.string().uuid(),
+  batchId: z.string().uuid().nullable().optional(),
+  methodId: z.string().uuid().nullable().optional(),
+  runId: z.string().uuid().nullable().optional(),
+  name: z.string().min(1),
+  qcType: z.enum(["system_suitability", "column_qc", "batch_qc", "reference_standard"]).default("system_suitability"),
+  filePath: z.string().nullable().optional(),
+  fileName: z.string().nullable().optional(),
+  acquiredAt: z.string().optional(),
+});
+
+export const listQcRuns = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) => z.object({
+    columnId: z.string().uuid().optional(),
+    batchId: z.string().uuid().optional(),
+  }).parse(d ?? {}))
+  .handler(async ({ data, context }) => {
+    const { db } = context as { db: Db };
+    const conditions: string[] = [];
+    const params: any[] = [];
+    if (data.columnId) { params.push(data.columnId); conditions.push(`column_id=$${params.length}`); }
+    if (data.batchId) { params.push(data.batchId); conditions.push(`batch_id=$${params.length}`); }
+    const where = conditions.length ? "where " + conditions.join(" and ") : "";
+    const rows = await db.many<any>(
+      `select * from public.qc_runs ${where} order by acquired_at desc`,
+      params,
+    );
+    return rows.map(mapQcRun);
+  });
+
+export const createQcRun = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) => QcRunInput.parse(d))
+  .handler(async ({ data, context }) => {
+    const { userId, db } = context as { userId: string; db: Db };
+    const row = await db.one<any>(
+      `insert into public.qc_runs
+         (column_id, batch_id, method_id, run_id, name, qc_type, file_path, file_name, acquired_at, uploaded_by)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning *`,
+      [data.columnId, data.batchId ?? null, data.methodId ?? null, data.runId ?? null,
+       data.name, data.qcType, data.filePath ?? null, data.fileName ?? null,
+       data.acquiredAt ? new Date(data.acquiredAt).toISOString() : new Date().toISOString(),
+       userId],
+    );
+    return mapQcRun(row);
+  });
+
+export const deleteQcRun = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { db } = context as { db: Db };
+    await db.query("delete from public.qc_runs where id=$1", [data.id]);
+    return { ok: true };
+  });
+
+// =====================================================================
+// Anomaly Checks
+// =====================================================================
+
+const RunAnomalyInput = z.object({
+  batchId: z.string().uuid().nullable().optional(),
+  columnId: z.string().uuid().nullable().optional(),
+});
+
+export const runAnomalyChecks = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) => RunAnomalyInput.parse(d ?? {}))
+  .handler(async ({ data, context }) => {
+    const { userId, db } = context as { userId: string; db: Db };
+    // Gather runs + peaks for the scope
+    let runs: any[] = [];
+    if (data.batchId) {
+      runs = await db.many<any>(
+        `select r.id, r.name, r.batch_id, r.column_id, r.acquired_at,
+                r.method_id, r.file_path, r.file_format
+         from public.runs r where r.batch_id=$1 order by r.acquired_at`,
+        [data.batchId],
+      );
+    } else if (data.columnId) {
+      runs = await db.many<any>(
+        `select r.id, r.name, r.batch_id, r.column_id, r.acquired_at,
+                r.method_id, r.file_path, r.file_format
+         from public.runs r where r.column_id=$1 order by r.acquired_at`,
+        [data.columnId],
+      );
+    } else {
+      runs = await db.many<any>(`select r.id, r.name, r.batch_id, r.column_id, r.acquired_at, r.method_id, r.file_path, r.file_format from public.runs r order by r.acquired_at limit 200`);
+    }
+
+    // Fetch peaks for those runs
+    const runIds = runs.map((r) => r.id);
+    let peaksByRun = new Map<string, any[]>();
+    if (runIds.length > 0) {
+      const peaks = await db.many<any>(
+        `select * from public.peaks where run_id = any($1::uuid[])`,
+        [runIds],
+      );
+      for (const p of peaks) {
+        const arr = peaksByRun.get(p.run_id) ?? [];
+        arr.push({
+          id: p.id, rt: Number(p.rt), area: Number(p.area ?? 0), height: Number(p.height ?? 0),
+          fwhm: Number(p.fwhm ?? 0), sn: Number(p.sn ?? 0), mz: p.mz != null ? Number(p.mz) : undefined,
+          analyteId: p.analyte_id ?? undefined, analyteName: p.analyte_name ?? undefined,
+          asymmetry: p.asymmetry != null ? Number(p.asymmetry) : undefined,
+        });
+        peaksByRun.set(p.run_id, arr);
+      }
+    }
+
+    const runsWithPeaks = runs.map((r) => ({
+      id: r.id, name: r.name, batchId: r.batch_id, columnId: r.column_id,
+      acquiredAt: String(r.acquired_at), peaks: peaksByRun.get(r.id) ?? [],
+    }));
+
+    // Fetch injections if column-scoped
+    let injections: any[] = [];
+    if (data.columnId) {
+      injections = await db.many<any>(
+        `select * from public.column_injections where column_id=$1 order by injection_num`,
+        [data.columnId],
+      );
+    }
+
+    // Fetch QC samples if batch-scoped
+    let qcSamples: any[] = [];
+    if (data.batchId) {
+      try {
+        qcSamples = await db.many<any>(
+          `select qs.* from public.qc_samples qs
+           join public.calibration_curves cc on cc.id = qs.curve_id
+           where cc.batch_id = $1`,
+          [data.batchId],
+        );
+      } catch { /* qc_samples may not have batch link */ }
+    }
+
+    // Fetch batch info
+    let batch: any = null;
+    if (data.batchId) {
+      batch = await db.maybe<any>(`select * from public.batches where id=$1`, [data.batchId]);
+    }
+
+    const newChecks = runAllAnomalyChecks({
+      scope: data.batchId ? "batch" : "qc",
+      batchId: data.batchId ?? null,
+      columnId: data.columnId ?? null,
+      runs: runsWithPeaks,
+      injections: injections.map((i) => ({
+        id: i.id, columnId: i.column_id, runId: i.run_id ?? null, methodId: i.method_id ?? null,
+        sequenceName: i.sequence_name, injectionNum: i.injection_num,
+        startingPressure: i.starting_pressure != null ? Number(i.starting_pressure) : null,
+        notes: i.notes ?? "", performedBy: i.performed_by ?? null, createdAt: String(i.created_at),
+      })),
+      qcSamples: qcSamples.map((q) => ({
+        id: q.id, expectedConc: Number(q.expected_conc),
+        measuredConc: q.measured_conc != null ? Number(q.measured_conc) : null,
+        accuracyPct: q.accuracy_pct != null ? Number(q.accuracy_pct) : null,
+        passed: q.passed,
+      })),
+      batch: batch ? {
+        id: batch.id, name: batch.name, project: batch.project ?? "",
+        startedAt: String(batch.started_at), sampleCount: 0, runIds: [],
+        status: batch.status ?? "in_progress", owner: batch.owner_id ?? "",
+        notes: batch.notes ?? "",
+      } : null,
+    });
+
+    // Persist checks
+    const saved: any[] = [];
+    for (const check of newChecks) {
+      const row = await db.one<any>(
+        `insert into public.anomaly_checks
+           (scope, scope_id, batch_id, column_id, check_type, severity, message, metrics_json, created_by)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning *`,
+        [check.scope, check.scopeId, check.batchId, check.columnId,
+         check.checkType, check.severity, check.message, JSON.stringify(check.metricsJson), userId],
+      );
+      saved.push(mapAnomalyCheck(row));
+    }
+    return saved;
+  });
+
+const ListAnomalyInput = z.object({
+  scope: z.enum(["batch", "sample", "compound", "qc"]).optional(),
+  batchId: z.string().uuid().optional(),
+  columnId: z.string().uuid().optional(),
+  resolved: z.boolean().optional(),
+});
+
+export const listAnomalyChecks = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) => ListAnomalyInput.parse(d ?? {}))
+  .handler(async ({ data, context }) => {
+    const { db } = context as { db: Db };
+    const conditions: string[] = [];
+    const params: any[] = [];
+    if (data.scope) { params.push(data.scope); conditions.push(`scope=$${params.length}`); }
+    if (data.batchId) { params.push(data.batchId); conditions.push(`batch_id=$${params.length}`); }
+    if (data.columnId) { params.push(data.columnId); conditions.push(`column_id=$${params.length}`); }
+    if (data.resolved != null) { params.push(data.resolved); conditions.push(`resolved=$${params.length}`); }
+    const where = conditions.length ? "where " + conditions.join(" and ") : "";
+    const rows = await db.many<any>(
+      `select * from public.anomaly_checks ${where} order by created_at desc limit 500`,
+      params,
+    );
+    return rows.map(mapAnomalyCheck);
+  });
+
+export const resolveAnomalyCheck = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { userId, db } = context as { userId: string; db: Db };
+    const row = await db.one<any>(
+      `update public.anomaly_checks set resolved=true, resolved_by=$1, resolved_at=now()
+       where id=$2 returning *`,
+      [userId, data.id],
+    );
+    return mapAnomalyCheck(row);
+  });
+
+// =====================================================================
+// Column History (unified timeline)
+// =====================================================================
+
+export const getColumnHistory = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) => z.object({ columnId: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { db } = context as { db: Db };
+    const { columnId } = data;
+    const timeline: any[] = [];
+
+    // 1. Audit events for the columns table itself
+    const colAudits = await db.many<any>(
+      `select ae.*, u.email as actor_email, p.display_name as actor_name
+       from public.audit_events ae
+       left join public.app_users u on u.id = ae.actor_id
+       left join public.profiles p on p.id = u.id
+       where ae.table_name = 'columns' and ae.row_id = $1
+       order by ae.created_at desc`,
+      [columnId],
+    );
+    for (const a of colAudits) {
+      const diff = a.diff ?? {};
+      let summary = `${a.action} column`;
+      if (a.action === "update" && diff.after && diff.before) {
+        const changed: string[] = [];
+        const before = diff.before as Record<string, any>;
+        const after = diff.after as Record<string, any>;
+        for (const key of ["name", "manufacturer", "chemistry", "dimensions", "particle_size", "serial", "status", "notes_md"]) {
+          if (JSON.stringify(before[key]) !== JSON.stringify(after[key])) {
+            changed.push(`${key}: "${before[key] ?? ""}" → "${after[key] ?? ""}"`);
+          }
+        }
+        if (changed.length > 0) summary = `Updated: ${changed.join(", ")}`;
+      }
+      timeline.push({
+        id: `audit-${a.id}`,
+        source: "audit",
+        action: a.action,
+        tableName: a.table_name,
+        summary,
+        actorId: a.actor_id,
+        actorName: a.actor_name ?? a.actor_email ?? null,
+        diff: a.diff,
+        createdAt: String(a.created_at),
+      });
+    }
+
+    // 2. Column service events (direct fetch for current state)
+    const serviceEvents = await db.many<any>(
+      `select cse.*, u.email as actor_email, p.display_name as actor_name
+       from public.column_service_events cse
+       left join public.app_users u on u.id = cse.performed_by
+       left join public.profiles p on p.id = u.id
+       where cse.column_id = $1 order by cse.created_at desc`,
+      [columnId],
+    );
+    for (const e of serviceEvents) {
+      const kindLabel: Record<string, string> = {
+        reset: "Injection count reset", guard_change: "Guard cartridge change",
+        maintenance: "Maintenance", install: "New column installed",
+      };
+      timeline.push({
+        id: `service-${e.id}`,
+        source: "service_event",
+        action: "create",
+        tableName: "column_service_events",
+        summary: `${kindLabel[e.kind] ?? e.kind}${e.reset_usage ? ` (${e.injections_before} → ${e.injections_after} inj)` : ""}${e.serial ? ` S/N ${e.serial}` : ""}${e.notes ? ` — ${e.notes}` : ""}`,
+        actorId: e.performed_by,
+        actorName: e.actor_name ?? e.actor_email ?? null,
+        diff: { kind: e.kind, injectionsBefore: e.injections_before, injectionsAfter: e.injections_after, serial: e.serial, notes: e.notes, resetUsage: e.reset_usage },
+        createdAt: String(e.created_at),
+      });
+    }
+
+    // 3. Buffer exchange events
+    const bufferEvents = await db.many<any>(
+      `select bee.*, u.email as actor_email, p.display_name as actor_name
+       from public.buffer_exchange_events bee
+       left join public.app_users u on u.id = bee.performed_by
+       left join public.profiles p on p.id = u.id
+       where bee.column_id = $1 order by bee.created_at desc`,
+      [columnId],
+    );
+    for (const e of bufferEvents) {
+      const kindLabel: Record<string, string> = {
+        buffer_a: "Buffer A change", buffer_b: "Buffer B change",
+        both: "Both buffers changed", solvent_lot: "Solvent lot change",
+        mobile_phase_prep: "Mobile phase prep",
+      };
+      timeline.push({
+        id: `buffer-${e.id}`,
+        source: "buffer_exchange",
+        action: "create",
+        tableName: "buffer_exchange_events",
+        summary: `${kindLabel[e.kind] ?? e.kind}${e.old_description || e.new_description ? `: ${e.old_description || "—"} → ${e.new_description || "—"}` : ""}${e.old_lot || e.new_lot ? ` (lot ${e.old_lot || "—"} → ${e.new_lot || "—"})` : ""}${e.reason ? ` — ${e.reason}` : ""}`,
+        actorId: e.performed_by,
+        actorName: e.actor_name ?? e.actor_email ?? null,
+        diff: { kind: e.kind, oldDescription: e.old_description, newDescription: e.new_description, oldLot: e.old_lot, newLot: e.new_lot, reason: e.reason },
+        createdAt: String(e.created_at),
+      });
+    }
+
+    // 4. Column injections
+    const injections = await db.many<any>(
+      `select ci.*, u.email as actor_email, p.display_name as actor_name
+       from public.column_injections ci
+       left join public.app_users u on u.id = ci.performed_by
+       left join public.profiles p on p.id = u.id
+       where ci.column_id = $1 order by ci.created_at desc`,
+      [columnId],
+    );
+    for (const i of injections) {
+      timeline.push({
+        id: `inj-${i.id}`,
+        source: "injection",
+        action: "log",
+        tableName: "column_injections",
+        summary: `Injection #${i.injection_num}${i.sequence_name ? ` (${i.sequence_name})` : ""}${i.starting_pressure != null ? ` — ${i.starting_pressure} bar` : ""}${i.notes ? ` — ${i.notes}` : ""}`,
+        actorId: i.performed_by,
+        actorName: i.actor_name ?? i.actor_email ?? null,
+        diff: { injectionNum: i.injection_num, sequenceName: i.sequence_name, startingPressure: i.starting_pressure, notes: i.notes },
+        createdAt: String(i.created_at),
+      });
+    }
+
+    // 5. QC runs
+    const qcRuns = await db.many<any>(
+      `select qr.*, u.email as actor_email, p.display_name as actor_name
+       from public.qc_runs qr
+       left join public.app_users u on u.id = qr.uploaded_by
+       left join public.profiles p on p.id = u.id
+       where qr.column_id = $1 order by qr.created_at desc`,
+      [columnId],
+    );
+    for (const q of qcRuns) {
+      timeline.push({
+        id: `qc-${q.id}`,
+        source: "qc_run",
+        action: "create",
+        tableName: "qc_runs",
+        summary: `QC run uploaded: "${q.name}" (${q.qc_type})${q.file_name ? ` — ${q.file_name}` : ""}`,
+        actorId: q.uploaded_by,
+        actorName: q.actor_name ?? q.actor_email ?? null,
+        diff: { name: q.name, qcType: q.qc_type, fileName: q.file_name, acquiredAt: q.acquired_at },
+        createdAt: String(q.created_at),
+      });
+    }
+
+    // Sort by createdAt descending
+    timeline.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return timeline;
   });

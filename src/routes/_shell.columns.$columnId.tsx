@@ -11,7 +11,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { StatusDot } from "@/components/status-dot";
 import { ColumnServicePanel } from "@/components/column-service-panel";
-import { ArrowLeft, Activity, FlaskConical, Gauge, Plus, Pencil, Trash2 } from "lucide-react";
+import { BufferExchangePanel } from "@/components/buffer-exchange-panel";
+import { BufferCorrelationChart } from "@/components/buffer-correlation-chart";
+import { ColumnHistoryTimeline } from "@/components/column-history-timeline";
+import { ArrowLeft, Activity, FlaskConical, Gauge, Plus, Pencil, Trash2, AlertTriangle, Play, CheckCircle2, Loader2 } from "lucide-react";
+import { runAnomalyChecks, resolveAnomalyCheck } from "@/lib/v3-functions";
+import type { AnomalyCheck } from "@/lib/lab-types";
 import {
   Select,
   SelectContent,
@@ -100,12 +105,14 @@ function ColumnDetailGate() {
 }
 
 function ColumnDetail({ column }: { column: Column }) {
-  const { methods, runs, injections } = useLab();
+  const { methods, runs, injections, bufferExchangeEvents, anomalyChecks, upsertAnomalyCheckLocal } = useLab();
   const upsertInjectionLocal = useLab((s) => s.upsertInjectionLocal);
   const removeInjectionLocal = useLab((s) => s.removeInjectionLocal);
   const createInjectionFn = useServerFn(createInjection);
   const updateInjectionFn = useServerFn(updateInjection);
   const deleteInjectionFn = useServerFn(deleteInjection);
+  const runAnomalyFn = useServerFn(runAnomalyChecks);
+  const resolveAnomalyFn = useServerFn(resolveAnomalyCheck);
 
   const columnInjections = useMemo(
     () => injections.filter((i) => i.columnId === column.id).sort((a, b) => a.injectionNum - b.injectionNum),
@@ -125,6 +132,42 @@ function ColumnDetail({ column }: { column: Column }) {
   const [injNotes, setInjNotes] = useState("");
   const [savingInj, setSavingInj] = useState(false);
   const [deleteInjId, setDeleteInjId] = useState<string | null>(null);
+  const [runningAnomalies, setRunningAnomalies] = useState(false);
+
+  const columnBufferEvents = useMemo(
+    () => bufferExchangeEvents.filter((e) => e.columnId === column.id),
+    [bufferExchangeEvents, column.id],
+  );
+  const columnRuns = useMemo(
+    () => runs.filter((r) => r.columnId === column.id),
+    [runs, column.id],
+  );
+  const columnAnomalies = useMemo(
+    () => anomalyChecks.filter((c) => c.columnId === column.id && !c.resolved),
+    [anomalyChecks, column.id],
+  );
+
+  const handleRunAnomalies = async () => {
+    setRunningAnomalies(true);
+    try {
+      const newChecks = await runAnomalyFn({ data: { columnId: column.id } });
+      for (const c of newChecks) upsertAnomalyCheckLocal(c);
+      toast.success(`Found ${newChecks.length} anomaly check${newChecks.length === 1 ? "" : "s"}`);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to run anomaly checks");
+    } finally {
+      setRunningAnomalies(false);
+    }
+  };
+
+  const handleResolveAnomaly = async (id: string) => {
+    try {
+      const res = await resolveAnomalyFn({ data: { id } });
+      upsertAnomalyCheckLocal(res);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to resolve");
+    }
+  };
 
   const openNewInj = () => {
     setEditingInj(null);
@@ -262,6 +305,66 @@ function ColumnDetail({ column }: { column: Column }) {
       </div>
 
       <ColumnServicePanel column={column} />
+
+      <BufferExchangePanel column={column} />
+
+      <BufferCorrelationChart runs={columnRuns} bufferEvents={columnBufferEvents} />
+
+      <Card className="border-border bg-card p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+              Anomaly checks
+            </div>
+            <h2 className="text-sm font-semibold">
+              {columnAnomalies.length} active check{columnAnomalies.length === 1 ? "" : "s"}
+            </h2>
+          </div>
+          <Button size="sm" variant="outline" onClick={handleRunAnomalies} disabled={runningAnomalies}>
+            {runningAnomalies ? (
+              <><Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> Running…</>
+            ) : (
+              <><Play className="mr-1 h-3.5 w-3.5" /> Run checks</>
+            )}
+          </Button>
+        </div>
+        {columnAnomalies.length === 0 ? (
+          <div className="mt-3 text-xs text-muted-foreground">
+            No active anomalies. Click "Run checks" to scan for pressure spikes and peak issues.
+          </div>
+        ) : (
+          <div className="mt-3 space-y-1 max-h-[300px] overflow-y-auto">
+            {columnAnomalies.map((c: AnomalyCheck) => (
+              <div
+                key={c.id}
+                className="flex items-start justify-between gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-accent/40"
+              >
+                <div className="flex items-start gap-2">
+                  <AlertTriangle
+                    className={`h-3.5 w-3.5 shrink-0 ${
+                      c.severity === "critical" ? "text-destructive" :
+                      c.severity === "warning" ? "text-yellow-600 dark:text-yellow-400" :
+                      "text-blue-600 dark:text-blue-400"
+                    }`}
+                  />
+                  <div>
+                    <span className="font-mono text-[10px] text-muted-foreground">{c.checkType.replace(/_/g, " ")}</span>
+                    <p>{c.message}</p>
+                    <span className="text-[10px] text-muted-foreground">{new Date(c.createdAt).toLocaleString()}</span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleResolveAnomaly(c.id)}
+                  className="shrink-0 text-muted-foreground hover:text-foreground"
+                  title="Resolve"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
 
       <Card className="border-border bg-card p-4">
         <div className="flex items-center justify-between">
@@ -416,6 +519,8 @@ function ColumnDetail({ column }: { column: Column }) {
           </div>
         </Card>
       </div>
+
+      <ColumnHistoryTimeline column={column} />
 
       <Card className="border-border bg-card p-4">
         <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Notes</div>

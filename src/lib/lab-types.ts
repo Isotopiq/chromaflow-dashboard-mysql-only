@@ -376,3 +376,63 @@ export type NceOptimization = {
   createdBy: string | null;
   createdAt: string;
 };
+
+// ---- V3 Buffer Exchange, QC Runs, Anomaly Checks, Column History ----
+
+export type BufferExchangeEvent = {
+  id: string;
+  columnId: string;
+  batchId: string | null;
+  kind: "buffer_a" | "buffer_b" | "both" | "solvent_lot" | "mobile_phase_prep";
+  oldDescription: string;
+  newDescription: string;
+  oldLot: string;
+  newLot: string;
+  reason: string;
+  performedBy: string | null;
+  createdAt: string;
+};
+
+export type QcRun = {
+  id: string;
+  columnId: string;
+  batchId: string | null;
+  methodId: string | null;
+  runId: string | null;
+  name: string;
+  qcType: "system_suitability" | "column_qc" | "batch_qc" | "reference_standard";
+  filePath: string | null;
+  fileName: string | null;
+  acquiredAt: string;
+  uploadedBy: string | null;
+  createdAt: string;
+};
+
+export type AnomalyCheck = {
+  id: string;
+  scope: "batch" | "sample" | "compound" | "qc";
+  scopeId: string | null;
+  batchId: string | null;
+  columnId: string | null;
+  checkType: string;
+  severity: "info" | "warning" | "critical";
+  message: string;
+  metricsJson: Record<string, number | string>;
+  resolved: boolean;
+  resolvedBy: string | null;
+  resolvedAt: string | null;
+  createdBy: string | null;
+  createdAt: string;
+};
+
+export type ColumnHistoryEntry = {
+  id: string;
+  source: "audit" | "service_event" | "buffer_exchange" | "injection" | "qc_run";
+  action: string;
+  tableName: string;
+  summary: string;
+  actorId: string | null;
+  actorName: string | null;
+  diff: Record<string, any> | null;
+  createdAt: string;
+};

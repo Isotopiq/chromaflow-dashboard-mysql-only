@@ -1042,5 +1042,110 @@ create trigger trg_audit_col_inj after insert or update or delete on public.colu
   for each row execute function public.log_audit();
 
 -- =====================================================================
+-- 10. V3 Buffer Exchange, QC Runs, Anomaly Checks
+-- =====================================================================
+
+-- ---- Buffer exchange events ----
+-- Tracks mobile-phase / buffer composition changes per column, optionally
+-- linked to a batch, so signal / RT / peak-shape shifts can be correlated.
+create table if not exists public.buffer_exchange_events (
+  id              uuid primary key default gen_random_uuid(),
+  column_id       uuid not null references public.columns(id) on delete cascade,
+  batch_id        uuid references public.batches(id) on delete set null,
+  kind            text not null check (kind in ('buffer_a','buffer_b','both','solvent_lot','mobile_phase_prep')),
+  old_description text default '',
+  new_description text default '',
+  old_lot         text default '',
+  new_lot         text default '',
+  reason          text default '',
+  performed_by    uuid references public.app_users(id) on delete set null,
+  created_at      timestamptz not null default now()
+);
+create index if not exists buffer_exchange_column_idx on public.buffer_exchange_events(column_id);
+create index if not exists buffer_exchange_batch_idx on public.buffer_exchange_events(batch_id);
+alter table public.buffer_exchange_events enable row level security;
+drop policy if exists "buffer_exchange: read all" on public.buffer_exchange_events;
+drop policy if exists "buffer_exchange: write auth" on public.buffer_exchange_events;
+create policy "buffer_exchange: read all" on public.buffer_exchange_events for select using (true);
+create policy "buffer_exchange: write auth" on public.buffer_exchange_events for all
+  using (true) with check (true);
+
+-- ---- QC runs ----
+-- QC reference runs linked to a column (and optionally batch / method).
+-- Each QC run references a parsed run that holds the trace + peaks.
+create table if not exists public.qc_runs (
+  id           uuid primary key default gen_random_uuid(),
+  column_id    uuid not null references public.columns(id) on delete cascade,
+  batch_id     uuid references public.batches(id) on delete set null,
+  method_id    uuid references public.methods(id) on delete set null,
+  run_id       uuid references public.runs(id) on delete set null,
+  name         text not null,
+  qc_type      text default 'system_suitability' check (qc_type in ('system_suitability','column_qc','batch_qc','reference_standard')),
+  file_path    text,
+  file_name    text,
+  acquired_at  timestamptz not null default now(),
+  uploaded_by  uuid references public.app_users(id) on delete set null,
+  created_at   timestamptz not null default now()
+);
+create index if not exists qc_runs_column_idx on public.qc_runs(column_id);
+create index if not exists qc_runs_batch_idx on public.qc_runs(batch_id);
+alter table public.qc_runs enable row level security;
+drop policy if exists "qc_runs: read all" on public.qc_runs;
+drop policy if exists "qc_runs: write auth" on public.qc_runs;
+create policy "qc_runs: read all" on public.qc_runs for select using (true);
+create policy "qc_runs: write auth" on public.qc_runs for all
+  using (true) with check (true);
+
+-- ---- Anomaly checks ----
+-- Stores results of automated anomaly detection across batches, samples,
+-- compounds, and QC runs.
+create table if not exists public.anomaly_checks (
+  id            uuid primary key default gen_random_uuid(),
+  scope         text not null check (scope in ('batch','sample','compound','qc')),
+  scope_id      uuid,
+  batch_id      uuid references public.batches(id) on delete cascade,
+  column_id     uuid references public.columns(id) on delete cascade,
+  check_type    text not null,
+  severity      text default 'info' check (severity in ('info','warning','critical')),
+  message       text not null,
+  metrics_json  jsonb default '{}'::jsonb,
+  resolved      boolean default false,
+  resolved_by   uuid references public.app_users(id) on delete set null,
+  resolved_at   timestamptz,
+  created_by    uuid references public.app_users(id) on delete set null,
+  created_at    timestamptz not null default now()
+);
+create index if not exists anomaly_batch_idx on public.anomaly_checks(batch_id);
+create index if not exists anomaly_column_idx on public.anomaly_checks(column_id);
+create index if not exists anomaly_scope_idx on public.anomaly_checks(scope);
+create index if not exists anomaly_resolved_idx on public.anomaly_checks(resolved);
+alter table public.anomaly_checks enable row level security;
+drop policy if exists "anomaly: read all" on public.anomaly_checks;
+drop policy if exists "anomaly: write auth" on public.anomaly_checks;
+create policy "anomaly: read all" on public.anomaly_checks for select using (true);
+create policy "anomaly: write auth" on public.anomaly_checks for all
+  using (true) with check (true);
+
+-- ---- Audit triggers for previously-unaudited tables ----
+drop trigger if exists trg_audit_columns on public.columns;
+create trigger trg_audit_columns after insert or update or delete on public.columns
+  for each row execute function public.log_audit();
+drop trigger if exists trg_audit_column_service on public.column_service_events;
+create trigger trg_audit_column_service after insert or update or delete on public.column_service_events
+  for each row execute function public.log_audit();
+drop trigger if exists trg_audit_batches on public.batches;
+create trigger trg_audit_batches after insert or update or delete on public.batches
+  for each row execute function public.log_audit();
+drop trigger if exists trg_audit_buffer_exchange on public.buffer_exchange_events;
+create trigger trg_audit_buffer_exchange after insert or update or delete on public.buffer_exchange_events
+  for each row execute function public.log_audit();
+drop trigger if exists trg_audit_qc_runs on public.qc_runs;
+create trigger trg_audit_qc_runs after insert or update or delete on public.qc_runs
+  for each row execute function public.log_audit();
+drop trigger if exists trg_audit_anomaly_checks on public.anomaly_checks;
+create trigger trg_audit_anomaly_checks after insert or update or delete on public.anomaly_checks
+  for each row execute function public.log_audit();
+
+-- =====================================================================
 -- Done.
 -- =====================================================================

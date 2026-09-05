@@ -16,6 +16,8 @@ import {
   ListOrdered,
   Copy,
   FolderSync,
+  HeartPulse,
+  AlertTriangle,
 } from "lucide-react";
 import logoLightUrl from "@/assets/isotopiq-logo-light.png";
 import logoDarkUrl from "@/assets/isotopiq-logo-dark.png";
@@ -76,7 +78,11 @@ const groups: Array<{
   },
   {
     label: "Quantitation",
-    items: [{ title: "Calibration & QC", url: "/quant", icon: TrendingUp }],
+    items: [
+      { title: "Calibration & QC", url: "/quant", icon: TrendingUp },
+      { title: "QC Health", url: "/qc-health", icon: HeartPulse },
+      { title: "Anomaly checks", url: "/anomalies", icon: AlertTriangle },
+    ],
   },
   {
     label: "Settings",
