@@ -331,7 +331,7 @@ export function mapBufferExchangeEvent(r: any): BufferExchangeEvent {
 export function mapQcRun(r: any): QcRun {
   return {
     id: r.id,
-    columnId: r.column_id,
+    columnId: r.column_id ?? null,
     batchId: r.batch_id ?? null,
     methodId: r.method_id ?? null,
     runId: r.run_id ?? null,

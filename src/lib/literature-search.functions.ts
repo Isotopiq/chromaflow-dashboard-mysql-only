@@ -39,13 +39,13 @@ type EuropePmcResult = {
   id: string;
   title: string;
   authorString: string;
-  journalTitle: string;
+  journalInfo?: { journal?: { title?: string } };
   pubYear: string;
   abstractText: string;
   doi: string;
   pmid: string;
   fullTextUrlList?: {
-    fullTextUrl: Array<{ url: string; documentStyle: string; site: string }>;
+    fullTextUrl: Array<{ url: string; documentStyle: string; site: string }> | { url: string; documentStyle: string; site: string };
   };
 };
 
@@ -79,7 +79,9 @@ async function searchEuropePmc(
     if (r.doi) {
       url = `https://doi.org/${r.doi}`;
     }
-    const fullTextUrls = r.fullTextUrlList?.fullTextUrl ?? [];
+    // fullTextUrl can be a single object or an array — normalize to array
+    const rawUrls = r.fullTextUrlList?.fullTextUrl;
+    const fullTextUrls = Array.isArray(rawUrls) ? rawUrls : rawUrls ? [rawUrls] : [];
     const freeFullText = fullTextUrls.find((u) => u.documentStyle === "pdf" || u.documentStyle === "html");
     if (freeFullText) {
       url = freeFullText.url;
@@ -89,7 +91,7 @@ async function searchEuropePmc(
       id: `epmc-${r.pmid || r.id}`,
       title: r.title || "Untitled",
       authors: r.authorString ? r.authorString.split(", ").slice(0, 10) : [],
-      journal: r.journalTitle || "",
+      journal: r.journalInfo?.journal?.title || "",
       year: r.pubYear ? parseInt(r.pubYear, 10) : null,
       abstract: r.abstractText || "",
       doi: r.doi || null,

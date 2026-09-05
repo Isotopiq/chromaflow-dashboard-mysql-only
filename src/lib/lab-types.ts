@@ -395,7 +395,7 @@ export type BufferExchangeEvent = {
 
 export type QcRun = {
   id: string;
-  columnId: string;
+  columnId: string | null;
   batchId: string | null;
   methodId: string | null;
   runId: string | null;

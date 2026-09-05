@@ -66,7 +66,7 @@ function QcHealthPage() {
       if (selectedBatchId && q.batchId !== selectedBatchId) return false;
       return true;
     });
-  }, [qcRuns, selectedColumnId, selectedBatchId]);
+  }, [qcRuns, selectedColumnId, selectedBatchId, columnId]);
 
   // Get the linked runs with trace data for overlay
   const overlayRuns = useMemo(() => {
@@ -199,7 +199,7 @@ function QcHealthPage() {
       const run = runs.find((r) => r.id === upRunId);
       const res = await createQcFn({
         data: {
-          columnId: selectedColumnId,
+          columnId: selectedColumnId ?? null,
           batchId: selectedBatchId,
           methodId: run?.methodId ?? null,
           runId: upRunId,

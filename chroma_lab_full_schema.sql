@@ -1075,7 +1075,7 @@ create policy "buffer_exchange: write auth" on public.buffer_exchange_events for
 -- Each QC run references a parsed run that holds the trace + peaks.
 create table if not exists public.qc_runs (
   id           uuid primary key default gen_random_uuid(),
-  column_id    uuid not null references public.columns(id) on delete cascade,
+  column_id    uuid references public.columns(id) on delete cascade,
   batch_id     uuid references public.batches(id) on delete set null,
   method_id    uuid references public.methods(id) on delete set null,
   run_id       uuid references public.runs(id) on delete set null,
@@ -1087,6 +1087,10 @@ create table if not exists public.qc_runs (
   uploaded_by  uuid references public.app_users(id) on delete set null,
   created_at   timestamptz not null default now()
 );
+-- Ensure column_id is nullable for existing deployments where it was NOT NULL.
+do $$ begin
+  alter table public.qc_runs alter column column_id drop not null;
+exception when others then null; end $$;
 create index if not exists qc_runs_column_idx on public.qc_runs(column_id);
 create index if not exists qc_runs_batch_idx on public.qc_runs(batch_id);
 alter table public.qc_runs enable row level security;

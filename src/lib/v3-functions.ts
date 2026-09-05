@@ -327,11 +327,15 @@ export const listBufferExchangeEvents = createServerFn({ method: "POST" })
   .inputValidator((d) => z.object({ columnId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { db } = context as { db: Db };
-    const rows = await db.many<any>(
-      `select * from public.buffer_exchange_events where column_id=$1 order by created_at desc`,
-      [data.columnId],
-    );
-    return rows.map(mapBufferExchangeEvent);
+    try {
+      const rows = await db.many<any>(
+        `select * from public.buffer_exchange_events where column_id=$1 order by created_at desc`,
+        [data.columnId],
+      );
+      return rows.map(mapBufferExchangeEvent);
+    } catch {
+      return [];
+    }
   });
 
 export const logBufferExchange = createServerFn({ method: "POST" })
@@ -370,10 +374,11 @@ export const updateBufferExchangeEvent = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { db, isAdmin } = context as { userId: string; email: string; isAdmin: boolean; db: Db };
     if (!isAdmin) throw new Response("Forbidden — admin only", { status: 403 });
-    const row = await db.one<any>(
+    const row = await db.maybe<any>(
       `update public.buffer_exchange_events set performed_by=$1 where id=$2 returning *`,
       [data.performedBy ?? null, data.id],
     );
+    if (!row) throw new Response("Buffer exchange event not found", { status: 404 });
     return mapBufferExchangeEvent(row);
   });
 
@@ -382,7 +387,7 @@ export const updateBufferExchangeEvent = createServerFn({ method: "POST" })
 // =====================================================================
 
 const QcRunInput = z.object({
-  columnId: z.string().uuid(),
+  columnId: z.string().uuid().nullable().optional(),
   batchId: z.string().uuid().nullable().optional(),
   methodId: z.string().uuid().nullable().optional(),
   runId: z.string().uuid().nullable().optional(),
@@ -406,11 +411,15 @@ export const listQcRuns = createServerFn({ method: "POST" })
     if (data.columnId) { params.push(data.columnId); conditions.push(`column_id=$${params.length}`); }
     if (data.batchId) { params.push(data.batchId); conditions.push(`batch_id=$${params.length}`); }
     const where = conditions.length ? "where " + conditions.join(" and ") : "";
-    const rows = await db.many<any>(
-      `select * from public.qc_runs ${where} order by acquired_at desc`,
-      params,
-    );
-    return rows.map(mapQcRun);
+    try {
+      const rows = await db.many<any>(
+        `select * from public.qc_runs ${where} order by acquired_at desc`,
+        params,
+      );
+      return rows.map(mapQcRun);
+    } catch {
+      return [];
+    }
   });
 
 export const createQcRun = createServerFn({ method: "POST" })
@@ -422,7 +431,7 @@ export const createQcRun = createServerFn({ method: "POST" })
       `insert into public.qc_runs
          (column_id, batch_id, method_id, run_id, name, qc_type, file_path, file_name, acquired_at, uploaded_by)
        values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning *`,
-      [data.columnId, data.batchId ?? null, data.methodId ?? null, data.runId ?? null,
+      [data.columnId ?? null, data.batchId ?? null, data.methodId ?? null, data.runId ?? null,
        data.name, data.qcType, data.filePath ?? null, data.fileName ?? null,
        data.acquiredAt ? new Date(data.acquiredAt).toISOString() : new Date().toISOString(),
        userId],
@@ -473,14 +482,16 @@ export const updateQcRun = createServerFn({ method: "POST" })
       sets.push(`qc_type=$${params.length}`);
     }
     if (sets.length === 0) {
-      const row = await db.one<any>(`select * from public.qc_runs where id=$1`, [data.id]);
+      const row = await db.maybe<any>(`select * from public.qc_runs where id=$1`, [data.id]);
+      if (!row) throw new Response("QC run not found", { status: 404 });
       return mapQcRun(row);
     }
     params.push(data.id);
-    const row = await db.one<any>(
+    const row = await db.maybe<any>(
       `update public.qc_runs set ${sets.join(", ")} where id=$${params.length} returning *`,
       params,
     );
+    if (!row) throw new Response("QC run not found", { status: 404 });
     return mapQcRun(row);
   });
 
@@ -630,11 +641,15 @@ export const listAnomalyChecks = createServerFn({ method: "POST" })
     if (data.columnId) { params.push(data.columnId); conditions.push(`column_id=$${params.length}`); }
     if (data.resolved != null) { params.push(data.resolved); conditions.push(`resolved=$${params.length}`); }
     const where = conditions.length ? "where " + conditions.join(" and ") : "";
-    const rows = await db.many<any>(
-      `select * from public.anomaly_checks ${where} order by created_at desc limit 500`,
-      params,
-    );
-    return rows.map(mapAnomalyCheck);
+    try {
+      const rows = await db.many<any>(
+        `select * from public.anomaly_checks ${where} order by created_at desc limit 500`,
+        params,
+      );
+      return rows.map(mapAnomalyCheck);
+    } catch {
+      return [];
+    }
   });
 
 export const resolveAnomalyCheck = createServerFn({ method: "POST" })
@@ -663,15 +678,18 @@ export const getColumnHistory = createServerFn({ method: "POST" })
     const timeline: any[] = [];
 
     // 1. Audit events for the columns table itself
-    const colAudits = await db.many<any>(
-      `select ae.*, u.email as actor_email, p.display_name as actor_name
-       from public.audit_events ae
-       left join public.app_users u on u.id = ae.actor_id
-       left join public.profiles p on p.id = u.id
-       where ae.table_name = 'columns' and ae.row_id = $1
-       order by ae.created_at desc`,
-      [columnId],
-    );
+    let colAudits: any[] = [];
+    try {
+      colAudits = await db.many<any>(
+        `select ae.*, u.email as actor_email, p.display_name as actor_name
+         from public.audit_events ae
+         left join public.app_users u on u.id = ae.actor_id
+         left join public.profiles p on p.id = u.id
+         where ae.table_name = 'columns' and ae.row_id = $1
+         order by ae.created_at desc`,
+        [columnId],
+      );
+    } catch {}
     for (const a of colAudits) {
       const diff = a.diff ?? {};
       let summary = `${a.action} column`;
@@ -700,14 +718,17 @@ export const getColumnHistory = createServerFn({ method: "POST" })
     }
 
     // 2. Column service events (direct fetch for current state)
-    const serviceEvents = await db.many<any>(
-      `select cse.*, u.email as actor_email, p.display_name as actor_name
-       from public.column_service_events cse
-       left join public.app_users u on u.id = cse.performed_by
-       left join public.profiles p on p.id = u.id
-       where cse.column_id = $1 order by cse.created_at desc`,
-      [columnId],
-    );
+    let serviceEvents: any[] = [];
+    try {
+      serviceEvents = await db.many<any>(
+        `select cse.*, u.email as actor_email, p.display_name as actor_name
+         from public.column_service_events cse
+         left join public.app_users u on u.id = cse.performed_by
+         left join public.profiles p on p.id = u.id
+         where cse.column_id = $1 order by cse.created_at desc`,
+        [columnId],
+      );
+    } catch {}
     for (const e of serviceEvents) {
       const kindLabel: Record<string, string> = {
         reset: "Injection count reset", guard_change: "Guard cartridge change",
@@ -727,14 +748,17 @@ export const getColumnHistory = createServerFn({ method: "POST" })
     }
 
     // 3. Buffer exchange events
-    const bufferEvents = await db.many<any>(
-      `select bee.*, u.email as actor_email, p.display_name as actor_name
-       from public.buffer_exchange_events bee
-       left join public.app_users u on u.id = bee.performed_by
-       left join public.profiles p on p.id = u.id
-       where bee.column_id = $1 order by bee.created_at desc`,
-      [columnId],
-    );
+    let bufferEvents: any[] = [];
+    try {
+      bufferEvents = await db.many<any>(
+        `select bee.*, u.email as actor_email, p.display_name as actor_name
+         from public.buffer_exchange_events bee
+         left join public.app_users u on u.id = bee.performed_by
+         left join public.profiles p on p.id = u.id
+         where bee.column_id = $1 order by bee.created_at desc`,
+        [columnId],
+      );
+    } catch {}
     for (const e of bufferEvents) {
       const kindLabel: Record<string, string> = {
         buffer_a: "Buffer A change", buffer_b: "Buffer B change",
@@ -755,14 +779,18 @@ export const getColumnHistory = createServerFn({ method: "POST" })
     }
 
     // 4. Column injections
-    const injections = await db.many<any>(
-      `select ci.*, u.email as actor_email, p.display_name as actor_name
-       from public.column_injections ci
-       left join public.app_users u on u.id = ci.performed_by
-       left join public.profiles p on p.id = u.id
-       where ci.column_id = $1 order by ci.created_at desc`,
-      [columnId],
-    );
+    // 4. Column injections
+    let injections: any[] = [];
+    try {
+      injections = await db.many<any>(
+        `select ci.*, u.email as actor_email, p.display_name as actor_name
+         from public.column_injections ci
+         left join public.app_users u on u.id = ci.performed_by
+         left join public.profiles p on p.id = u.id
+         where ci.column_id = $1 order by ci.created_at desc`,
+        [columnId],
+      );
+    } catch {}
     for (const i of injections) {
       timeline.push({
         id: `inj-${i.id}`,
@@ -778,14 +806,17 @@ export const getColumnHistory = createServerFn({ method: "POST" })
     }
 
     // 5. QC runs
-    const qcRuns = await db.many<any>(
-      `select qr.*, u.email as actor_email, p.display_name as actor_name
-       from public.qc_runs qr
-       left join public.app_users u on u.id = qr.uploaded_by
-       left join public.profiles p on p.id = u.id
-       where qr.column_id = $1 order by qr.created_at desc`,
-      [columnId],
-    );
+    let qcRuns: any[] = [];
+    try {
+      qcRuns = await db.many<any>(
+        `select qr.*, u.email as actor_email, p.display_name as actor_name
+         from public.qc_runs qr
+         left join public.app_users u on u.id = qr.uploaded_by
+         left join public.profiles p on p.id = u.id
+         where qr.column_id = $1 order by qr.created_at desc`,
+        [columnId],
+      );
+    } catch {}
     for (const q of qcRuns) {
       timeline.push({
         id: `qc-${q.id}`,
