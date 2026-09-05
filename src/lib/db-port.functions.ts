@@ -96,6 +96,25 @@ const USER_FK_COLUMNS = new Set([
   "annotated_by", "resolved_by", "actor_id", "updated_by",
 ]);
 
+// Columns that are JSONB. The pg driver serializes JS arrays as Postgres
+// array literals (e.g. {1,2,3}), which is invalid for JSONB columns. We
+// must JSON.stringify these values so PostgreSQL parses them as JSON.
+const JSONB_COLUMN_SUFFIXES = [
+  "_json", "_jsonb", "_trend", "_blob", "_values", "_spectra",
+  "_components", "_metrics", "_shift",
+];
+const JSONB_EXACT_COLUMNS = new Set([
+  "summary_json", "diff", "gradient_json", "ms_params_json",
+  "ms_scans_json", "pressure_trend", "custom_values",
+  "template_json", "components_json", "spectra_json",
+  "metrics_json", "shift_json",
+]);
+
+function isJsonbColumn(col: string): boolean {
+  if (JSONB_EXACT_COLUMNS.has(col)) return true;
+  return JSONB_COLUMN_SUFFIXES.some((s) => col.endsWith(s));
+}
+
 export const importDatabase = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => ImportInput.parse(d))
@@ -157,7 +176,10 @@ export const importDatabase = createServerFn({ method: "POST" })
       }
     }
 
-    // Import in dependency order
+    // Import in dependency order.
+    // Each row insert is wrapped in a SAVEPOINT so that a failure on one
+    // row does not abort the entire transaction (which would cause all
+    // subsequent inserts to fail with "current transaction is aborted").
     for (const table of EXPORT_TABLES) {
       const rows = payload.tables[table];
       if (!rows || rows.length === 0) {
@@ -169,17 +191,20 @@ export const importDatabase = createServerFn({ method: "POST" })
       let skipped = 0;
 
       for (const row of rows) {
+        // Use a savepoint so this row can fail without aborting the transaction
+        await db.query(`savepoint imp_row`);
         try {
-          // Build insert query dynamically, remapping user FKs
           const cols = Object.keys(row);
           const placeholders = cols.map((_, i) => `$${i + 1}`).join(", ");
           const values = cols.map((c) => {
             const v = row[c];
             // Remap user FK columns to current user if original doesn't exist
             if (USER_FK_COLUMNS.has(c)) return remapUser(v);
-            // Convert arrays to PostgreSQL format
-            if (Array.isArray(v)) return v;
-            // Pass objects as-is (pg handles JSONB)
+            // JSONB columns: stringify arrays/objects so pg sends valid JSON
+            if (isJsonbColumn(c) && (Array.isArray(v) || (v !== null && typeof v === "object"))) {
+              return JSON.stringify(v);
+            }
+            // Pass primitives as-is
             return v;
           });
 
@@ -194,7 +219,8 @@ export const importDatabase = createServerFn({ method: "POST" })
           );
           inserted++;
         } catch (e: any) {
-          // Skip rows that fail (duplicate keys, missing FKs, etc.)
+          // Roll back to the savepoint so the transaction stays usable
+          await db.query(`rollback to savepoint imp_row`);
           skipped++;
         }
       }
