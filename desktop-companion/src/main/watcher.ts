@@ -5,7 +5,7 @@ import path from "node:path";
 import { EventEmitter } from "node:events";
 import type { LocalDb } from "./db";
 import type { ConfigManager } from "./config";
-import type { WatchFolder, WatcherStatus } from "@shared/ipc-types";
+import type { WatchFolder, WatcherStatus } from "../shared/ipc-types";
 
 const VALID_EXTENSIONS = [".mzxml", ".mzmL", ".mzML", ".mzXML"];
 

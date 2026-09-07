@@ -6,7 +6,7 @@ import type { ApiClient } from "./api-client";
 import type { WatcherManager } from "./watcher";
 import type { UploadQueue } from "./upload-queue";
 import type { TrayManager } from "./tray";
-import { IPC } from "@shared/ipc-types";
+import { IPC } from "../shared/ipc-types";
 
 export class IpcHandlers {
   constructor(

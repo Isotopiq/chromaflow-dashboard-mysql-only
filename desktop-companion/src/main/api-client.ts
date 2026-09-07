@@ -2,7 +2,7 @@
 // Uses bearer token authentication.
 import type { ConfigManager } from "./config";
 import type { LocalDb } from "./db";
-import type { LabData, WatchFolder } from "@shared/ipc-types";
+import type { LabData, WatchFolder } from "../shared/ipc-types";
 
 export class ApiClient {
   private config: ConfigManager;

@@ -1,7 +1,7 @@
 // Preload script — exposes a safe, limited API to the renderer via contextBridge.
 // The renderer accesses these via `window.desktop.*`.
 import { contextBridge, ipcRenderer } from "electron";
-import { IPC } from "@shared/ipc-types";
+import { IPC } from "../shared/ipc-types";
 
 const api = {
   // ---- Window controls ----
