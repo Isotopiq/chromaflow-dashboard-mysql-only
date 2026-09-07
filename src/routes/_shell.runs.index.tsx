@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLab } from "@/lib/store";
@@ -77,6 +77,13 @@ function RunsList() {
   const createRunFn = useServerFn(createRun);
   const createUploadUrlFn = useServerFn(createUploadUrl);
   const findRunByPathFn = useServerFn(findRunByFilePath);
+
+  // Memoize method lookup map — avoids O(n*m) find() on every render.
+  const methodMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const method of methods) m.set(method.id, method.name);
+    return m;
+  }, [methods]);
 
   // Auto-select compound list based on method+column default
   useEffect(() => {
@@ -526,7 +533,7 @@ function RunsList() {
           </TableHeader>
           <TableBody>
             {runs.map((r) => {
-              const m = methods.find((x) => x.id === r.methodId);
+              const methodName = methodMap.get(r.methodId ?? "") ?? undefined;
               return (
                 <TableRow key={r.id} className="text-xs" data-state={selectedIds.has(r.id) ? "selected" : undefined}>
                   <TableCell>
@@ -552,7 +559,7 @@ function RunsList() {
                       {r.name}
                     </Link>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{m?.name}</TableCell>
+                  <TableCell className="text-muted-foreground">{methodName}</TableCell>
                   <TableCell>
                     <Badge variant="outline" className="text-[10px]">
                       {r.ionMode === "positive" ? "ESI +" : "ESI −"}

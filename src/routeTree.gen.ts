@@ -48,10 +48,18 @@ import { Route as ApiAuthMeRouteImport } from './routes/api/auth/me'
 import { Route as ApiAuthResetRouteImport } from './routes/api/auth/reset'
 import { Route as ApiAuthResetRequestRouteImport } from './routes/api/auth/reset-request'
 import { Route as ApiAuthSignupRouteImport } from './routes/api/auth/signup'
+import { Route as ApiDesktopCreateRunRouteImport } from './routes/api/desktop/create-run'
+import { Route as ApiDesktopFindRunRouteImport } from './routes/api/desktop/find-run'
+import { Route as ApiDesktopHealthRouteImport } from './routes/api/desktop/health'
+import { Route as ApiDesktopLabDataRouteImport } from './routes/api/desktop/lab-data'
+import { Route as ApiDesktopLoginRouteImport } from './routes/api/desktop/login'
+import { Route as ApiDesktopUploadUrlRouteImport } from './routes/api/desktop/upload-url'
+import { Route as ApiDesktopWatchFoldersRouteImport } from './routes/api/desktop/watch-folders'
 import { Route as ApiPublicBootstrapAdminRouteImport } from './routes/api/public/bootstrap-admin'
 import { Route as ShellMethodsMethodIdIndexRouteImport } from './routes/_shell.methods.$methodId.index'
 import { Route as ShellMethodsMethodIdEditRouteImport } from './routes/_shell.methods.$methodId.edit'
 import { Route as ShellMethodsMethodIdHistoryRouteImport } from './routes/_shell.methods.$methodId.history'
+import { Route as ApiDesktopWatchFoldersIdRouteImport } from './routes/api/desktop/watch-folders.$id'
 
 const ShellRoute = ShellRouteImport.update({
   id: '/_shell',
@@ -247,6 +255,41 @@ const ApiAuthSignupRoute = ApiAuthSignupRouteImport.update({
   path: '/api/auth/signup',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiDesktopCreateRunRoute = ApiDesktopCreateRunRouteImport.update({
+  id: '/api/desktop/create-run',
+  path: '/api/desktop/create-run',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiDesktopFindRunRoute = ApiDesktopFindRunRouteImport.update({
+  id: '/api/desktop/find-run',
+  path: '/api/desktop/find-run',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiDesktopHealthRoute = ApiDesktopHealthRouteImport.update({
+  id: '/api/desktop/health',
+  path: '/api/desktop/health',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiDesktopLabDataRoute = ApiDesktopLabDataRouteImport.update({
+  id: '/api/desktop/lab-data',
+  path: '/api/desktop/lab-data',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiDesktopLoginRoute = ApiDesktopLoginRouteImport.update({
+  id: '/api/desktop/login',
+  path: '/api/desktop/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiDesktopUploadUrlRoute = ApiDesktopUploadUrlRouteImport.update({
+  id: '/api/desktop/upload-url',
+  path: '/api/desktop/upload-url',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiDesktopWatchFoldersRoute = ApiDesktopWatchFoldersRouteImport.update({
+  id: '/api/desktop/watch-folders',
+  path: '/api/desktop/watch-folders',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicBootstrapAdminRoute = ApiPublicBootstrapAdminRouteImport.update({
   id: '/api/public/bootstrap-admin',
   path: '/api/public/bootstrap-admin',
@@ -269,6 +312,12 @@ const ShellMethodsMethodIdHistoryRoute =
     id: '/history',
     path: '/history',
     getParentRoute: () => ShellMethodsMethodIdRoute,
+  } as any)
+const ApiDesktopWatchFoldersIdRoute =
+  ApiDesktopWatchFoldersIdRouteImport.update({
+    id: '/$id',
+    path: '/$id',
+    getParentRoute: () => ApiDesktopWatchFoldersRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -307,12 +356,20 @@ export interface FileRoutesByFullPath {
   '/api/auth/reset': typeof ApiAuthResetRoute
   '/api/auth/reset-request': typeof ApiAuthResetRequestRoute
   '/api/auth/signup': typeof ApiAuthSignupRoute
+  '/api/desktop/create-run': typeof ApiDesktopCreateRunRoute
+  '/api/desktop/find-run': typeof ApiDesktopFindRunRoute
+  '/api/desktop/health': typeof ApiDesktopHealthRoute
+  '/api/desktop/lab-data': typeof ApiDesktopLabDataRoute
+  '/api/desktop/login': typeof ApiDesktopLoginRoute
+  '/api/desktop/upload-url': typeof ApiDesktopUploadUrlRoute
+  '/api/desktop/watch-folders': typeof ApiDesktopWatchFoldersRouteWithChildren
   '/api/public/bootstrap-admin': typeof ApiPublicBootstrapAdminRoute
   '/columns/': typeof ShellColumnsIndexRoute
   '/methods/': typeof ShellMethodsIndexRoute
   '/runs/': typeof ShellRunsIndexRoute
   '/methods/$methodId/edit': typeof ShellMethodsMethodIdEditRoute
   '/methods/$methodId/history': typeof ShellMethodsMethodIdHistoryRoute
+  '/api/desktop/watch-folders/$id': typeof ApiDesktopWatchFoldersIdRoute
   '/methods/$methodId/': typeof ShellMethodsMethodIdIndexRoute
 }
 export interface FileRoutesByTo {
@@ -350,12 +407,20 @@ export interface FileRoutesByTo {
   '/api/auth/reset': typeof ApiAuthResetRoute
   '/api/auth/reset-request': typeof ApiAuthResetRequestRoute
   '/api/auth/signup': typeof ApiAuthSignupRoute
+  '/api/desktop/create-run': typeof ApiDesktopCreateRunRoute
+  '/api/desktop/find-run': typeof ApiDesktopFindRunRoute
+  '/api/desktop/health': typeof ApiDesktopHealthRoute
+  '/api/desktop/lab-data': typeof ApiDesktopLabDataRoute
+  '/api/desktop/login': typeof ApiDesktopLoginRoute
+  '/api/desktop/upload-url': typeof ApiDesktopUploadUrlRoute
+  '/api/desktop/watch-folders': typeof ApiDesktopWatchFoldersRouteWithChildren
   '/api/public/bootstrap-admin': typeof ApiPublicBootstrapAdminRoute
   '/columns': typeof ShellColumnsIndexRoute
   '/methods': typeof ShellMethodsIndexRoute
   '/runs': typeof ShellRunsIndexRoute
   '/methods/$methodId/edit': typeof ShellMethodsMethodIdEditRoute
   '/methods/$methodId/history': typeof ShellMethodsMethodIdHistoryRoute
+  '/api/desktop/watch-folders/$id': typeof ApiDesktopWatchFoldersIdRoute
   '/methods/$methodId': typeof ShellMethodsMethodIdIndexRoute
 }
 export interface FileRoutesById {
@@ -396,12 +461,20 @@ export interface FileRoutesById {
   '/api/auth/reset': typeof ApiAuthResetRoute
   '/api/auth/reset-request': typeof ApiAuthResetRequestRoute
   '/api/auth/signup': typeof ApiAuthSignupRoute
+  '/api/desktop/create-run': typeof ApiDesktopCreateRunRoute
+  '/api/desktop/find-run': typeof ApiDesktopFindRunRoute
+  '/api/desktop/health': typeof ApiDesktopHealthRoute
+  '/api/desktop/lab-data': typeof ApiDesktopLabDataRoute
+  '/api/desktop/login': typeof ApiDesktopLoginRoute
+  '/api/desktop/upload-url': typeof ApiDesktopUploadUrlRoute
+  '/api/desktop/watch-folders': typeof ApiDesktopWatchFoldersRouteWithChildren
   '/api/public/bootstrap-admin': typeof ApiPublicBootstrapAdminRoute
   '/_shell/columns/': typeof ShellColumnsIndexRoute
   '/_shell/methods/': typeof ShellMethodsIndexRoute
   '/_shell/runs/': typeof ShellRunsIndexRoute
   '/_shell/methods/$methodId/edit': typeof ShellMethodsMethodIdEditRoute
   '/_shell/methods/$methodId/history': typeof ShellMethodsMethodIdHistoryRoute
+  '/api/desktop/watch-folders/$id': typeof ApiDesktopWatchFoldersIdRoute
   '/_shell/methods/$methodId/': typeof ShellMethodsMethodIdIndexRoute
 }
 export interface FileRouteTypes {
@@ -442,12 +515,20 @@ export interface FileRouteTypes {
     | '/api/auth/reset'
     | '/api/auth/reset-request'
     | '/api/auth/signup'
+    | '/api/desktop/create-run'
+    | '/api/desktop/find-run'
+    | '/api/desktop/health'
+    | '/api/desktop/lab-data'
+    | '/api/desktop/login'
+    | '/api/desktop/upload-url'
+    | '/api/desktop/watch-folders'
     | '/api/public/bootstrap-admin'
     | '/columns/'
     | '/methods/'
     | '/runs/'
     | '/methods/$methodId/edit'
     | '/methods/$methodId/history'
+    | '/api/desktop/watch-folders/$id'
     | '/methods/$methodId/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -485,12 +566,20 @@ export interface FileRouteTypes {
     | '/api/auth/reset'
     | '/api/auth/reset-request'
     | '/api/auth/signup'
+    | '/api/desktop/create-run'
+    | '/api/desktop/find-run'
+    | '/api/desktop/health'
+    | '/api/desktop/lab-data'
+    | '/api/desktop/login'
+    | '/api/desktop/upload-url'
+    | '/api/desktop/watch-folders'
     | '/api/public/bootstrap-admin'
     | '/columns'
     | '/methods'
     | '/runs'
     | '/methods/$methodId/edit'
     | '/methods/$methodId/history'
+    | '/api/desktop/watch-folders/$id'
     | '/methods/$methodId'
   id:
     | '__root__'
@@ -530,12 +619,20 @@ export interface FileRouteTypes {
     | '/api/auth/reset'
     | '/api/auth/reset-request'
     | '/api/auth/signup'
+    | '/api/desktop/create-run'
+    | '/api/desktop/find-run'
+    | '/api/desktop/health'
+    | '/api/desktop/lab-data'
+    | '/api/desktop/login'
+    | '/api/desktop/upload-url'
+    | '/api/desktop/watch-folders'
     | '/api/public/bootstrap-admin'
     | '/_shell/columns/'
     | '/_shell/methods/'
     | '/_shell/runs/'
     | '/_shell/methods/$methodId/edit'
     | '/_shell/methods/$methodId/history'
+    | '/api/desktop/watch-folders/$id'
     | '/_shell/methods/$methodId/'
   fileRoutesById: FileRoutesById
 }
@@ -553,6 +650,13 @@ export interface RootRouteChildren {
   ApiAuthResetRoute: typeof ApiAuthResetRoute
   ApiAuthResetRequestRoute: typeof ApiAuthResetRequestRoute
   ApiAuthSignupRoute: typeof ApiAuthSignupRoute
+  ApiDesktopCreateRunRoute: typeof ApiDesktopCreateRunRoute
+  ApiDesktopFindRunRoute: typeof ApiDesktopFindRunRoute
+  ApiDesktopHealthRoute: typeof ApiDesktopHealthRoute
+  ApiDesktopLabDataRoute: typeof ApiDesktopLabDataRoute
+  ApiDesktopLoginRoute: typeof ApiDesktopLoginRoute
+  ApiDesktopUploadUrlRoute: typeof ApiDesktopUploadUrlRoute
+  ApiDesktopWatchFoldersRoute: typeof ApiDesktopWatchFoldersRouteWithChildren
   ApiPublicBootstrapAdminRoute: typeof ApiPublicBootstrapAdminRoute
 }
 
@@ -831,6 +935,55 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSignupRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/desktop/create-run': {
+      id: '/api/desktop/create-run'
+      path: '/api/desktop/create-run'
+      fullPath: '/api/desktop/create-run'
+      preLoaderRoute: typeof ApiDesktopCreateRunRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/desktop/find-run': {
+      id: '/api/desktop/find-run'
+      path: '/api/desktop/find-run'
+      fullPath: '/api/desktop/find-run'
+      preLoaderRoute: typeof ApiDesktopFindRunRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/desktop/health': {
+      id: '/api/desktop/health'
+      path: '/api/desktop/health'
+      fullPath: '/api/desktop/health'
+      preLoaderRoute: typeof ApiDesktopHealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/desktop/lab-data': {
+      id: '/api/desktop/lab-data'
+      path: '/api/desktop/lab-data'
+      fullPath: '/api/desktop/lab-data'
+      preLoaderRoute: typeof ApiDesktopLabDataRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/desktop/login': {
+      id: '/api/desktop/login'
+      path: '/api/desktop/login'
+      fullPath: '/api/desktop/login'
+      preLoaderRoute: typeof ApiDesktopLoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/desktop/upload-url': {
+      id: '/api/desktop/upload-url'
+      path: '/api/desktop/upload-url'
+      fullPath: '/api/desktop/upload-url'
+      preLoaderRoute: typeof ApiDesktopUploadUrlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/desktop/watch-folders': {
+      id: '/api/desktop/watch-folders'
+      path: '/api/desktop/watch-folders'
+      fullPath: '/api/desktop/watch-folders'
+      preLoaderRoute: typeof ApiDesktopWatchFoldersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/bootstrap-admin': {
       id: '/api/public/bootstrap-admin'
       path: '/api/public/bootstrap-admin'
@@ -858,6 +1011,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/methods/$methodId/history'
       preLoaderRoute: typeof ShellMethodsMethodIdHistoryRouteImport
       parentRoute: typeof ShellMethodsMethodIdRoute
+    }
+    '/api/desktop/watch-folders/$id': {
+      id: '/api/desktop/watch-folders/$id'
+      path: '/$id'
+      fullPath: '/api/desktop/watch-folders/$id'
+      preLoaderRoute: typeof ApiDesktopWatchFoldersIdRouteImport
+      parentRoute: typeof ApiDesktopWatchFoldersRoute
     }
   }
 }
@@ -967,6 +1127,20 @@ const ShellRouteChildren: ShellRouteChildren = {
 
 const ShellRouteWithChildren = ShellRoute._addFileChildren(ShellRouteChildren)
 
+interface ApiDesktopWatchFoldersRouteChildren {
+  ApiDesktopWatchFoldersIdRoute: typeof ApiDesktopWatchFoldersIdRoute
+}
+
+const ApiDesktopWatchFoldersRouteChildren: ApiDesktopWatchFoldersRouteChildren =
+  {
+    ApiDesktopWatchFoldersIdRoute: ApiDesktopWatchFoldersIdRoute,
+  }
+
+const ApiDesktopWatchFoldersRouteWithChildren =
+  ApiDesktopWatchFoldersRoute._addFileChildren(
+    ApiDesktopWatchFoldersRouteChildren,
+  )
+
 const rootRouteChildren: RootRouteChildren = {
   ShellRoute: ShellRouteWithChildren,
   LoginRoute: LoginRoute,
@@ -981,6 +1155,13 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthResetRoute: ApiAuthResetRoute,
   ApiAuthResetRequestRoute: ApiAuthResetRequestRoute,
   ApiAuthSignupRoute: ApiAuthSignupRoute,
+  ApiDesktopCreateRunRoute: ApiDesktopCreateRunRoute,
+  ApiDesktopFindRunRoute: ApiDesktopFindRunRoute,
+  ApiDesktopHealthRoute: ApiDesktopHealthRoute,
+  ApiDesktopLabDataRoute: ApiDesktopLabDataRoute,
+  ApiDesktopLoginRoute: ApiDesktopLoginRoute,
+  ApiDesktopUploadUrlRoute: ApiDesktopUploadUrlRoute,
+  ApiDesktopWatchFoldersRoute: ApiDesktopWatchFoldersRouteWithChildren,
   ApiPublicBootstrapAdminRoute: ApiPublicBootstrapAdminRoute,
 }
 export const routeTree = rootRouteImport

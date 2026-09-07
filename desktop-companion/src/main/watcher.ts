@@ -1,0 +1,189 @@
+// File watcher manager — uses chokidar to watch directories for mzXML/mzML files.
+// Implements file stabilization (wait for file size to stop changing before enqueueing).
+import chokidar, { type FSWatcher } from "chokidar";
+import path from "node:path";
+import { EventEmitter } from "node:events";
+import type { LocalDb } from "./db";
+import type { ConfigManager } from "./config";
+import type { WatchFolder, WatcherStatus } from "@shared/ipc-types";
+
+const VALID_EXTENSIONS = [".mzxml", ".mzmL", ".mzML", ".mzXML"];
+
+export class WatcherManager extends EventEmitter {
+  private db: LocalDb;
+  private config: ConfigManager;
+  private watchers: Map<string, FSWatcher> = new Map();
+  private folders: Map<string, WatchFolder> = new Map();
+  private stabilizationTimers: Map<string, NodeJS.Timeout> = new Map();
+  private fileSizes: Map<string, number> = new Map();
+  private paused = false;
+  private status: WatcherStatus = "watching";
+
+  constructor(db: LocalDb, config: ConfigManager) {
+    super();
+    this.db = db;
+    this.config = config;
+  }
+
+  async startAll() {
+    // Folders are loaded from V3 via the API client; for now, start from local DB
+    // The IPC handler will call startWatching() when folders are loaded
+    this.emit("status", this.status);
+  }
+
+  async startWatching(folder: WatchFolder) {
+    // Stop existing watcher for this folder if any
+    this.stopWatching(folder.id);
+
+    this.folders.set(folder.id, folder);
+
+    if (!folder.enabled) return;
+
+    const pattern = folder.filePattern || "*.mzXML";
+    const globPattern = folder.recursive ? `**/${pattern}` : pattern;
+
+    const watcher = chokidar.watch(
+      path.join(folder.path, globPattern),
+      {
+        persistent: true,
+        ignoreInitial: true,
+        awaitWriteFinish: {
+          stabilityThreshold: 1000,
+          pollInterval: 500,
+        },
+      },
+    );
+
+    watcher.on("add", (filePath: string) => {
+      this.handleFileDetected(filePath, folder);
+    });
+
+    watcher.on("change", (filePath: string) => {
+      this.handleFileDetected(filePath, folder);
+    });
+
+    watcher.on("error", (err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      this.db.log("ERROR", `Watcher error on ${folder.path}: ${message}`);
+      this.status = "error";
+      this.emit("status", this.status);
+    });
+
+    this.watchers.set(folder.id, watcher);
+    this.db.log("INFO", `Watcher started on ${folder.path} (pattern: ${pattern}, recursive: ${folder.recursive})`);
+
+    // Update status
+    if (this.status !== "paused") {
+      this.status = "watching";
+      this.emit("status", this.status);
+    }
+  }
+
+  stopWatching(folderId: string) {
+    const watcher = this.watchers.get(folderId);
+    if (watcher) {
+      watcher.close().catch(() => {});
+      this.watchers.delete(folderId);
+    }
+    this.folders.delete(folderId);
+  }
+
+  private handleFileDetected(filePath: string, folder: WatchFolder) {
+    if (this.paused) return;
+
+    // Check extension
+    const ext = path.extname(filePath).toLowerCase();
+    if (!VALID_EXTENSIONS.includes(ext)) return;
+
+    // Clear any existing stabilization timer for this file
+    const existingTimer = this.stabilizationTimers.get(filePath);
+    if (existingTimer) clearTimeout(existingTimer);
+
+    // Record file size
+    const fs = require("node:fs") as typeof import("node:fs");
+    try {
+      const stat = fs.statSync(filePath);
+      this.fileSizes.set(filePath, stat.size);
+    } catch {
+      return;
+    }
+
+    const size = this.fileSizes.get(filePath) ?? 0;
+    this.db.log("INFO", `Detected ${path.basename(filePath)} (${this.formatSize(size)}) — stabilizing…`);
+
+    // Set stabilization timer
+    const delay = (folder.stabilizeSeconds || this.config.get("defaultStabilizeSeconds")) * 1000;
+    const timer = setTimeout(() => {
+      this.checkStabilized(filePath, folder.id, size);
+    }, delay);
+
+    this.stabilizationTimers.set(filePath, timer);
+  }
+
+  private checkStabilized(filePath: string, folderId: string, originalSize: number) {
+    this.stabilizationTimers.delete(filePath);
+
+    const fs = require("node:fs") as typeof import("node:fs");
+    try {
+      const stat = fs.statSync(filePath);
+      if (stat.size !== originalSize) {
+        // File is still being written — restart timer
+        this.fileSizes.set(filePath, stat.size);
+        const folder = this.folders.get(folderId);
+        if (folder) {
+          const delay = (folder.stabilizeSeconds || this.config.get("defaultStabilizeSeconds")) * 1000;
+          const timer = setTimeout(() => {
+            this.checkStabilized(filePath, folderId, stat.size);
+          }, delay);
+          this.stabilizationTimers.set(filePath, timer);
+        }
+        return;
+      }
+
+      // File is stable — emit event
+      this.db.log("INFO", `Stabilized ${path.basename(filePath)} — queued for upload`);
+      this.emit("file-stabilized", filePath, folderId, stat.size);
+    } catch (err: any) {
+      this.db.log("ERROR", `File disappeared during stabilization: ${filePath}`);
+    }
+  }
+
+  pauseAll() {
+    this.paused = true;
+    this.status = "paused";
+    this.emit("status", this.status);
+    this.db.log("INFO", "All watchers paused");
+  }
+
+  resumeAll() {
+    this.paused = false;
+    this.status = "watching";
+    this.emit("status", this.status);
+    this.db.log("INFO", "All watchers resumed");
+  }
+
+  getStatus(): WatcherStatus {
+    return this.status;
+  }
+
+  getWatchedCount(): number {
+    return this.watchers.size;
+  }
+
+  private formatSize(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1_048_576) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / 1_048_576).toFixed(1)} MB`;
+  }
+
+  destroy() {
+    for (const [, watcher] of this.watchers) {
+      watcher.close().catch(() => {});
+    }
+    this.watchers.clear();
+    for (const [, timer] of this.stabilizationTimers) {
+      clearTimeout(timer);
+    }
+    this.stabilizationTimers.clear();
+  }
+}

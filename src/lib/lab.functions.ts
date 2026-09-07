@@ -13,6 +13,8 @@ import {
 import { mzFromFormula } from "./chem";
 import {
   fetchAllForUser,
+  fetchCoreData,
+  fetchRunsData,
   getCurrentUserProfile,
   mapMethod,
   mapColumn,
@@ -26,11 +28,15 @@ import {
   mapISAssignment,
   listAllUsersAdmin,
   setUserRoleAdmin,
+  createRunInDb,
+  findRunByPathInDb,
 } from "./lab-data.server";
 import type { ISAssignment } from "@/lib/lab-types";
 import { normalizeByIS } from "@/lib/is-normalization";
 
 // ---- Bootstrap: load everything for the current user ----
+// Kept for backwards compatibility. New code should use loadCore + loadRuns
+// for faster initial render (shell renders on core, runs load in background).
 export const loadAll = createServerFn({ method: "GET" })
   .middleware([requireAuth])
   .handler(async ({ context }) => {
@@ -39,6 +45,27 @@ export const loadAll = createServerFn({ method: "GET" })
     const data = await fetchAllForUser(db);
     const currentUser = await getCurrentUserProfile(db, userId, email);
     return { ...data, currentUser };
+  });
+
+// ---- Split loaders for faster initial render ----
+// loadCore: fast — small tables needed for shell layout + dropdowns.
+// The shell renders as soon as this returns.
+export const loadCore = createServerFn({ method: "GET" })
+  .middleware([requireAuth])
+  .handler(async ({ context }) => {
+    const { userId, email, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
+    const data = await fetchCoreData(db);
+    const currentUser = await getCurrentUserProfile(db, userId, email);
+    return { ...data, currentUser };
+  });
+
+// loadRuns: slower — runs + peaks + V3 tables. Loads in the background
+// after the shell is already rendered.
+export const loadRuns = createServerFn({ method: "GET" })
+  .middleware([requireAuth])
+  .handler(async ({ context }) => {
+    const { db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
+    return fetchRunsData(db);
   });
 
 // ---- Methods ----
@@ -731,16 +758,7 @@ export const findRunByFilePath = createServerFn({ method: "POST" })
   .inputValidator((d) => z.object({ filePath: z.string().min(1).max(500) }).parse(d))
   .handler(async ({ data, context }) => {
     const { userId, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
-    const run = await db.maybe<any>(
-      `select * from public.runs
-       where file_path=$1 and uploaded_by=$2
-       order by acquired_at desc limit 1`,
-      [data.filePath, userId],
-    );
-    if (!run) return { run: null };
-    const peakRows = await db.many<any>(
-      "select * from public.peaks where run_id=$1", [run.id]);
-    return { run: mapRun(run, peakRows.map(mapPeak).sort((a: any, b: any) => a.rt - b.rt)) };
+    return findRunByPathInDb(db, userId, data.filePath);
   });
 
 export const createRun = createServerFn({ method: "POST" })
@@ -748,127 +766,7 @@ export const createRun = createServerFn({ method: "POST" })
   .inputValidator((d) => RunInput.parse(d))
   .handler(async ({ data, context }) => {
     const { userId, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
-    const summary = {
-      name: data.name,
-      fileSize: data.fileSize,
-      ionMode: data.ionMode,
-      trace: data.trace,
-    };
-    const run = await db.one<any>(
-      `insert into public.runs
-        (method_id, column_id, batch_id, file_path, file_format, scans_blob_path,
-         ms_level, parsed_status, summary_json, uploaded_by)
-       values ($1,$2,$3,$4,$5,$6,$7,'parsed',$8,$9) returning *`,
-      [
-        data.methodId || null, data.columnId || null, data.batchId || null,
-        data.filePath, data.fileFormat, data.scansBlobPath || null, data.msLevel,
-        JSON.stringify(summary), userId,
-      ],
-    );
-    let peakRows: any[] = [];
-    for (const p of data.peaks) {
-      const r = await db.one<any>(
-        `insert into public.peaks (run_id, rt, area, height, fwhm, sn, mz, mz_low, mz_high, r2, asymmetry)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) returning *`,
-        [run.id, p.rt, p.area, p.height, p.fwhm, p.sn,
-         p.mz ?? null, p.mzLow ?? null, p.mzHigh ?? null,
-         p.r2 ?? null, p.asymmetry ?? null],
-      );
-      peakRows.push(r);
-    }
-
-    // ---- Auto-annotate against the analyte library ----
-    // Hard m/z gate (10 ppm) AND RT gate (0.3 min). Best score wins per peak.
-    // Uses per-column RT overrides when available, falling back to the
-    // analyte's default rt_expected.
-    try {
-      // If a compound list is specified, use only its analytes for annotation.
-      // Otherwise fall back to the full analyte library.
-      let analytes: any[];
-      if (data.compoundListId) {
-        analytes = await db.many<any>(
-          `select a.id, a.name, a.mz, a.rt_expected from public.analytes a
-           join public.compound_list_entries e on e.analyte_id = a.id
-           where e.list_id = $1`,
-          [data.compoundListId],
-        );
-      } else {
-        analytes = await db.many<any>(
-          "select id, name, mz, rt_expected from public.analytes");
-      }
-      // Fetch per-column RT overrides for this run's column.
-      let columnRtMap: Map<string, number> = new Map();
-      if (run.column_id) {
-        const colRts = await db.many<any>(
-          "select analyte_id, rt_expected from public.analyte_column_rt where column_id = $1",
-          [run.column_id],
-        );
-        for (const cr of colRts) {
-          columnRtMap.set(cr.analyte_id, Number(cr.rt_expected));
-        }
-      }
-      const RT_TOL = 0.3;
-      const PPM_TOL = 10;
-      for (const pr of peakRows) {
-        if (pr.mz == null) continue;
-        let best: { a: any; score: number } | null = null;
-        for (const a of analytes) {
-          const amz = Number(a.mz);
-          if (!Number.isFinite(amz) || amz <= 0) continue;
-          const dPpm = Math.abs((Number(pr.mz) - amz) / amz) * 1e6;
-          if (dPpm > PPM_TOL) continue;
-          // Use column-specific RT if available, otherwise the default.
-          const aRt = columnRtMap.get(a.id) ?? Number(a.rt_expected);
-          const dRt = Math.abs(Number(pr.rt) - aRt);
-          if (dRt > RT_TOL) continue;
-          // Lower score = better; weight m/z heavier than RT.
-          const score = dPpm + dRt * 30;
-          if (!best || score < best.score) best = { a, score };
-        }
-        if (best) {
-          const conf = Math.max(0.5, 1 - best.score / 30);
-          const updated = await db.one<any>(
-            `update public.peaks set
-               analyte_id=$1, analyte_name=$2, annotated_by=$3,
-               annotation_source='auto', confidence=$4
-             where id=$5 returning *`,
-            [best.a.id, best.a.name, userId, conf, pr.id],
-          );
-          Object.assign(pr, updated);
-        }
-      }
-    } catch {
-      // Auto-annotation is best-effort; never fail the upload because of it.
-    }
-
-    // ---- Notification: run parsed ----
-    await notify(
-      db, userId, "run_parsed",
-      `Run "${data.name}" uploaded`,
-      `${peakRows.length} peaks detected${peakRows.length > 0 ? " and auto-annotated" : ""}.`,
-      `/runs/${run.id}`,
-    );
-
-    // ---- Notification: column nearing EOL ----
-    if (data.columnId) {
-      const col = await db.maybe<any>(
-        "select name, used_injections, rated_injections from public.columns where id = $1",
-        [data.columnId],
-      );
-      if (col && col.rated_injections > 0) {
-        const pct = (Number(col.used_injections) / Number(col.rated_injections)) * 100;
-        if (pct >= 90) {
-          await notify(
-            db, userId, "column_eol",
-            `Column "${col.name}" nearing end of life`,
-            `${col.used_injections}/${col.rated_injections} injections used (${pct.toFixed(0)}%). Consider replacing soon.`,
-            `/columns/${data.columnId}`,
-          );
-        }
-      }
-    }
-
-    return mapRun(run, peakRows.map(mapPeak).sort((a: any, b: any) => a.rt - b.rt));
+    return createRunInDb(db, userId, data, notify);
   });
 
 const AnnotateInput = z.object({

@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLab } from "@/lib/store";
@@ -10,8 +10,6 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ChromatogramPlot } from "@/components/chromatogram-plot";
-import { PeakTable } from "@/components/peak-table";
 import { FileText, Download, Loader2, Share2, Trash2, ChevronUp, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -24,7 +22,6 @@ import {
 } from "@/lib/lab.functions";
 import { createReportJob } from "@/lib/v3-functions";
 import { sendReportEmail } from "@/lib/report-functions";
-import { renderReportPdf } from "@/lib/pdf-report";
 import { ShareDialog } from "@/components/share-dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
@@ -37,6 +34,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+
+// Lazy-load heavy chart components to split the 664KB reports chunk.
+// The route shell loads instantly; these load in the background with a skeleton.
+const ChromatogramPlot = lazy(() =>
+  import("@/components/chromatogram-plot").then((m) => ({ default: m.ChromatogramPlot })),
+);
+const PeakTable = lazy(() =>
+  import("@/components/peak-table").then((m) => ({ default: m.PeakTable })),
+);
 
 export const Route = createFileRoute("/_shell/reports")({
   component: Reports,
@@ -158,6 +164,7 @@ function Reports() {
     if (!printRef.current || !method) return;
     setBusy(true);
     try {
+      const { renderReportPdf } = await import("@/lib/pdf-report");
       const blob = await renderReportPdf(printRef.current);
       const filename = `${effectiveTitle.replace(/\s+/g, "_")}.pdf`;
       let up;
@@ -613,7 +620,9 @@ function Reports() {
                         Representative chromatogram
                       </h3>
                       <div className="mt-2 rounded-md border border-border p-2">
-                        <ChromatogramPlot runs={[methodRun]} height={200} showPeaks />
+                        <Suspense fallback={<div className="h-[200px] animate-pulse rounded bg-muted" />}>
+                          <ChromatogramPlot runs={[methodRun]} height={200} showPeaks />
+                        </Suspense>
                       </div>
                       <div className="mt-1 font-mono text-[10px] text-muted-foreground">
                         {methodRun.name}
@@ -627,7 +636,9 @@ function Reports() {
                         Peak table
                       </h3>
                       <div className="mt-2">
-                        <PeakTable peaks={methodRun.peaks.slice(0, 8)} />
+                        <Suspense fallback={<div className="h-16 animate-pulse rounded bg-muted" />}>
+                          <PeakTable peaks={methodRun.peaks.slice(0, 8)} />
+                        </Suspense>
                       </div>
                     </section>
                   ) : null;
@@ -928,7 +939,9 @@ function EicReportBlock({
   return (
     <>
       <div className="mt-2 rounded-md border border-border p-2">
-        <ChromatogramPlot runs={overlayRuns} height={220} />
+        <Suspense fallback={<div className="h-[220px] animate-pulse rounded bg-muted" />}>
+          <ChromatogramPlot runs={overlayRuns} height={220} />
+        </Suspense>
       </div>
       <table className="mt-3 w-full text-[10px]">
         <thead>

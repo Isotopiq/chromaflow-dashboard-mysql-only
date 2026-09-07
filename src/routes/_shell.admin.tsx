@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Component, useEffect, useRef, useState } from "react";
+import { Component, useEffect, useMemo, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -272,7 +272,7 @@ function AuditTab() {
   const total: number = Array.isArray(data) ? rows.length : (data?.total ?? 0);
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
-  const userById = new Map((users ?? []).map((u) => [u.id, u]));
+  const userById = useMemo(() => new Map((users ?? []).map((u) => [u.id, u])), [users]);
 
   const resetFilters = () => {
     setPage(0);

@@ -391,6 +391,145 @@ export async function mapUser(profile: any, role: string): Promise<User> {
 }
 
 // ---------- Bulk fetchers ----------
+//
+// Split into fetchCoreData (fast — small tables needed for shell + dropdowns)
+// and fetchRunsData (slower — runs + peaks + V3 tables). The shell renders
+// as soon as core data is available; runs data loads in the background.
+
+export async function fetchCoreData(db: Db) {
+  const columns = await db.many("select * from public.columns order by created_at desc");
+  const methods = await db.many("select * from public.methods order by updated_at desc");
+  const batches = await db.many("select * from public.batches order by started_at desc");
+  const analytes = await db.many("select * from public.analytes order by name");
+  const compoundListsRaw = await db.many("select * from public.compound_lists order by name");
+  const listEntries = await db.many("select * from public.compound_list_entries");
+  const listDefaults = await db.many("select * from public.method_column_list_defaults");
+
+  // Fetch per-column RT overrides for all analytes.
+  const columnRts = await db.many<any>(
+    `select acrt.id, acrt.analyte_id, acrt.column_id, acrt.rt_expected,
+            acrt.notes, acrt.updated_at, c.name as column_name
+     from public.analyte_column_rt acrt
+     join public.columns c on c.id = acrt.column_id
+     order by c.name`,
+  );
+  const columnRtByAnalyte = new Map<string, any[]>();
+  for (const cr of columnRts) {
+    const arr = columnRtByAnalyte.get(cr.analyte_id) ?? [];
+    arr.push({
+      id: cr.id,
+      analyteId: cr.analyte_id,
+      columnId: cr.column_id,
+      columnName: cr.column_name,
+      rtExpected: Number(cr.rt_expected),
+      notes: cr.notes ?? "",
+      updatedAt: cr.updated_at,
+    });
+    columnRtByAnalyte.set(cr.analyte_id, arr);
+  }
+
+  // Group compound list entries by list_id
+  const entriesByList = new Map<string, string[]>();
+  for (const e of listEntries) {
+    const arr = entriesByList.get(e.list_id) ?? [];
+    arr.push(e.analyte_id);
+    entriesByList.set(e.list_id, arr);
+  }
+
+  // Group run IDs by batch (lightweight query — just IDs, not full runs)
+  const runsByBatch = new Map<string, string[]>();
+  try {
+    const runIds = await db.many<any>(
+      "select id, batch_id from public.runs where batch_id is not null",
+    );
+    for (const r of runIds) {
+      const arr = runsByBatch.get(r.batch_id) ?? [];
+      arr.push(r.id);
+      runsByBatch.set(r.batch_id, arr);
+    }
+  } catch {}
+
+  return {
+    columns: columns.map(mapColumn),
+    methods: methods.map(mapMethod),
+    batches: batches.map((b: any) => mapBatch(b, runsByBatch.get(b.id) ?? [])),
+    analytes: analytes.map((a: any) => ({
+      ...mapAnalyte(a),
+      columnRts: columnRtByAnalyte.get(a.id) ?? [],
+    })),
+    compoundLists: compoundListsRaw.map((cl: any) =>
+      mapCompoundList(cl, entriesByList.get(cl.id) ?? []),
+    ),
+    listDefaults: listDefaults.map(mapListDefault),
+  };
+}
+
+export async function fetchRunsData(db: Db) {
+  const runs = await db.many("select * from public.runs order by acquired_at desc");
+  const peaks = await db.many("select * from public.peaks");
+  const injections = await db.many("select * from public.column_injections order by injection_num");
+
+  // V3 tables — wrapped in try/catch so missing tables don't break the app
+  let isAssignments: any[] = [];
+  let sampleQueues: any[] = [];
+  let sampleQueueEntries: any[] = [];
+  let methodTemplates: any[] = [];
+  let reportJobs: any[] = [];
+  let customColumns: any[] = [];
+  let importWatchFolders: any[] = [];
+  let nceOptimizations: any[] = [];
+  let bufferExchangeEvents: any[] = [];
+  let qcRuns: any[] = [];
+  let anomalyChecks: any[] = [];
+  try { isAssignments = await db.many("select * from public.is_assignments"); } catch { /* table may not exist yet */ }
+  try { sampleQueues = await db.many("select * from public.sample_queues order by created_at desc"); } catch {}
+  try { sampleQueueEntries = await db.many("select * from public.sample_queue_entries order by position"); } catch {}
+  try { methodTemplates = await db.many("select * from public.method_templates order by name"); } catch {}
+  try { reportJobs = await db.many("select * from public.report_jobs order by created_at desc"); } catch {}
+  try { customColumns = await db.many("select * from public.custom_columns order by display_order"); } catch {}
+  try { importWatchFolders = await db.many("select * from public.import_watch_folders"); } catch {}
+  try { nceOptimizations = await db.many("select * from public.nce_optimization"); } catch {}
+  try { bufferExchangeEvents = await db.many("select * from public.buffer_exchange_events order by created_at desc"); } catch {}
+  try { qcRuns = await db.many("select * from public.qc_runs order by acquired_at desc"); } catch {}
+  try { anomalyChecks = await db.many("select * from public.anomaly_checks order by created_at desc"); } catch {}
+
+  const peaksByRun = new Map<string, Peak[]>();
+  for (const p of peaks) {
+    const key = p.run_id;
+    if (!peaksByRun.has(key)) peaksByRun.set(key, []);
+    peaksByRun.get(key)!.push(mapPeak(p));
+  }
+
+  const runsMapped = runs.map((r: any) =>
+    mapRun(r, (peaksByRun.get(r.id) ?? []).sort((a, b) => a.rt - b.rt)),
+  );
+
+  // Group sample queue entries by queue_id
+  const entriesByQueue = new Map<string, any[]>();
+  for (const e of sampleQueueEntries) {
+    const arr = entriesByQueue.get(e.queue_id) ?? [];
+    arr.push(mapSampleQueueEntry(e));
+    entriesByQueue.set(e.queue_id, arr);
+  }
+
+  return {
+    runs: runsMapped,
+    injections: injections.map(mapInjection),
+    isAssignments: isAssignments.map(mapISAssignment),
+    sampleQueues: sampleQueues.map((sq: any) =>
+      mapSampleQueue(sq, entriesByQueue.get(sq.id) ?? []),
+    ),
+    methodTemplates: methodTemplates.map(mapMethodTemplate),
+    reportJobs: reportJobs.map(mapReportJob),
+    customColumns: customColumns.map(mapCustomColumn),
+    importWatchFolders: importWatchFolders.map(mapImportWatchFolder),
+    nceOptimizations: nceOptimizations.map(mapNceOptimization),
+    bufferExchangeEvents: bufferExchangeEvents.map(mapBufferExchangeEvent),
+    qcRuns: qcRuns.map(mapQcRun),
+    anomalyChecks: anomalyChecks.map(mapAnomalyCheck),
+  };
+}
+
 export async function fetchAllForUser(db: Db) {
   // Run queries sequentially — pg doesn't support concurrent queries on a
   // single client, which causes "client is already executing a query" errors.
@@ -566,4 +705,170 @@ export async function setUserRoleAdmin(userId: string, role: User["role"]) {
       [userId, role],
     );
   });
+}
+
+// ---------- Shared run creation (used by createRun server fn + desktop REST) ----------
+//
+// Extracted so both the TanStack server function and the /api/desktop/create-run
+// REST endpoint share the exact same logic: insert run, insert peaks, auto-annotate
+// against the analyte library, send notifications.
+
+type RunInputData = {
+  name: string;
+  methodId?: string | null;
+  columnId?: string | null;
+  batchId?: string | null;
+  filePath: string;
+  scansBlobPath?: string | null;
+  fileFormat: "mzML" | "mzXML" | "raw";
+  fileSize: string;
+  ionMode: "positive" | "negative";
+  msLevel: number;
+  trace: { x: number[]; tic: number[]; bpc: number[] };
+  peaks: Array<{
+    rt: number; area: number; height: number; fwhm: number; sn: number;
+    mz?: number | null; mzLow?: number | null; mzHigh?: number | null;
+    r2?: number | null; asymmetry?: number | null;
+  }>;
+  compoundListId?: string | null;
+};
+
+export async function createRunInDb(
+  db: Db,
+  userId: string,
+  data: RunInputData,
+  notifyFn?: (db: Db, userId: string, type: string, title: string, body: string, link: string) => Promise<void>,
+) {
+  const summary = {
+    name: data.name,
+    fileSize: data.fileSize,
+    ionMode: data.ionMode,
+    trace: data.trace,
+  };
+  const run = await db.one<any>(
+    `insert into public.runs
+       (method_id, column_id, batch_id, file_path, file_format, scans_blob_path,
+        ms_level, parsed_status, summary_json, uploaded_by)
+      values ($1,$2,$3,$4,$5,$6,$7,'parsed',$8,$9) returning *`,
+    [
+      data.methodId || null, data.columnId || null, data.batchId || null,
+      data.filePath, data.fileFormat, data.scansBlobPath || null, data.msLevel,
+      JSON.stringify(summary), userId,
+    ],
+  );
+  let peakRows: any[] = [];
+  for (const p of data.peaks) {
+    const r = await db.one<any>(
+      `insert into public.peaks (run_id, rt, area, height, fwhm, sn, mz, mz_low, mz_high, r2, asymmetry)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) returning *`,
+      [run.id, p.rt, p.area, p.height, p.fwhm, p.sn,
+       p.mz ?? null, p.mzLow ?? null, p.mzHigh ?? null,
+       p.r2 ?? null, p.asymmetry ?? null],
+    );
+    peakRows.push(r);
+  }
+
+  // ---- Auto-annotate against the analyte library ----
+  try {
+    let analytes: any[];
+    if (data.compoundListId) {
+      analytes = await db.many<any>(
+        `select a.id, a.name, a.mz, a.rt_expected from public.analytes a
+         join public.compound_list_entries e on e.analyte_id = a.id
+         where e.list_id = $1`,
+        [data.compoundListId],
+      );
+    } else {
+      analytes = await db.many<any>(
+        "select id, name, mz, rt_expected from public.analytes");
+    }
+    let columnRtMap: Map<string, number> = new Map();
+    if (run.column_id) {
+      const colRts = await db.many<any>(
+        "select analyte_id, rt_expected from public.analyte_column_rt where column_id = $1",
+        [run.column_id],
+      );
+      for (const cr of colRts) {
+        columnRtMap.set(cr.analyte_id, Number(cr.rt_expected));
+      }
+    }
+    const RT_TOL = 0.3;
+    const PPM_TOL = 10;
+    for (const pr of peakRows) {
+      if (pr.mz == null) continue;
+      let best: { a: any; score: number } | null = null;
+      for (const a of analytes) {
+        const amz = Number(a.mz);
+        if (!Number.isFinite(amz) || amz <= 0) continue;
+        const dPpm = Math.abs((Number(pr.mz) - amz) / amz) * 1e6;
+        if (dPpm > PPM_TOL) continue;
+        const aRt = columnRtMap.get(a.id) ?? Number(a.rt_expected);
+        const dRt = Math.abs(Number(pr.rt) - aRt);
+        if (dRt > RT_TOL) continue;
+        const score = dPpm + dRt * 30;
+        if (!best || score < best.score) best = { a, score };
+      }
+      if (best) {
+        const conf = Math.max(0.5, 1 - best.score / 30);
+        const updated = await db.one<any>(
+          `update public.peaks set
+             analyte_id=$1, analyte_name=$2, annotated_by=$3,
+             annotation_source='auto', confidence=$4
+           where id=$5 returning *`,
+          [best.a.id, best.a.name, userId, conf, pr.id],
+        );
+        Object.assign(pr, updated);
+      }
+    }
+  } catch {
+    // Auto-annotation is best-effort; never fail the upload because of it.
+  }
+
+  // ---- Notifications (optional — only if notifyFn provided) ----
+  if (notifyFn) {
+    try {
+      await notifyFn(
+        db, userId, "run_parsed",
+        `Run "${data.name}" uploaded`,
+        `${peakRows.length} peaks detected${peakRows.length > 0 ? " and auto-annotated" : ""}.`,
+        `/runs/${run.id}`,
+      );
+      if (data.columnId) {
+        const col = await db.maybe<any>(
+          "select name, used_injections, rated_injections from public.columns where id = $1",
+          [data.columnId],
+        );
+        if (col && col.rated_injections > 0) {
+          const pct = (Number(col.used_injections) / Number(col.rated_injections)) * 100;
+          if (pct >= 90) {
+            await notifyFn(
+              db, userId, "column_eol",
+              `Column "${col.name}" nearing end of life`,
+              `${col.used_injections}/${col.rated_injections} injections used (${pct.toFixed(0)}%). Consider replacing soon.`,
+              `/columns/${data.columnId}`,
+            );
+          }
+        }
+      }
+    } catch {
+      // Notifications are best-effort.
+    }
+  }
+
+  return mapRun(run, peakRows.map(mapPeak).sort((a: any, b: any) => a.rt - b.rt));
+}
+
+// ---------- Shared find-run-by-path (used by server fn + desktop REST) ----------
+
+export async function findRunByPathInDb(db: Db, userId: string, filePath: string) {
+  const run = await db.maybe<any>(
+    `select * from public.runs
+     where file_path=$1 and uploaded_by=$2
+     order by acquired_at desc limit 1`,
+    [filePath, userId],
+  );
+  if (!run) return { run: null };
+  const peakRows = await db.many<any>(
+    "select * from public.peaks where run_id=$1", [run.id]);
+  return { run: mapRun(run, peakRows.map(mapPeak).sort((a: any, b: any) => a.rt - b.rt)) };
 }
