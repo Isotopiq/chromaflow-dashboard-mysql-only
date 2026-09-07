@@ -13,11 +13,15 @@ export class TrayManager {
   }
 
   create() {
-    // Use a simple 16x16 icon for the tray
-    const iconPath = path.join(__dirname, "../../resources/tray-icon.png");
+    // Use the app icon for the tray, resized to 16x16 for the system tray
+    const iconPath = path.join(__dirname, "../../resources/icon.png");
     let icon = nativeImage.createEmpty();
     try {
-      icon = nativeImage.createFromPath(iconPath);
+      const fullIcon = nativeImage.createFromPath(iconPath);
+      if (!fullIcon.isEmpty()) {
+        // Resize to 16x16 for the tray
+        icon = fullIcon.resize({ width: 16, height: 16 });
+      }
     } catch {
       // Fallback: empty icon (will show a default system icon)
     }
