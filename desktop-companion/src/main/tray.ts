@@ -1,9 +1,8 @@
 // System tray manager — creates the tray icon and context menu.
 import { app, Tray, Menu, nativeImage, BrowserWindow } from "electron";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// __dirname is available natively in CommonJS
 
 export class TrayManager {
   private tray: Tray | null = null;

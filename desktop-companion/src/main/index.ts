@@ -3,7 +3,6 @@
 // file watcher, upload queue, and auto-updater.
 import { app, BrowserWindow, ipcMain, dialog, shell } from "electron";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { TrayManager } from "./tray";
 import { IpcHandlers } from "./ipc-handlers";
 import { WatcherManager } from "./watcher";
@@ -13,9 +12,7 @@ import { LocalDb } from "./db";
 import { ConfigManager } from "./config";
 import { setupAutoUpdater } from "./auto-updater";
 
-const __dirname: string = typeof (globalThis as any).__dirname !== "undefined"
-  ? (globalThis as any).__dirname
-  : path.dirname(fileURLToPath(import.meta.url));
+// __dirname is available natively in CommonJS — no need for import.meta
 const isDev = !!process.env.VITE_DEV_SERVER_URL;
 
 let mainWindow: BrowserWindow | null = null;

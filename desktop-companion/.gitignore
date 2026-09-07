@@ -1,0 +1,8 @@
+# Build artifacts
+dist/
+dist-installer/
+dist-packaged/
+node_modules/
+
+# Test artifacts
+tests/debug-parser.js

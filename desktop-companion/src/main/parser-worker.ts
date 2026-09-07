@@ -426,10 +426,13 @@ async function parseMzML(text: string): Promise<{
 
 // ---------- Worker entry point ----------
 const filePath = workerData as string;
-try {
-  const text = fs.readFileSync(filePath, "utf-8");
-  const { summary, scansBlob, ms2Blob } = await parseMzML(text);
-  parentPort?.postMessage({ ok: true, summary, scansBlob, ms2Blob }, [scansBlob.buffer as ArrayBuffer, ms2Blob.buffer as ArrayBuffer]);
-} catch (err: any) {
-  parentPort?.postMessage({ ok: false, error: err?.message ?? String(err) });
+async function main() {
+  try {
+    const text = fs.readFileSync(filePath, "utf-8");
+    const { summary, scansBlob, ms2Blob } = await parseMzML(text);
+    parentPort?.postMessage({ ok: true, summary, scansBlob, ms2Blob }, [scansBlob.buffer as ArrayBuffer, ms2Blob.buffer as ArrayBuffer]);
+  } catch (err: any) {
+    parentPort?.postMessage({ ok: false, error: err?.message ?? String(err) });
+  }
 }
+main();
