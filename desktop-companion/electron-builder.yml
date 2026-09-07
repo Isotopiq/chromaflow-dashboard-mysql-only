@@ -11,7 +11,9 @@ files:
   - resources/**/*
   - package.json
 win:
-  target: nsis
+  target:
+    - nsis
+    - portable
   icon: resources/icon.ico
   signtoolOptions: null
   forceCodeSigning: false
@@ -21,6 +23,8 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
+portable:
+  artifactName: "V3 Companion Portable ${version}.exe"
 publish:
   provider: github
   owner: ekapelczak
