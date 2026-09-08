@@ -37,6 +37,7 @@ const viewTitles: Record<View, string> = {
 export function App() {
   const [view, setView] = useState<View>("dashboard");
   const [modalOpen, setModalOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
   const [maximized, setMaximized] = useState(false);
 
   const win = useWindowControls();
@@ -60,7 +61,7 @@ export function App() {
     >
       {/* Windows chrome */}
       <TitleBar maximized={maximized} onMaximize={onMaximize} onMinimize={() => win.minimize()} onClose={() => win.close()} />
-      <MenuBar onNavigate={setView} onPause={() => void togglePause()} onResume={() => void togglePause()} paused={paused} />
+      <MenuBar onNavigate={setView} onPause={() => void togglePause()} onResume={() => void togglePause()} paused={paused} onAbout={() => setAboutOpen(true)} />
 
       {/* App shell */}
       <div className="flex flex-1 min-h-0">
@@ -143,6 +144,9 @@ export function App() {
 
       {/* Windows status bar */}
       <StatusBar watcherStatus={watcherStatus} pending={pending} />
+
+      {/* About dialog */}
+      {aboutOpen && <AboutDialog onClose={() => setAboutOpen(false)} />}
     </div>
   );
 }
@@ -182,7 +186,7 @@ function TitleBar({
 }
 
 // ─── Windows menu bar ─────────────────────────────────────────────────────────
-function MenuBar({ onNavigate, onPause, onResume, paused }: { onNavigate: (v: View) => void; onPause: () => void; onResume: () => void; paused: boolean }) {
+function MenuBar({ onNavigate, onPause, onResume, paused, onAbout }: { onNavigate: (v: View) => void; onPause: () => void; onResume: () => void; paused: boolean; onAbout: () => void }) {
   const fileItems: MenuItem[] = [
     { label: "New Watch Directory", action: () => onNavigate("directories") },
     { separator: true },
@@ -215,7 +219,7 @@ function MenuBar({ onNavigate, onPause, onResume, paused }: { onNavigate: (v: Vi
   const helpItems: MenuItem[] = [
     { label: "Documentation", action: () => window.open("https://github.com/ddlidded/chromaflow-dashboard-mysql-only", "_blank") },
     { separator: true },
-    { label: "About V3 Companion", action: () => { /* future: about dialog */ } },
+    { label: "About V3 Companion", action: onAbout },
   ];
 
   return (
@@ -296,4 +300,64 @@ function formatLogMsg(entry: LogEntry): string {
   const mm = String(ts.getMinutes()).padStart(2, "0");
   const ss = String(ts.getSeconds()).padStart(2, "0");
   return `[${hh}:${mm}:${ss}] ${entry.message}`;
+}
+
+// ─── About dialog ─────────────────────────────────────────────────────────────
+function AboutDialog({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="absolute inset-0 bg-black/20 flex items-center justify-center z-40" onClick={onClose}>
+      <div
+        className="w-[380px] bg-white border border-[#D1D5DB] shadow-2xl flex flex-col"
+        style={{ borderRadius: 0 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Title bar */}
+        <div className="flex items-center justify-between px-3 h-8 bg-[#F3F4F6] border-b border-[#E5E7EB] shrink-0">
+          <span className="text-[11px] font-semibold text-[#374151]">About V3 Companion</span>
+          <button onClick={onClose} className="w-7 h-full flex items-center justify-center text-[#6B7280] hover:bg-[#DC2626] hover:text-white transition-colors">
+            {Icons.winClose}
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex flex-col items-center px-6 py-6 gap-3">
+          <img src={isotopiqLogo} alt="Isotopiq" className="h-12 object-contain" />
+          <h2 className="text-[16px] font-bold text-[#111827]">V3 Companion</h2>
+          <p className="text-[11px] text-[#9CA3AF]">Version 1.0.0</p>
+
+          <div className="w-full h-px bg-[#E5E7EB] my-2" />
+
+          <div className="flex flex-col gap-1.5 w-full text-center">
+            <p className="text-[12px] text-[#374151]">
+              <span className="font-semibold">Author:</span> Eddy Kapelczak
+            </p>
+            <p className="text-[12px] text-[#374151]">
+              <span className="font-semibold">Organization:</span> Isotopiq Solutions
+            </p>
+            <p className="text-[12px] text-[#374151]">
+              <span className="font-semibold">Release Date:</span> September 8, 2026
+            </p>
+          </div>
+
+          <div className="w-full h-px bg-[#E5E7EB] my-2" />
+
+          <p className="text-[10px] text-[#9CA3AF] text-center leading-relaxed">
+            Windows desktop companion for ChromaFlow V3.<br />
+            Watches directories for .mzXML / .mzML files and uploads to ChromaFlow.
+          </p>
+        </div>
+
+        {/* Footer */}
+        <div className="flex justify-center px-6 pb-5">
+          <button
+            onClick={onClose}
+            className="px-6 py-1.5 text-[11px] font-medium text-white bg-[#2563EB] hover:bg-[#1D4ED8] transition-colors"
+            style={{ borderRadius: 2 }}
+          >
+            OK
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
