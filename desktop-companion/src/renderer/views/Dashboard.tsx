@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { DashboardStats, WatchFolder } from "@shared/ipc-types";
 import { Icons, HourlyBarChart } from "../components/ui";
-import { useDashboardStats, useHourlyUploads, useWatchFolders } from "../hooks/useDesktop";
+import { useDashboardStats, useHourlyUploads, useWatchFolders, usePauseAll } from "../hooks/useDesktop";
 
 export interface DashboardProps {
   onOpenModal: () => void;
@@ -11,6 +11,7 @@ export function Dashboard({ onOpenModal }: DashboardProps) {
   const { stats } = useDashboardStats();
   const hourly = useHourlyUploads();
   const { folders } = useWatchFolders();
+  const { paused, toggle: togglePause } = usePauseAll();
   const activeDirs = folders.filter((f) => f.enabled).length;
 
   const cards = buildStatCards(stats);
@@ -52,8 +53,8 @@ export function Dashboard({ onOpenModal }: DashboardProps) {
             ? <>Actively watching <strong className="text-[#111827]">{activeDirs} directories</strong> for .mzXML files</>
             : <strong className="text-[#111827]">Watcher paused</strong>}
         </span>
-        <button onClick={onOpenModal} className="px-3 py-1 text-[11px] font-medium text-[#DC2626] border border-[#FECACA] bg-[#FEF2F2] hover:bg-[#FEE2E2] transition-colors" style={{ borderRadius: 2 }}>
-          Stop Watcher
+        <button onClick={togglePause} className="px-3 py-1 text-[11px] font-medium text-[#DC2626] border border-[#FECACA] bg-[#FEF2F2] hover:bg-[#FEE2E2] transition-colors" style={{ borderRadius: 2 }}>
+          {paused ? "Resume Watcher" : "Stop Watcher"}
         </button>
         <button onClick={onOpenModal} className="px-3 py-1 text-[11px] font-medium text-white bg-[#2563EB] hover:bg-[#1D4ED8] transition-colors" style={{ borderRadius: 2 }}>
           View Active Upload

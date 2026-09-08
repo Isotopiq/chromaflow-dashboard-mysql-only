@@ -33,6 +33,9 @@ export function useQueue() {
     if (!desktop) return;
     desktop.getQueue().then(setItems).catch(() => {});
     desktop.onQueueUpdate((updated) => setItems(updated));
+    desktop.onUploadProgress((item) => {
+      setItems((prev) => prev.map((it) => it.id === item.id ? { ...it, progress: item.progress, status: item.status } : it));
+    });
   }, [desktop]);
 
   const cancel = useCallback((id: string) => desktop?.cancelUpload(id), [desktop]);

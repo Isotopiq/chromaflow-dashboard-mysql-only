@@ -24,6 +24,11 @@ let db: LocalDb | null = null;
 let config: ConfigManager | null = null;
 let isQuitting = false;
 
+// Exported so tray and IPC handlers can signal a real quit
+export function setQuitting(value: boolean) {
+  isQuitting = value;
+}
+
 // Single-instance lock — prevent multiple companion instances.
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -108,15 +113,29 @@ app.whenReady().then(async () => {
     mainWindow?.webContents.send("log:entry", entry);
   });
 
-  // Set up IPC handlers
+  // Create the window FIRST so IpcHandlers and TrayManager can reference it
+  await createWindow();
+
+  // Set up IPC handlers (after window exists)
   const handlers = new IpcHandlers(db, config, apiClient, watcherManager!, uploadQueue, trayManager, mainWindow);
   handlers.registerAll(ipcMain);
 
-  // Start watching configured folders
-  await watcherManager.startAll();
+  // Create the tray icon (after window exists)
+  trayManager.setWindow(mainWindow!);
+  trayManager.setWatcher(watcherManager!);
+  trayManager.create();
 
-  // Create the window
-  await createWindow();
+  // Start watching configured folders from the API
+  try {
+    const folders = await apiClient.listWatchFolders();
+    for (const folder of folders) {
+      if (folder.enabled) {
+        watcherManager.startWatching(folder);
+      }
+    }
+  } catch {
+    // API not reachable — folders will start when user configures them
+  }
 
   // Set up auto-updater (production only)
   if (!isDev) {
@@ -129,8 +148,10 @@ app.whenReady().then(async () => {
 
 // App lifecycle
 app.on("window-all-closed", () => {
-  // On Windows, keep running in the tray
-  // The app only quits via tray "Quit" or explicit app.quit()
+  // On Windows, quit when all windows are closed unless minimizing to tray
+  if (config?.get("minimizeToTray") !== true) {
+    app.quit();
+  }
 });
 
 app.on("activate", () => {
@@ -142,5 +163,9 @@ app.on("activate", () => {
 });
 
 app.on("before-quit", () => {
-  isQuitting = true;
+  setQuitting(true);
+  // Clean up resources
+  watcherManager?.destroy();
+  trayManager?.destroy();
+  db?.close();
 });

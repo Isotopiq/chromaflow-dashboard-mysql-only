@@ -1,13 +1,14 @@
 // File watcher manager — uses chokidar to watch directories for mzXML/mzML files.
 // Implements file stabilization (wait for file size to stop changing before enqueueing).
 import chokidar, { type FSWatcher } from "chokidar";
+import fs from "node:fs";
 import path from "node:path";
 import { EventEmitter } from "node:events";
 import type { LocalDb } from "./db";
 import type { ConfigManager } from "./config";
 import type { WatchFolder, WatcherStatus } from "../shared/ipc-types";
 
-const VALID_EXTENSIONS = [".mzxml", ".mzmL", ".mzML", ".mzXML"];
+const VALID_EXTENSIONS = [".mzxml", ".mzml"];
 
 export class WatcherManager extends EventEmitter {
   private db: LocalDb;
@@ -26,8 +27,7 @@ export class WatcherManager extends EventEmitter {
   }
 
   async startAll() {
-    // Folders are loaded from V3 via the API client; for now, start from local DB
-    // The IPC handler will call startWatching() when folders are loaded
+    // Folders are loaded and started from index.ts after API client is ready
     this.emit("status", this.status);
   }
 
@@ -39,20 +39,17 @@ export class WatcherManager extends EventEmitter {
 
     if (!folder.enabled) return;
 
-    const pattern = folder.filePattern || "*.mzXML";
-    const globPattern = folder.recursive ? `**/${pattern}` : pattern;
-
-    const watcher = chokidar.watch(
-      path.join(folder.path, globPattern),
-      {
-        persistent: true,
-        ignoreInitial: true,
-        awaitWriteFinish: {
-          stabilityThreshold: 1000,
-          pollInterval: 500,
-        },
+    // Chokidar v4 removed glob support — watch the directory directly
+    // and filter by extension in the add/change handlers
+    const watcher = chokidar.watch(folder.path, {
+      persistent: true,
+      ignoreInitial: true,
+      depth: folder.recursive ? undefined : 0,
+      awaitWriteFinish: {
+        stabilityThreshold: 1000,
+        pollInterval: 500,
       },
-    );
+    });
 
     watcher.on("add", (filePath: string) => {
       this.handleFileDetected(filePath, folder);
@@ -70,7 +67,7 @@ export class WatcherManager extends EventEmitter {
     });
 
     this.watchers.set(folder.id, watcher);
-    this.db.log("INFO", `Watcher started on ${folder.path} (pattern: ${pattern}, recursive: ${folder.recursive})`);
+    this.db.log("INFO", `Watcher started on ${folder.path} (recursive: ${folder.recursive})`);
 
     // Update status
     if (this.status !== "paused") {
@@ -100,7 +97,6 @@ export class WatcherManager extends EventEmitter {
     if (existingTimer) clearTimeout(existingTimer);
 
     // Record file size
-    const fs = require("node:fs") as typeof import("node:fs");
     try {
       const stat = fs.statSync(filePath);
       this.fileSizes.set(filePath, stat.size);
@@ -123,7 +119,6 @@ export class WatcherManager extends EventEmitter {
   private checkStabilized(filePath: string, folderId: string, originalSize: number) {
     this.stabilizationTimers.delete(filePath);
 
-    const fs = require("node:fs") as typeof import("node:fs");
     try {
       const stat = fs.statSync(filePath);
       if (stat.size !== originalSize) {

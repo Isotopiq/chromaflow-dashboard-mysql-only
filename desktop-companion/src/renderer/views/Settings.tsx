@@ -149,7 +149,7 @@ export function Settings() {
               </SettingsField>
               <SettingsField label="Concurrent uploads" hint="Maximum number of files uploading at the same time">
                 <div className="flex items-center gap-2">
-                  <input type="number" min={1} max={10} value={draft.maxConcurrentUploads} onChange={(e) => update({ maxConcurrentUploads: Number(e.target.value) })} className={cn(inp, "w-20")} style={{ borderRadius: 2 }} />
+                  <input type="number" min={1} max={10} value={draft.maxConcurrentUploads} onChange={(e) => update({ maxConcurrentUploads: Math.max(1, Math.min(10, Number(e.target.value) || 1)) })} className={cn(inp, "w-20")} style={{ borderRadius: 2 }} />
                   <span className="text-[11px] text-[#6B7280]">max parallel</span>
                 </div>
               </SettingsField>

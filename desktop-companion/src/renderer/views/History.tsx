@@ -16,7 +16,7 @@ export function History() {
     const d = window.desktop;
     if (!d) { setEntries([]); setTotal(0); return; }
     let active = true;
-    d.getHistory(page, PAGE_SIZE)
+    d.getHistory(page - 1, PAGE_SIZE)
       .then((res) => { if (active) { setEntries(res.entries); setTotal(res.total); } })
       .catch(() => { if (active) { setEntries([]); setTotal(0); } });
     return () => { active = false; };

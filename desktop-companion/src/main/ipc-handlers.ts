@@ -7,6 +7,7 @@ import type { WatcherManager } from "./watcher";
 import type { UploadQueue } from "./upload-queue";
 import type { TrayManager } from "./tray";
 import { IPC } from "../shared/ipc-types";
+import { setQuitting } from "./index";
 
 export class IpcHandlers {
   constructor(
@@ -26,13 +27,24 @@ export class IpcHandlers {
       if (this.window?.isMaximized()) this.window?.unmaximize();
       else this.window?.maximize();
     });
-    ipcMain.handle(IPC.CLOSE, () => this.window?.close());
+    ipcMain.handle(IPC.CLOSE, () => {
+      // Check if user has minimize-to-tray enabled
+      const minimizeToTray = this.config.get("minimizeToTray");
+      if (minimizeToTray) {
+        // Hide to tray instead of quitting
+        this.window?.hide();
+      } else {
+        // Actually quit the app
+        setQuitting(true);
+        require("electron").app.quit();
+      }
+    });
     ipcMain.handle(IPC.SHOW_WINDOW, () => {
       this.window?.show();
       this.window?.focus();
     });
     ipcMain.handle(IPC.QUIT_APP, () => {
-      (require("electron").app as any).isQuitting = true;
+      setQuitting(true);
       require("electron").app.quit();
     });
 

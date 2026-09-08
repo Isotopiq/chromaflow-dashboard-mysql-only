@@ -1,15 +1,22 @@
 // System tray manager — creates the tray icon and context menu.
 import { app, Tray, Menu, nativeImage, BrowserWindow } from "electron";
 import path from "node:path";
+import { setQuitting } from "./index";
+import type { WatcherManager } from "./watcher";
 
 // __dirname is available natively in CommonJS
 
 export class TrayManager {
   private tray: Tray | null = null;
   private window: BrowserWindow | null = null;
+  private watcher: WatcherManager | null = null;
 
   setWindow(window: BrowserWindow) {
     this.window = window;
+  }
+
+  setWatcher(watcher: WatcherManager) {
+    this.watcher = watcher;
   }
 
   create() {
@@ -53,8 +60,11 @@ export class TrayManager {
       {
         label: paused ? "Resume Watching" : "Pause Watching",
         click: () => {
-          // Emit a custom event that the main process can handle
-          (this.tray as any)?.emit("toggle-pause");
+          if (paused) {
+            this.watcher?.resumeAll();
+          } else {
+            this.watcher?.pauseAll();
+          }
         },
       },
       {
@@ -68,7 +78,7 @@ export class TrayManager {
       {
         label: "Quit V3 Companion",
         click: () => {
-          (app as any).isQuitting = true;
+          setQuitting(true);
           app.quit();
         },
       },
