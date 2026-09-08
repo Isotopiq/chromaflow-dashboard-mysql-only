@@ -16,6 +16,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   logLevel: "INFO",
   minimizeToTray: true,
   autoStart: false,
+  stayLoggedIn: true,
 };
 
 export class ConfigManager {

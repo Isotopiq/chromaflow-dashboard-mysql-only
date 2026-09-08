@@ -77,6 +77,7 @@ export type AppSettings = {
   logLevel: LogLevel;
   minimizeToTray: boolean;
   autoStart: boolean;
+  stayLoggedIn: boolean;
 };
 
 export type LabData = {

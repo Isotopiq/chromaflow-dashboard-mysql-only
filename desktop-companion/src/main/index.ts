@@ -85,6 +85,13 @@ app.whenReady().then(async () => {
   db = new LocalDb();
   config = new ConfigManager();
   apiClient = new ApiClient(config, db);
+
+  // If stayLoggedIn is disabled, clear any persisted token on launch
+  if (!config.get("stayLoggedIn")) {
+    config.set("token", null);
+    config.set("userEmail", null);
+  }
+
   watcherManager = new WatcherManager(db, config);
   uploadQueue = new UploadQueue(db, apiClient, config);
   trayManager = new TrayManager();

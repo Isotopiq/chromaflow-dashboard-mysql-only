@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import type { AppSettings } from "@shared/ipc-types";
 import { cn, Toggle } from "../components/ui";
-import { useSettings } from "../hooks/useDesktop";
+import { useSettings, useAuth } from "../hooks/useDesktop";
 
 type SettingsSection = "api" | "upload" | "appearance" | "notifications";
 
@@ -16,6 +16,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   logLevel: "INFO",
   minimizeToTray: true,
   autoStart: false,
+  stayLoggedIn: true,
 };
 
 const settingsSections: { id: SettingsSection; label: string; desc: string }[] = [
@@ -27,10 +28,17 @@ const settingsSections: { id: SettingsSection; label: string; desc: string }[] =
 
 export function Settings() {
   const { settings, save, testConnection } = useSettings();
+  const { status: authStatus, login, logout } = useAuth();
   const [section, setSection] = useState<SettingsSection>("api");
   const [showToken, setShowToken] = useState(false);
   const [connected, setConnected] = useState<{ ok: boolean; latencyMs: number } | null>(null);
   const [testing, setTesting] = useState(false);
+
+  // Login form state
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [loggingIn, setLoggingIn] = useState(false);
 
   const [draft, setDraft] = useState<AppSettings>(settings ?? DEFAULT_SETTINGS);
 
@@ -54,6 +62,27 @@ export function Settings() {
     } finally {
       setTesting(false);
     }
+  };
+
+  const onLogin = async () => {
+    setLoginError(null);
+    setLoggingIn(true);
+    try {
+      await login(loginEmail, loginPassword);
+      setLoginPassword("");
+      // Save settings to persist token + stayLoggedIn
+      await save({ ...draft, stayLoggedIn: draft.stayLoggedIn });
+    } catch (e: any) {
+      setLoginError(e?.message ?? "Login failed");
+    } finally {
+      setLoggingIn(false);
+    }
+  };
+
+  const onLogout = async () => {
+    await logout();
+    setLoginEmail("");
+    setLoginPassword("");
   };
 
   const onSave = () => void save(draft);
@@ -93,22 +122,9 @@ export function Settings() {
         <div className="flex-1 overflow-y-auto px-6 py-2">
           {section === "api" && (
             <div>
-              <SettingsField label="V3 API Endpoint" hint="Base URL for the Isotopiq V3 API">
-                <input className={inp} style={{ borderRadius: 2 }} value={draft.apiEndpoint} onChange={(e) => update({ apiEndpoint: e.target.value })} />
-              </SettingsField>
-              <SettingsField label="Auth Token" hint="Bearer token for API authentication">
+              <SettingsField label="V3 API Endpoint" hint="Base URL for the Isotopiq V3 API (e.g. https://chroma.yourdomain.com)">
                 <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <input
-                      type={showToken ? "text" : "password"}
-                      className={inp}
-                      style={{ borderRadius: 2 }}
-                      value={draft.token ?? ""}
-                      onChange={(e) => update({ token: e.target.value || null })}
-                      placeholder="Not set — log in to authenticate"
-                    />
-                    <button onClick={() => setShowToken((s) => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] font-semibold text-[#6B7280] hover:text-[#2563EB] uppercase tracking-wide">{showToken ? "Hide" : "Show"}</button>
-                  </div>
+                  <input className={inp} style={{ borderRadius: 2 }} value={draft.apiEndpoint} onChange={(e) => update({ apiEndpoint: e.target.value })} placeholder="https://chroma.yourdomain.com" />
                   <button onClick={() => void onTest()} disabled={testing} className="px-3 py-1.5 text-[11px] font-medium border border-[#D1D5DB] bg-white hover:bg-[#F3F4F6] text-[#374151] whitespace-nowrap shrink-0 disabled:opacity-50" style={{ borderRadius: 2 }}>
                     {testing ? "Testing…" : "Test Connection"}
                   </button>
@@ -120,9 +136,65 @@ export function Settings() {
                   )}
                 </div>
               </SettingsField>
-              <SettingsField label="Logged in as" hint="Authenticated user email">
-                <span className="text-[12px] text-[#374151]">{draft.userEmail ?? "Not authenticated"}</span>
-              </SettingsField>
+
+              {/* Login / Authentication */}
+              {authStatus.authenticated ? (
+                <SettingsField label="Authentication" hint="You are logged in to the V3 API">
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#16A34A] bg-[#ECFDF3] border border-[#BBF7D0] px-2.5 py-1" style={{ borderRadius: 2 }}>
+                        <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><circle cx="5" cy="5" r="5" fill="#16A34A"/><path d="M3 5l1.5 1.5 2.5-3" stroke="white" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                        Authenticated
+                      </span>
+                      <span className="text-[12px] text-[#374151]">{authStatus.email}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => void onLogout()} className="px-3 py-1.5 text-[11px] font-medium border border-[#FECACA] bg-[#FEF2F2] text-[#DC2626] hover:bg-[#FEE2E2] transition-colors" style={{ borderRadius: 2 }}>
+                        Log Out
+                      </button>
+                    </div>
+                  </div>
+                </SettingsField>
+              ) : (
+                <SettingsField label="Login" hint="Enter your V3 / ChromaFlow credentials to authenticate">
+                  <div className="flex flex-col gap-2 max-w-[320px]">
+                    <input
+                      type="email"
+                      className={inp}
+                      style={{ borderRadius: 2 }}
+                      value={loginEmail}
+                      onChange={(e) => setLoginEmail(e.target.value)}
+                      placeholder="Email address"
+                      onKeyDown={(e) => { if (e.key === "Enter" && loginEmail && loginPassword) void onLogin(); }}
+                    />
+                    <input
+                      type="password"
+                      className={inp}
+                      style={{ borderRadius: 2 }}
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                      placeholder="Password"
+                      onKeyDown={(e) => { if (e.key === "Enter" && loginEmail && loginPassword) void onLogin(); }}
+                    />
+                    {loginError && (
+                      <span className="text-[11px] text-[#DC2626] font-medium">{loginError}</span>
+                    )}
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <Toggle checked={draft.stayLoggedIn} onChange={(v) => update({ stayLoggedIn: v })} />
+                      <span className="text-[11px] text-[#374151]">Stay logged in (persist token across restarts)</span>
+                    </label>
+                    <button
+                      onClick={() => void onLogin()}
+                      disabled={!loginEmail || !loginPassword || loggingIn}
+                      className="px-4 py-1.5 text-[11px] font-semibold bg-[#2563EB] hover:bg-[#1D4ED8] text-white transition-colors disabled:opacity-50 w-fit"
+                      style={{ borderRadius: 2 }}
+                    >
+                      {loggingIn ? "Logging in…" : "Log In"}
+                    </button>
+                  </div>
+                </SettingsField>
+              )}
+
               <SettingsField label="Minimize to tray" hint="Hide the window to the system tray on close">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <Toggle checked={draft.minimizeToTray} onChange={(v) => update({ minimizeToTray: v })} />
