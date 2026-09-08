@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import isotopiqLogo from "../../resources/isotopiq-logo.png";
 import type { View, WatcherStatus, LogEntry } from "@shared/ipc-types";
-import { cn, Icons, MenuDropdown } from "./components/ui";
+import { cn, Icons, MenuDropdown, type MenuItem } from "./components/ui";
 import {
   useWindowControls,
   usePauseAll,
@@ -60,7 +60,7 @@ export function App() {
     >
       {/* Windows chrome */}
       <TitleBar maximized={maximized} onMaximize={onMaximize} onMinimize={() => win.minimize()} onClose={() => win.close()} />
-      <MenuBar onNavigate={setView} />
+      <MenuBar onNavigate={setView} onPause={() => void togglePause()} onResume={() => void togglePause()} paused={paused} />
 
       {/* App shell */}
       <div className="flex flex-1 min-h-0">
@@ -182,14 +182,49 @@ function TitleBar({
 }
 
 // ─── Windows menu bar ─────────────────────────────────────────────────────────
-function MenuBar({ onNavigate }: { onNavigate: (v: View) => void }) {
+function MenuBar({ onNavigate, onPause, onResume, paused }: { onNavigate: (v: View) => void; onPause: () => void; onResume: () => void; paused: boolean }) {
+  const fileItems: MenuItem[] = [
+    { label: "New Watch Directory", action: () => onNavigate("directories") },
+    { separator: true },
+    { label: "Export Logs…", action: () => onNavigate("history") },
+    { separator: true },
+    { label: "Exit", action: () => window.desktop?.close() },
+  ];
+
+  const editItems: MenuItem[] = [
+    { label: "Clear Queue", action: () => { /* future: clear queue */ } },
+    { separator: true },
+    { label: "Preferences", action: () => onNavigate("settings") },
+  ];
+
+  const viewItems: MenuItem[] = [
+    { label: "Dashboard", action: () => onNavigate("dashboard") },
+    { label: "Queue", action: () => onNavigate("queue") },
+    { label: "Watch Directories", action: () => onNavigate("directories") },
+    { label: "Upload History", action: () => onNavigate("history") },
+    { separator: true },
+    { label: "Settings", action: () => onNavigate("settings") },
+  ];
+
+  const watcherItems: MenuItem[] = [
+    { label: paused ? "Resume All" : "Pause All", action: () => paused ? onResume() : onPause() },
+    { separator: true },
+    { label: "Clear Queue", action: () => { /* future: clear queue */ } },
+  ];
+
+  const helpItems: MenuItem[] = [
+    { label: "Documentation", action: () => window.open("https://github.com/ddlidded/chromaflow-dashboard-mysql-only", "_blank") },
+    { separator: true },
+    { label: "About V3 Companion", action: () => { /* future: about dialog */ } },
+  ];
+
   return (
     <div className="flex items-stretch bg-white border-b border-[#E5E7EB] shrink-0" style={{ height: 24 }}>
-      <MenuDropdown label="File" items={["New Watch Directory", "Import Config…", "---", "Export Logs…", "---", "Exit"]} />
-      <MenuDropdown label="Edit" items={["Select All", "Clear Queue", "---", "Preferences"]} />
-      <MenuDropdown label="View" items={["Dashboard", "Queue", "Watch Directories", "Upload History", "---", "Toggle Log Panel", "Zoom In", "Zoom Out"]} />
-      <MenuDropdown label="Watcher" items={["Start Watching", "Pause All", "Resume All", "---", "Force Upload All", "Clear Queue"]} />
-      <MenuDropdown label="Help" items={["Documentation", "Release Notes", "---", "Report Issue…", "---", "About V3 Companion"]} />
+      <MenuDropdown label="File" items={fileItems} />
+      <MenuDropdown label="Edit" items={editItems} />
+      <MenuDropdown label="View" items={viewItems} />
+      <MenuDropdown label="Watcher" items={watcherItems} />
+      <MenuDropdown label="Help" items={helpItems} />
     </div>
   );
 }

@@ -35,6 +35,7 @@ export interface DesktopApi {
   // History
   getHistory: (page: number, pageSize: number) => Promise<{ entries: HistoryEntry[]; total: number }>;
   exportHistoryCsv: () => Promise<string>;
+  saveHistoryCsv: () => Promise<string | null>;
   clearHistory: () => Promise<void>;
 
   // Settings
@@ -55,12 +56,12 @@ export interface DesktopApi {
   getLabData: () => Promise<LabData>;
 
   // Event listeners
-  onQueueUpdate: (callback: (items: QueueItem[]) => void) => void;
-  onLogEntry: (callback: (entry: LogEntry) => void) => void;
-  onWatcherStatus: (callback: (status: WatcherStatus) => void) => void;
-  onUploadProgress: (callback: (item: QueueItem) => void) => void;
-  onToast: (callback: (toast: { type: string; message: string }) => void) => void;
-  onNavigate: (callback: (view: string) => void) => void;
+  onQueueUpdate: (callback: (items: QueueItem[]) => void) => () => void;
+  onLogEntry: (callback: (entry: LogEntry) => void) => () => void;
+  onWatcherStatus: (callback: (status: WatcherStatus) => void) => () => void;
+  onUploadProgress: (callback: (item: QueueItem) => void) => () => void;
+  onToast: (callback: (toast: { type: string; message: string }) => void) => () => void;
+  onNavigate: (callback: (view: string) => void) => () => void;
 }
 
 declare global {

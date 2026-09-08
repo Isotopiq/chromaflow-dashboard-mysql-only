@@ -13,7 +13,7 @@ export function UploadModal({ onClose }: UploadModalProps) {
     const d = window.desktop;
     if (!d) return;
     let latest: QueueItem | null = null;
-    d.onUploadProgress((item) => {
+    const off = d.onUploadProgress((item) => {
       if (item.status === "uploading") {
         latest = item;
         setActive(item);
@@ -25,6 +25,7 @@ export function UploadModal({ onClose }: UploadModalProps) {
         if (uploading && !latest) setActive(uploading);
       })
       .catch(() => {});
+    return () => off?.();
   }, []);
 
   const progress = active?.progress ?? 0;

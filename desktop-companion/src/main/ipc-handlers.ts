@@ -111,6 +111,24 @@ export class IpcHandlers {
       ].join("\n");
       return csv;
     });
+    ipcMain.handle(IPC.SAVE_HISTORY_CSV, async () => {
+      const { entries } = this.db.getHistory(0, 100000);
+      const csv = [
+        "filename,source_dir,uploaded_at,size,duration_ms,status,sha256,run_id",
+        ...entries.map((e: any) =>
+          `${e.filename},${e.sourceDir},${new Date(e.uploadedAt).toISOString()},${e.size},${e.durationMs},${e.status},${e.sha256 ?? ""},${e.runId ?? ""}`,
+        ),
+      ].join("\n");
+      const result = await dialog.showSaveDialog(this.window!, {
+        title: "Export History CSV",
+        defaultPath: "v3-companion-history.csv",
+        filters: [{ name: "CSV Files", extensions: ["csv"] }],
+      });
+      if (result.canceled || !result.filePath) return null;
+      const fs = require("node:fs") as typeof import("node:fs");
+      fs.writeFileSync(result.filePath, csv, "utf8");
+      return result.filePath;
+    });
     ipcMain.handle(IPC.CLEAR_HISTORY, () => this.db.clearHistory());
 
     // ---- Settings ----

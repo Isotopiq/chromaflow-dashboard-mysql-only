@@ -93,7 +93,14 @@ export function SectionDivider({ label }: { label: string }) {
 }
 
 // ─── Windows-style dropdown menu ──────────────────────────────────────────────
-export function MenuDropdown({ label, items }: { label: string; items: string[] }) {
+export interface MenuItem {
+  label: string;
+  action?: () => void;
+  separator?: boolean;
+  disabled?: boolean;
+}
+
+export function MenuDropdown({ label, items }: { label: string; items: MenuItem[] }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -119,16 +126,25 @@ export function MenuDropdown({ label, items }: { label: string; items: string[] 
       </button>
       {open && (
         <div className="absolute top-full left-0 z-50 min-w-[160px] bg-white border border-[#D1D5DB] shadow-lg py-1" style={{ borderRadius: 0 }}>
-          {items.map((item) =>
-            item === "---" ? (
-              <div key={Math.random()} className="my-1 h-px bg-[#E5E7EB] mx-2" />
+          {items.map((item, i) =>
+            item.separator ? (
+              <div key={`sep-${i}`} className="my-1 h-px bg-[#E5E7EB] mx-2" />
             ) : (
               <button
-                key={item}
-                className="w-full text-left px-4 py-1 text-[12px] text-[#1F2937] hover:bg-[#EBF1FE] hover:text-[#1D4ED8] transition-colors"
-                onClick={() => setOpen(false)}
+                key={i}
+                disabled={item.disabled}
+                className={cn(
+                  "w-full text-left px-4 py-1 text-[12px] transition-colors",
+                  item.disabled
+                    ? "text-[#9CA3AF] cursor-not-allowed"
+                    : "text-[#1F2937] hover:bg-[#EBF1FE] hover:text-[#1D4ED8]"
+                )}
+                onClick={() => {
+                  setOpen(false);
+                  item.action?.();
+                }}
               >
-                {item}
+                {item.label}
               </button>
             )
           )}

@@ -131,10 +131,10 @@ function QueueRow({
       </td>
       <td className="px-3 py-2">
         {row.status === "failed"
-          ? <button onClick={onRetry} className="p-1 text-[#DC2626] hover:bg-[#FEF2F2] rounded-sm transition-colors">{Icons.retry}</button>
+          ? <button onClick={onRetry} className="p-1 text-[#DC2626] hover:bg-[#FEF2F2] rounded-sm transition-colors" title="Retry upload">{Icons.retry}</button>
           : row.status === "done"
-            ? <button onClick={onRetry} className="p-1 text-[#9CA3AF] hover:bg-[#F3F4F6] rounded-sm transition-colors">{Icons.retry}</button>
-            : <button onClick={onCancel} className="p-1 text-[#9CA3AF] hover:text-[#DC2626] hover:bg-[#FEF2F2] rounded-sm transition-colors">{Icons.cancel}</button>}
+            ? <span className="p-1 text-[#16A34A]" title="Upload complete">{Icons.check}</span>
+            : <button onClick={onCancel} className="p-1 text-[#9CA3AF] hover:text-[#DC2626] hover:bg-[#FEF2F2] rounded-sm transition-colors" title="Cancel upload">{Icons.cancel}</button>}
       </td>
     </tr>
   );

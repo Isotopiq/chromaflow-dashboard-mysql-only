@@ -32,10 +32,11 @@ export function useQueue() {
   useEffect(() => {
     if (!desktop) return;
     desktop.getQueue().then(setItems).catch(() => {});
-    desktop.onQueueUpdate((updated) => setItems(updated));
-    desktop.onUploadProgress((item) => {
+    const off1 = desktop.onQueueUpdate((updated) => setItems(updated));
+    const off2 = desktop.onUploadProgress((item) => {
       setItems((prev) => prev.map((it) => it.id === item.id ? { ...it, progress: item.progress, status: item.status } : it));
     });
+    return () => { off1?.(); off2?.(); };
   }, [desktop]);
 
   const cancel = useCallback((id: string) => desktop?.cancelUpload(id), [desktop]);
@@ -143,9 +144,9 @@ export function useDashboardStats() {
       desktop.getHourlyUploads().then(setHourly).catch(() => {});
     };
     refresh();
-    desktop.onWatcherStatus(() => refresh());
+    const off = desktop.onWatcherStatus(() => refresh());
     const interval = setInterval(refresh, 5000);
-    return () => clearInterval(interval);
+    return () => { off?.(); clearInterval(interval); };
   }, [desktop]);
 
   return { stats, hourly };
@@ -197,9 +198,10 @@ export function useLogs(maxEntries = 200) {
 
   useEffect(() => {
     if (!desktop) return;
-    desktop.onLogEntry((entry) => {
+    const off = desktop.onLogEntry((entry) => {
       setLogs((prev) => [entry, ...prev].slice(0, maxEntries));
     });
+    return () => off?.();
   }, [desktop, maxEntries]);
 
   return logs;
@@ -212,13 +214,14 @@ export function useToasts() {
 
   useEffect(() => {
     if (!desktop) return;
-    desktop.onToast((toast) => {
+    const off = desktop.onToast((toast) => {
       const id = Date.now() + Math.random();
       setToasts((prev) => [...prev, { ...toast, id }]);
       setTimeout(() => {
         setToasts((prev) => prev.filter((t) => t.id !== id));
       }, 4000);
     });
+    return () => off?.();
   }, [desktop]);
 
   return toasts;

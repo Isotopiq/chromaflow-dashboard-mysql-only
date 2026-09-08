@@ -44,7 +44,8 @@ export function useWatcherStatus(): WatcherStatus {
 
   useEffect(() => {
     if (!desktop) return;
-    desktop.onWatcherStatus((s) => setStatus(s));
+    const off = desktop.onWatcherStatus((s) => setStatus(s));
+    return () => off?.();
   }, [desktop]);
 
   return status;
@@ -57,9 +58,10 @@ export function useLogEntries(maxEntries = 200): { entries: LogEntry[]; clear: (
 
   useEffect(() => {
     if (!desktop) return;
-    desktop.onLogEntry((entry) => {
+    const off = desktop.onLogEntry((entry) => {
       setLogs((prev) => [entry, ...prev].slice(0, maxEntries));
     });
+    return () => off?.();
   }, [desktop, maxEntries]);
 
   const clear = useCallback(() => setLogs([]), []);

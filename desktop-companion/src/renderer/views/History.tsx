@@ -31,7 +31,7 @@ export function History() {
   const exportCsv = async () => {
     const d = window.desktop;
     if (!d) return;
-    try { await d.exportHistoryCsv(); } catch { /* noop */ }
+    try { await d.saveHistoryCsv(); } catch { /* noop */ }
   };
 
   const filtered = query

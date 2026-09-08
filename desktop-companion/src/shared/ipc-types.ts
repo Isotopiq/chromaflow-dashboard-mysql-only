@@ -115,6 +115,7 @@ export const IPC = {
 
   GET_HISTORY: "history:get",
   EXPORT_HISTORY_CSV: "history:export-csv",
+  SAVE_HISTORY_CSV: "history:save-csv",
   CLEAR_HISTORY: "history:clear",
 
   GET_SETTINGS: "settings:get",
