@@ -8,6 +8,7 @@ const api = {
   minimize: () => ipcRenderer.invoke(IPC.MINIMIZE),
   maximize: () => ipcRenderer.invoke(IPC.MAXIMIZE),
   close: () => ipcRenderer.invoke(IPC.CLOSE),
+  quitApp: () => ipcRenderer.invoke(IPC.QUIT_APP),
 
   // ---- Queue ----
   getQueue: () => ipcRenderer.invoke(IPC.GET_QUEUE),

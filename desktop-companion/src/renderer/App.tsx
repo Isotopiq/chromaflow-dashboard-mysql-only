@@ -38,16 +38,28 @@ export function App() {
   const [view, setView] = useState<View>("dashboard");
   const [modalOpen, setModalOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
   const [maximized, setMaximized] = useState(false);
 
   const win = useWindowControls();
-  const { paused, toggle: togglePause } = usePauseAll();
   const watcherStatus = useWatcherStatus();
   const { items } = useQueue();
+  const paused = watcherStatus === "paused";
+
+  // Listen for tray navigation events
+  useEffect(() => {
+    const off = window.desktop?.onNavigate?.((v) => setView(v as View));
+    return () => off?.();
+  }, []);
 
   useEffect(() => { if (view !== "dashboard") setModalOpen(false); }, [view]);
 
   const pending = items.filter((i) => i.status === "queued" || i.status === "uploading").length;
+
+  const togglePause = () => {
+    if (paused) window.desktop?.resumeAll();
+    else window.desktop?.pauseAll();
+  };
 
   const onMaximize = () => {
     win.maximize();
@@ -96,9 +108,9 @@ export function App() {
 
           {/* Bottom status */}
           <div className="px-3 py-3 border-t border-[#E5E7EB] flex flex-col gap-1">
-            <div className={cn("flex items-center gap-1.5 text-[11px] font-medium", watcherStatus === "watching" ? "text-[#16A34A]" : watcherStatus === "paused" ? "text-[#D97706]" : "text-[#DC2626]")}>
-              <span className={cn("w-2 h-2 rounded-full shrink-0", watcherStatus === "watching" ? "bg-[#16A34A] pulse-dot" : watcherStatus === "paused" ? "bg-[#D97706]" : "bg-[#DC2626]")} />
-              {watcherStatus === "watching" ? "Watching" : watcherStatus === "paused" ? "Paused" : "Error"}
+            <div className={cn("flex items-center gap-1.5 text-[11px] font-medium", watcherStatus === "watching" ? "text-[#16A34A]" : watcherStatus === "paused" ? "text-[#D97706]" : watcherStatus === "error" ? "text-[#DC2626]" : "text-[#9CA3AF]")}>
+              <span className={cn("w-2 h-2 rounded-full shrink-0", watcherStatus === "watching" ? "bg-[#16A34A] pulse-dot" : watcherStatus === "paused" ? "bg-[#D97706]" : watcherStatus === "error" ? "bg-[#DC2626]" : "bg-[#9CA3AF]")} />
+              {watcherStatus === "watching" ? "Watching" : watcherStatus === "paused" ? "Paused" : watcherStatus === "error" ? "Error" : "Idle"}
             </div>
           </div>
         </div>
@@ -120,10 +132,18 @@ export function App() {
             >
               {paused ? "▶ Resume All" : "⏸ Pause All"}
             </button>
-            <button className="w-7 h-7 flex items-center justify-center text-[#6B7280] hover:bg-[#F3F4F6] relative transition-colors" style={{ borderRadius: 2 }}>
-              {Icons.bell}
-              <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-[#2563EB] rounded-full" />
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => setNotifOpen((o) => !o)}
+                className={cn("w-7 h-7 flex items-center justify-center text-[#6B7280] hover:bg-[#F3F4F6] relative transition-colors", notifOpen && "bg-[#F3F4F6]")}
+                style={{ borderRadius: 2 }}
+                title="Notifications"
+              >
+                {Icons.bell}
+                {pending > 0 && <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-[#2563EB] rounded-full" />}
+              </button>
+              {notifOpen && <NotificationsPanel pending={pending} onClose={() => setNotifOpen(false)} onNavigate={setView} />}
+            </div>
             <div className="w-6 h-6 rounded-sm bg-[#EBF1FE] border border-[#BFCFFB] flex items-center justify-center text-[9px] font-bold text-[#2563EB]">V3</div>
           </div>
 
@@ -190,9 +210,9 @@ function MenuBar({ onNavigate, onPause, onResume, paused, onAbout }: { onNavigat
   const fileItems: MenuItem[] = [
     { label: "New Watch Directory", action: () => onNavigate("directories") },
     { separator: true },
-    { label: "Export Logs…", action: () => onNavigate("history") },
+    { label: "Export Upload History…", action: () => onNavigate("history") },
     { separator: true },
-    { label: "Exit", action: () => window.desktop?.close() },
+    { label: "Exit", action: () => window.desktop?.quitApp() },
   ];
 
   const editItems: MenuItem[] = [
@@ -239,6 +259,7 @@ function StatusBar({ watcherStatus, pending }: { watcherStatus: WatcherStatus; p
     watching: { dot: "bg-[#16A34A]", text: "Watching directories" },
     paused:   { dot: "bg-[#D97706]", text: "Watcher paused" },
     error:    { dot: "bg-[#DC2626]", text: "Watcher error" },
+    idle:     { dot: "bg-[#9CA3AF]", text: "No directories configured" },
   }[watcherStatus];
 
   return (
@@ -359,5 +380,65 @@ function AboutDialog({ onClose }: { onClose: () => void }) {
         </div>
       </div>
     </div>
+  );
+}
+
+// ─── Notifications panel ──────────────────────────────────────────────────────
+function NotificationsPanel({ pending, onClose, onNavigate }: { pending: number; onClose: () => void; onNavigate: (v: View) => void }) {
+  const { entries } = useLogEntries(10);
+  const recentErrors = entries.filter((e: any) => e.level === "ERROR");
+  const recentWarns = entries.filter((e: any) => e.level === "WARN");
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <div className="absolute right-0 top-full mt-1 z-50 w-80 bg-white border border-[#D1D5DB] shadow-lg flex flex-col" style={{ borderRadius: 0 }}>
+        <div className="flex items-center justify-between px-3 py-2 border-b border-[#E5E7EB] bg-[#F9FAFB] shrink-0">
+          <span className="text-[11px] font-semibold text-[#111827]">Notifications</span>
+          <button onClick={onClose} className="text-[#9CA3AF] hover:text-[#6B7280]">{Icons.winClose}</button>
+        </div>
+        <div className="flex-1 overflow-y-auto max-h-80">
+          {pending > 0 && (
+            <div className="px-3 py-2.5 border-b border-[#F3F4F6] flex items-center gap-2.5 hover:bg-[#F9FAFB] cursor-pointer" onClick={() => { onNavigate("queue"); onClose(); }}>
+              <span className="w-7 h-7 flex items-center justify-center bg-[#EBF1FE] text-[#2563EB] shrink-0" style={{ borderRadius: 2 }}>{Icons.queue}</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-[11px] font-medium text-[#111827]">{pending} upload{pending !== 1 ? "s" : ""} in progress</p>
+                <p className="text-[10px] text-[#9CA3AF]">Click to view queue</p>
+              </div>
+            </div>
+          )}
+          {recentErrors.length === 0 && recentWarns.length === 0 && pending === 0 && (
+            <div className="px-3 py-6 text-center">
+              <p className="text-[11px] text-[#9CA3AF]">No notifications</p>
+            </div>
+          )}
+          {recentErrors.slice(0, 5).map((e: any, i: number) => (
+            <div key={`err-${i}`} className="px-3 py-2.5 border-b border-[#F3F4F6] flex items-start gap-2.5">
+              <span className="w-7 h-7 flex items-center justify-center bg-[#FEF2F2] text-[#DC2626] shrink-0 mt-0.5" style={{ borderRadius: 2 }}>
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="8" r="6"/><path d="M6 6l4 4M10 6l-4 4" strokeLinecap="round"/></svg>
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-[11px] font-medium text-[#DC2626]">Error</p>
+                <p className="text-[10px] text-[#6B7280] truncate">{e.message}</p>
+              </div>
+            </div>
+          ))}
+          {recentWarns.slice(0, 5).map((w: any, i: number) => (
+            <div key={`warn-${i}`} className="px-3 py-2.5 border-b border-[#F3F4F6] flex items-start gap-2.5">
+              <span className="w-7 h-7 flex items-center justify-center bg-[#FEF3C7] text-[#D97706] shrink-0 mt-0.5" style={{ borderRadius: 2 }}>
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8 2L1 14h14L8 2z" strokeLinejoin="round"/><path d="M8 7v3M8 12v.5" strokeLinecap="round"/></svg>
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-[11px] font-medium text-[#D97706]">Warning</p>
+                <p className="text-[10px] text-[#6B7280] truncate">{w.message}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="px-3 py-2 border-t border-[#E5E7EB] bg-[#F9FAFB] shrink-0">
+          <button onClick={() => { onNavigate("history"); onClose(); }} className="text-[10px] text-[#2563EB] hover:text-[#1D4ED8] font-medium">View upload history →</button>
+        </div>
+      </div>
+    </>
   );
 }

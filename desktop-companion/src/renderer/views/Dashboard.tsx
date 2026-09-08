@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { DashboardStats, WatchFolder } from "@shared/ipc-types";
 import { Icons, HourlyBarChart } from "../components/ui";
-import { useDashboardStats, useHourlyUploads, useWatchFolders, usePauseAll } from "../hooks/useDesktop";
+import { useDashboardStats, useHourlyUploads, useWatchFolders, useWatcherStatus } from "../hooks/useDesktop";
 
 export interface DashboardProps {
   onOpenModal: () => void;
@@ -11,11 +11,17 @@ export function Dashboard({ onOpenModal }: DashboardProps) {
   const { stats } = useDashboardStats();
   const hourly = useHourlyUploads();
   const { folders } = useWatchFolders();
-  const { paused, toggle: togglePause } = usePauseAll();
+  const watcherStatus = useWatcherStatus();
+  const paused = watcherStatus === "paused";
   const activeDirs = folders.filter((f) => f.enabled).length;
 
   const cards = buildStatCards(stats);
   const watcherOk = stats.watcherStatus === "watching";
+
+  const togglePause = () => {
+    if (paused) window.desktop?.resumeAll();
+    else window.desktop?.pauseAll();
+  };
 
   return (
     <div className="flex flex-col gap-3 p-3 overflow-y-auto h-full bg-[#F9FAFB]">

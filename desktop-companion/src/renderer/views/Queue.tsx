@@ -1,10 +1,12 @@
 import { useState } from "react";
 import type { QueueItem } from "@shared/ipc-types";
 import { cn, Icons, StatusBadge, ProgressBar } from "../components/ui";
-import { useQueue } from "../hooks/useDesktop";
+import { useQueue, useWatcherStatus } from "../hooks/useDesktop";
 
 export function Queue() {
   const { items, cancel, retry } = useQueue();
+  const watcherStatus = useWatcherStatus();
+  const paused = watcherStatus === "paused";
   const [hovered, setHovered] = useState<string | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [query, setQuery] = useState("");
@@ -18,6 +20,11 @@ export function Queue() {
 
   const pending = items.filter((i) => i.status === "queued" || i.status === "uploading").length;
 
+  const togglePause = () => {
+    if (paused) window.desktop?.resumeAll();
+    else window.desktop?.pauseAll();
+  };
+
   return (
     <div className="flex flex-col h-full bg-[#F9FAFB]">
       {/* Toolbar */}
@@ -25,11 +32,11 @@ export function Queue() {
         <span className="text-[11px] text-[#6B7280] mr-1">{items.length} items</span>
         <div className="w-px h-4 bg-[#E5E7EB]" />
         <button
-          onClick={() => { void window.desktop?.pauseAll(); }}
+          onClick={togglePause}
           className="px-2.5 py-1 text-[11px] text-[#374151] border border-[#D1D5DB] bg-white hover:bg-[#F9FAFB] transition-colors"
           style={{ borderRadius: 2 }}
         >
-          ⏸ Pause All
+          {paused ? "▶ Resume All" : "⏸ Pause All"}
         </button>
         <button
           onClick={() => { items.filter((i) => i.status === "uploading" || i.status === "queued").forEach((i) => void cancel(i.id)); }}

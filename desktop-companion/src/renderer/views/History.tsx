@@ -111,9 +111,9 @@ export function History() {
         <div className="flex items-center gap-0.5">
           <PageBtn label="‹" active={false} disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} />
           <PageBtn label={String(page)} active onClick={() => {}} />
-          {totalPages > 1 && <PageBtn label={String(Math.min(2, totalPages))} active={false} onClick={() => setPage(2)} />}
-          {totalPages > 3 && <span className="px-1 text-[11px] text-[#9CA3AF]">…</span>}
-          {totalPages > 2 && <PageBtn label={String(totalPages)} active={false} onClick={() => setPage(totalPages)} />}
+          {totalPages > 1 && page !== 2 && <PageBtn label={String(Math.min(2, totalPages))} active={false} onClick={() => setPage(2)} />}
+          {totalPages > 3 && page < totalPages - 1 && <span className="px-1 text-[11px] text-[#9CA3AF]">…</span>}
+          {totalPages > 2 && page !== totalPages && <PageBtn label={String(totalPages)} active={false} onClick={() => setPage(totalPages)} />}
           <PageBtn label="›" active={false} disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))} />
         </div>
       </div>

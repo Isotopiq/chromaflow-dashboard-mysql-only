@@ -60,11 +60,13 @@ export class TrayManager {
       {
         label: paused ? "Resume Watching" : "Pause Watching",
         click: () => {
-          if (paused) {
-            this.watcher?.resumeAll();
-          } else {
+          const newPaused = !paused;
+          if (newPaused) {
             this.watcher?.pauseAll();
+          } else {
+            this.watcher?.resumeAll();
           }
+          this.updateMenu(newPaused);
         },
       },
       {

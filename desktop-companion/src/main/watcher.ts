@@ -18,7 +18,7 @@ export class WatcherManager extends EventEmitter {
   private stabilizationTimers: Map<string, NodeJS.Timeout> = new Map();
   private fileSizes: Map<string, number> = new Map();
   private paused = false;
-  private status: WatcherStatus = "watching";
+  private status: WatcherStatus = "idle";
 
   constructor(db: LocalDb, config: ConfigManager) {
     super();
@@ -28,6 +28,7 @@ export class WatcherManager extends EventEmitter {
 
   async startAll() {
     // Folders are loaded and started from index.ts after API client is ready
+    this.updateStatus();
     this.emit("status", this.status);
   }
 
@@ -70,8 +71,8 @@ export class WatcherManager extends EventEmitter {
     this.db.log("INFO", `Watcher started on ${folder.path} (recursive: ${folder.recursive})`);
 
     // Update status
-    if (this.status !== "paused") {
-      this.status = "watching";
+    if (!this.paused) {
+      this.updateStatus();
       this.emit("status", this.status);
     }
   }
@@ -83,6 +84,11 @@ export class WatcherManager extends EventEmitter {
       this.watchers.delete(folderId);
     }
     this.folders.delete(folderId);
+    // If no more watchers, go idle
+    if (this.watchers.size === 0 && !this.paused) {
+      this.updateStatus();
+      this.emit("status", this.status);
+    }
   }
 
   private handleFileDetected(filePath: string, folder: WatchFolder) {
@@ -152,7 +158,7 @@ export class WatcherManager extends EventEmitter {
 
   resumeAll() {
     this.paused = false;
-    this.status = "watching";
+    this.updateStatus();
     this.emit("status", this.status);
     this.db.log("INFO", "All watchers resumed");
   }
@@ -163,6 +169,16 @@ export class WatcherManager extends EventEmitter {
 
   getWatchedCount(): number {
     return this.watchers.size;
+  }
+
+  private updateStatus() {
+    if (this.paused) {
+      this.status = "paused";
+    } else if (this.watchers.size === 0) {
+      this.status = "idle";
+    } else {
+      this.status = "watching";
+    }
   }
 
   private formatSize(bytes: number): string {

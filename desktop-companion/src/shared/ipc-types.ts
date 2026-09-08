@@ -3,7 +3,7 @@
 // browser-specific APIs.
 
 export type View = "dashboard" | "queue" | "directories" | "history" | "settings";
-export type WatcherStatus = "watching" | "paused" | "error";
+export type WatcherStatus = "idle" | "watching" | "paused" | "error";
 export type UploadStatus = "queued" | "parsing" | "uploading" | "done" | "failed" | "cancelled";
 export type LogLevel = "INFO" | "WARN" | "ERROR" | "DEBUG";
 

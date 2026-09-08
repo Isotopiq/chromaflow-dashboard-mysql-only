@@ -17,6 +17,7 @@ export interface DesktopApi {
   minimize: () => Promise<void>;
   maximize: () => Promise<void>;
   close: () => Promise<void>;
+  quitApp: () => Promise<void>;
 
   // Queue
   getQueue: () => Promise<QueueItem[]>;

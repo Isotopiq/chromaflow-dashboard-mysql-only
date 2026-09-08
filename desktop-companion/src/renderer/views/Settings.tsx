@@ -55,6 +55,8 @@ export function Settings() {
     setTesting(true);
     setConnected(null);
     try {
+      // Save the endpoint first so testConnection uses the right URL
+      await save({ apiEndpoint: draft.apiEndpoint });
       const res = await testConnection();
       setConnected(res);
     } catch {
@@ -68,10 +70,10 @@ export function Settings() {
     setLoginError(null);
     setLoggingIn(true);
     try {
+      // Save the API endpoint first so the login call uses the right URL
+      await save({ apiEndpoint: draft.apiEndpoint, stayLoggedIn: draft.stayLoggedIn });
       await login(loginEmail, loginPassword);
       setLoginPassword("");
-      // Save settings to persist token + stayLoggedIn
-      await save({ ...draft, stayLoggedIn: draft.stayLoggedIn });
     } catch (e: any) {
       setLoginError(e?.message ?? "Login failed");
     } finally {
@@ -293,7 +295,7 @@ export function Settings() {
 
         {/* Footer actions */}
         <div className="px-6 py-3 border-t border-[#E5E7EB] bg-white shrink-0 flex items-center justify-between">
-          <button onClick={() => setDraft(settings ?? DEFAULT_SETTINGS)} className="text-[11px] text-[#9CA3AF] hover:text-[#6B7280] transition-colors">Reset to defaults</button>
+          <button onClick={() => setDraft({ ...DEFAULT_SETTINGS })} className="text-[11px] text-[#9CA3AF] hover:text-[#6B7280] transition-colors">Reset to defaults</button>
           <div className="flex items-center gap-2">
             <button onClick={() => setDraft(settings ?? DEFAULT_SETTINGS)} className="px-4 py-1.5 text-[11px] font-medium border border-[#D1D5DB] bg-white hover:bg-[#F3F4F6] text-[#374151] transition-colors" style={{ borderRadius: 2 }}>Cancel</button>
             <button onClick={onSave} className="px-5 py-1.5 bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-[11px] font-semibold transition-colors" style={{ borderRadius: 2 }}>Save Settings</button>
