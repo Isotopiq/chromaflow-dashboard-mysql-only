@@ -117,10 +117,20 @@ export function Queue() {
 
       {/* Table */}
       <div className="overflow-auto flex-1">
-        <table className="w-full min-w-max border-collapse">
+        <table className="w-full table-fixed border-collapse">
+          <colgroup>
+            <col className="w-8" />
+            <col />
+            <col className="w-40" />
+            <col className="w-16" />
+            <col className="w-20" />
+            <col className="w-20" />
+            <col className="w-24" />
+            <col className="w-24" />
+          </colgroup>
           <thead>
             <tr className="bg-[#F3F4F6] sticky top-0 z-10">
-              <th className="px-3 py-2 w-8">
+              <th className="px-3 py-2">
                 <input
                   type="checkbox"
                   checked={filtered.length > 0 && filtered.every((i) => selected.includes(i.id))}
@@ -194,8 +204,8 @@ function QueueRow({
       <td className="px-3 py-2 w-8">
         <input type="checkbox" checked={selected} onChange={onToggle} className="w-3.5 h-3.5 accent-[#2563EB] cursor-pointer" />
       </td>
-      <td className="px-3 py-2"><span className="text-[11px] text-[#111827] font-medium font-mono">{row.filename}</span></td>
-      <td className="px-3 py-2 max-w-[150px]"><span className="text-[11px] text-[#6B7280] truncate block">{dir}</span></td>
+      <td className="px-3 py-2"><span className="text-[11px] text-[#111827] font-medium font-mono truncate block" title={row.filename}>{row.filename}</span></td>
+      <td className="px-3 py-2"><span className="text-[11px] text-[#6B7280] truncate block" title={dir}>{dir}</span></td>
       <td className="px-3 py-2"><span className="text-[11px] text-[#6B7280] whitespace-nowrap">{sizeStr}</span></td>
       <td className="px-3 py-2"><span className="text-[11px] text-[#6B7280] whitespace-nowrap">{detected}</span></td>
       <td className="px-3 py-2"><StatusBadge status={row.status} /></td>

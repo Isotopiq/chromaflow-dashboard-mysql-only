@@ -44,9 +44,9 @@ app.on("second-instance", () => {
 
 async function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1000,
-    height: 650,
-    minWidth: 900,
+    width: 1280,
+    height: 720,
+    minWidth: 1080,
     minHeight: 580,
     frame: false, // Custom title bar
     show: false,

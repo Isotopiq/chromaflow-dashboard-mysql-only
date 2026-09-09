@@ -69,7 +69,7 @@ export function App() {
   return (
     <div
       className="flex flex-col bg-white text-[#111827] overflow-hidden"
-      style={{ width: "100%", height: "100%", minWidth: 900, minHeight: 580, fontFamily: "'Inter', 'Segoe UI', system-ui, sans-serif" }}
+      style={{ width: "100%", height: "100%", minWidth: 1080, minHeight: 580, fontFamily: "'Inter', 'Segoe UI', system-ui, sans-serif" }}
     >
       {/* Windows chrome */}
       <TitleBar maximized={maximized} onMaximize={onMaximize} onMinimize={() => win.minimize()} onClose={() => win.close()} />
