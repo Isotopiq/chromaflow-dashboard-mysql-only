@@ -216,7 +216,7 @@ function MenuBar({ onNavigate, onPause, onResume, paused, onAbout }: { onNavigat
   ];
 
   const editItems: MenuItem[] = [
-    { label: "Clear Queue", action: () => { /* future: clear queue */ } },
+    { label: "Clear Queue", action: () => window.desktop?.clearQueue("all") },
     { separator: true },
     { label: "Preferences", action: () => onNavigate("settings") },
   ];
@@ -233,7 +233,7 @@ function MenuBar({ onNavigate, onPause, onResume, paused, onAbout }: { onNavigat
   const watcherItems: MenuItem[] = [
     { label: paused ? "Resume All" : "Pause All", action: () => paused ? onResume() : onPause() },
     { separator: true },
-    { label: "Clear Queue", action: () => { /* future: clear queue */ } },
+    { label: "Clear Queue", action: () => window.desktop?.clearQueue("all") },
   ];
 
   const helpItems: MenuItem[] = [

@@ -41,8 +41,10 @@ export function useQueue() {
 
   const cancel = useCallback((id: string) => desktop?.cancelUpload(id), [desktop]);
   const retry = useCallback((id: string) => desktop?.retryUpload(id), [desktop]);
+  const remove = useCallback((id: string) => desktop?.removeQueueItem(id), [desktop]);
+  const clearQueue = useCallback((mode: string) => desktop?.clearQueue(mode), [desktop]);
 
-  return { items, cancel, retry };
+  return { items, cancel, retry, remove, clearQueue };
 }
 
 // ---- Watch folders hook ----

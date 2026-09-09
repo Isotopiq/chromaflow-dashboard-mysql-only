@@ -4,7 +4,7 @@ import { cn, Icons, StatusBadge, ProgressBar } from "../components/ui";
 import { useQueue, useWatcherStatus } from "../hooks/useDesktop";
 
 export function Queue() {
-  const { items, cancel, retry } = useQueue();
+  const { items, cancel, retry, remove, clearQueue } = useQueue();
   const watcherStatus = useWatcherStatus();
   const paused = watcherStatus === "paused";
   const [hovered, setHovered] = useState<string | null>(null);
@@ -14,15 +14,30 @@ export function Queue() {
   const toggle = (id: string) =>
     setSelected((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
 
+  const toggleAll = () => {
+    const filteredIds = filtered.map((i) => i.id);
+    const allSelected = filteredIds.every((id) => selected.includes(id));
+    setSelected(allSelected ? [] : filteredIds);
+  };
+
   const filtered = query
     ? items.filter((i) => i.filename.toLowerCase().includes(query.toLowerCase()))
     : items;
 
   const pending = items.filter((i) => i.status === "queued" || i.status === "uploading").length;
+  const failed = items.filter((i) => i.status === "failed" || i.status === "cancelled").length;
+  const done = items.filter((i) => i.status === "done").length;
 
   const togglePause = () => {
     if (paused) window.desktop?.resumeAll();
     else window.desktop?.pauseAll();
+  };
+
+  const removeSelected = async () => {
+    for (const id of selected) {
+      await remove(id);
+    }
+    setSelected([]);
   };
 
   return (
@@ -46,6 +61,15 @@ export function Queue() {
           ✕ Cancel All
         </button>
         <div className="flex-1" />
+        {selected.length > 0 && (
+          <button
+            onClick={() => void removeSelected()}
+            className="px-2.5 py-1 text-[11px] text-[#DC2626] border border-[#FECACA] bg-[#FEF2F2] hover:bg-[#FEE2E2] transition-colors"
+            style={{ borderRadius: 2 }}
+          >
+            Remove {selected.length} selected
+          </button>
+        )}
         <div className="relative">
           <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[#9CA3AF]">{Icons.search}</span>
           <input
@@ -59,12 +83,52 @@ export function Queue() {
         </div>
       </div>
 
+      {/* Bulk action bar */}
+      {(failed > 0 || done > 0) && (
+        <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[#F3F4F6] bg-[#FAFAFA] shrink-0">
+          <span className="text-[10px] text-[#9CA3AF] mr-1">Bulk actions:</span>
+          {done > 0 && (
+            <button
+              onClick={() => void clearQueue("completed")}
+              className="px-2 py-0.5 text-[10px] text-[#16A34A] border border-[#BBF7D0] bg-[#ECFDF3] hover:bg-[#D1FAE5] transition-colors"
+              style={{ borderRadius: 2 }}
+            >
+              Clear {done} completed
+            </button>
+          )}
+          {failed > 0 && (
+            <button
+              onClick={() => void clearQueue("failed")}
+              className="px-2 py-0.5 text-[10px] text-[#DC2626] border border-[#FECACA] bg-[#FEF2F2] hover:bg-[#FEE2E2] transition-colors"
+              style={{ borderRadius: 2 }}
+            >
+              Clear {failed} failed
+            </button>
+          )}
+          <button
+            onClick={() => void clearQueue("all")}
+            className="px-2 py-0.5 text-[10px] text-[#6B7280] border border-[#E5E7EB] bg-white hover:bg-[#F3F4F6] transition-colors"
+            style={{ borderRadius: 2 }}
+          >
+            Clear all
+          </button>
+        </div>
+      )}
+
       {/* Table */}
       <div className="overflow-auto flex-1">
         <table className="w-full min-w-max border-collapse">
           <thead>
             <tr className="bg-[#F3F4F6] sticky top-0 z-10">
-              {["", "Filename", "Directory", "Size", "Detected", "Status", "Progress", "Actions"].map((h) => (
+              <th className="px-3 py-2 w-8">
+                <input
+                  type="checkbox"
+                  checked={filtered.length > 0 && filtered.every((i) => selected.includes(i.id))}
+                  onChange={toggleAll}
+                  className="w-3.5 h-3.5 accent-[#2563EB] cursor-pointer"
+                />
+              </th>
+              {["Filename", "Directory", "Size", "Detected", "Status", "Progress", "Actions"].map((h) => (
                 <th key={h} className="text-left text-[10px] font-semibold uppercase tracking-wider text-[#6B7280] px-3 py-2 whitespace-nowrap border-b border-[#E5E7EB]">{h}</th>
               ))}
             </tr>
@@ -86,6 +150,7 @@ export function Queue() {
                 onToggle={() => toggle(row.id)}
                 onCancel={() => void cancel(row.id)}
                 onRetry={() => void retry(row.id)}
+                onRemove={() => void remove(row.id)}
               />
             ))}
           </tbody>
@@ -104,6 +169,7 @@ function QueueRow({
   onToggle,
   onCancel,
   onRetry,
+  onRemove,
 }: {
   row: QueueItem;
   alt: boolean;
@@ -113,6 +179,7 @@ function QueueRow({
   onToggle: () => void;
   onCancel: () => void;
   onRetry: () => void;
+  onRemove: () => void;
 }) {
   const dir = extractDir(row.filePath);
   const sizeStr = formatBytes(row.size);
@@ -137,11 +204,20 @@ function QueueRow({
         <span className="text-[9px] text-[#9CA3AF] mt-0.5 block">{row.progress > 0 ? `${row.progress}%` : "—"}</span>
       </td>
       <td className="px-3 py-2">
-        {row.status === "failed"
-          ? <button onClick={onRetry} className="p-1 text-[#DC2626] hover:bg-[#FEF2F2] rounded-sm transition-colors" title="Retry upload">{Icons.retry}</button>
-          : row.status === "done"
-            ? <span className="p-1 text-[#16A34A]" title="Upload complete">{Icons.check}</span>
-            : <button onClick={onCancel} className="p-1 text-[#9CA3AF] hover:text-[#DC2626] hover:bg-[#FEF2F2] rounded-sm transition-colors" title="Cancel upload">{Icons.cancel}</button>}
+        <div className="flex items-center gap-0.5">
+          {row.status === "failed" && (
+            <button onClick={onRetry} className="p-1 text-[#2563EB] hover:bg-[#EBF1FE] rounded-sm transition-colors" title="Retry upload">{Icons.retry}</button>
+          )}
+          {row.status === "done" && (
+            <span className="p-1 text-[#16A34A]" title="Upload complete">{Icons.check}</span>
+          )}
+          {(row.status === "queued" || row.status === "uploading" || row.status === "parsing") && (
+            <button onClick={onCancel} className="p-1 text-[#9CA3AF] hover:text-[#DC2626] hover:bg-[#FEF2F2] rounded-sm transition-colors" title="Cancel upload">{Icons.cancel}</button>
+          )}
+          <button onClick={onRemove} className="p-1 text-[#9CA3AF] hover:text-[#DC2626] hover:bg-[#FEF2F2] rounded-sm transition-colors" title="Remove from queue">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 4h12M6 4V2h4v2M3 4l1 10h8l1-10" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          </button>
+        </div>
       </td>
     </tr>
   );

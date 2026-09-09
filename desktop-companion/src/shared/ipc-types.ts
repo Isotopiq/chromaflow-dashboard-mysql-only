@@ -105,6 +105,8 @@ export const IPC = {
   GET_QUEUE: "queue:get",
   CANCEL_UPLOAD: "queue:cancel",
   RETRY_UPLOAD: "queue:retry",
+  REMOVE_QUEUE_ITEM: "queue:remove",
+  CLEAR_QUEUE: "queue:clear",
   PAUSE_ALL: "watcher:pause-all",
   RESUME_ALL: "watcher:resume-all",
 

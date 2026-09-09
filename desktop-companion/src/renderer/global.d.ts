@@ -23,6 +23,8 @@ export interface DesktopApi {
   getQueue: () => Promise<QueueItem[]>;
   cancelUpload: (id: string) => Promise<void>;
   retryUpload: (id: string) => Promise<void>;
+  removeQueueItem: (id: string) => Promise<void>;
+  clearQueue: (mode: string) => Promise<void>;
   pauseAll: () => Promise<void>;
   resumeAll: () => Promise<void>;
 

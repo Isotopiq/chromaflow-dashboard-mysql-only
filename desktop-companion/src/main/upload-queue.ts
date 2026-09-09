@@ -92,6 +92,45 @@ export class UploadQueue extends EventEmitter {
     }
   }
 
+  remove(id: string) {
+    // Cancel if actively uploading
+    const controller = this.active.get(id);
+    if (controller) {
+      controller.abort();
+      this.active.delete(id);
+    }
+    this.queue = this.queue.filter((q) => q.id !== id);
+    this.db.deleteQueueItem(id);
+    this.emit("queue-update", this.getQueue());
+  }
+
+  clearCompleted() {
+    const doneIds = this.queue.filter((q) => q.status === "done").map((q) => q.id);
+    this.queue = this.queue.filter((q) => q.status !== "done");
+    for (const id of doneIds) this.db.deleteQueueItem(id);
+    this.emit("queue-update", this.getQueue());
+  }
+
+  clearFailed() {
+    const failedIds = this.queue.filter((q) => q.status === "failed" || q.status === "cancelled").map((q) => q.id);
+    this.queue = this.queue.filter((q) => q.status !== "failed" && q.status !== "cancelled");
+    for (const id of failedIds) this.db.deleteQueueItem(id);
+    this.emit("queue-update", this.getQueue());
+  }
+
+  clearAll() {
+    // Abort all active uploads
+    for (const [, controller] of this.active) {
+      controller.abort();
+    }
+    this.active.clear();
+    // Remove all items
+    const allIds = this.queue.map((q) => q.id);
+    this.queue = [];
+    for (const id of allIds) this.db.deleteQueueItem(id);
+    this.emit("queue-update", this.getQueue());
+  }
+
   private async processNext() {
     if (!this.processing) return;
 

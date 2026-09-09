@@ -14,6 +14,8 @@ const api = {
   getQueue: () => ipcRenderer.invoke(IPC.GET_QUEUE),
   cancelUpload: (id: string) => ipcRenderer.invoke(IPC.CANCEL_UPLOAD, id),
   retryUpload: (id: string) => ipcRenderer.invoke(IPC.RETRY_UPLOAD, id),
+  removeQueueItem: (id: string) => ipcRenderer.invoke(IPC.REMOVE_QUEUE_ITEM, id),
+  clearQueue: (mode: string) => ipcRenderer.invoke(IPC.CLEAR_QUEUE, mode),
   pauseAll: () => ipcRenderer.invoke(IPC.PAUSE_ALL),
   resumeAll: () => ipcRenderer.invoke(IPC.RESUME_ALL),
 

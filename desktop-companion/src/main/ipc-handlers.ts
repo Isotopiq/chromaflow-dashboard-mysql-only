@@ -54,6 +54,12 @@ export class IpcHandlers {
     ipcMain.handle(IPC.GET_QUEUE, () => this.queue.getQueue());
     ipcMain.handle(IPC.CANCEL_UPLOAD, (_, id: string) => this.queue.cancel(id));
     ipcMain.handle(IPC.RETRY_UPLOAD, (_, id: string) => this.queue.retry(id));
+    ipcMain.handle(IPC.REMOVE_QUEUE_ITEM, (_, id: string) => this.queue.remove(id));
+    ipcMain.handle(IPC.CLEAR_QUEUE, (_, mode: string) => {
+      if (mode === "completed") this.queue.clearCompleted();
+      else if (mode === "failed") this.queue.clearFailed();
+      else this.queue.clearAll();
+    });
     ipcMain.handle(IPC.PAUSE_ALL, () => {
       this.watcher.pauseAll();
       this.tray.togglePauseLabel(true);
