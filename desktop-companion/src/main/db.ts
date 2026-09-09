@@ -79,6 +79,13 @@ export class LocalDb extends EventEmitter {
         created_at INTEGER NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS processed_files (
+        file_path TEXT PRIMARY KEY,
+        size INTEGER NOT NULL,
+        mtime INTEGER NOT NULL,
+        processed_at INTEGER NOT NULL
+      );
+
       CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(timestamp);
       CREATE INDEX IF NOT EXISTS idx_history_uploaded_at ON upload_history(uploaded_at);
     `);
@@ -169,6 +176,43 @@ export class LocalDb extends EventEmitter {
     return Number(result.lastInsertRowid);
   }
 
+  // ---- Processed files (persistent dedup across restarts) ----
+  isFileProcessed(filePath: string, size: number, mtime: number): boolean {
+    const r = this.db.prepare(
+      "SELECT 1 FROM processed_files WHERE file_path = ? AND size = ? AND mtime = ?",
+    ).get(filePath, size, mtime);
+    return !!r;
+  }
+
+  markFileProcessed(filePath: string, size: number, mtime: number) {
+    this.db.prepare(
+      "INSERT OR REPLACE INTO processed_files (file_path, size, mtime, processed_at) VALUES (?, ?, ?, ?)",
+    ).run(filePath, size, mtime, Date.now());
+  }
+
+  clearProcessedFiles() {
+    this.db.prepare("DELETE FROM processed_files").run();
+  }
+
+  getHistoryByPath(filePath: string): HistoryEntry | null {
+    const r = this.db.prepare(
+      "SELECT * FROM upload_history WHERE source_dir || '\\' || filename = ? ORDER BY uploaded_at DESC LIMIT 1",
+    ).get(filePath) as any;
+    if (!r) return null;
+    return {
+      id: r.id,
+      filename: r.filename,
+      sourceDir: r.source_dir,
+      uploadedAt: r.uploaded_at,
+      size: r.size,
+      durationMs: r.duration_ms,
+      status: r.status,
+      sha256: r.sha256,
+      runId: r.run_id,
+      v3FolderId: r.v3_folder_id,
+    };
+  }
+
   getHistory(page: number, pageSize: number): { entries: HistoryEntry[]; total: number } {
     const offset = page * pageSize;
     const entries = this.db.prepare(
@@ -194,25 +238,6 @@ export class LocalDb extends EventEmitter {
 
   clearHistory() {
     this.db.prepare("DELETE FROM upload_history").run();
-  }
-
-  getHistoryByPath(filePath: string): HistoryEntry | null {
-    const r = this.db.prepare(
-      "SELECT * FROM upload_history WHERE source_dir || '\\' || filename = ? ORDER BY uploaded_at DESC LIMIT 1",
-    ).get(filePath) as any;
-    if (!r) return null;
-    return {
-      id: r.id,
-      filename: r.filename,
-      sourceDir: r.source_dir,
-      uploadedAt: r.uploaded_at,
-      size: r.size,
-      durationMs: r.duration_ms,
-      status: r.status,
-      sha256: r.sha256,
-      runId: r.run_id,
-      v3FolderId: r.v3_folder_id,
-    };
   }
 
   // ---- Watch folder local settings ----
@@ -367,6 +392,7 @@ export class LocalDb extends EventEmitter {
   // ---- Dashboard stats ----
   resetStats() {
     this.db.prepare("DELETE FROM upload_history").run();
+    this.db.prepare("DELETE FROM processed_files").run();
     this.db.prepare("DELETE FROM logs WHERE message LIKE 'Detected %' OR message LIKE 'Stabilized %' OR message LIKE 'Upload complete%' OR message LIKE 'Upload failed%' OR message LIKE 'Retry %'").run();
   }
 

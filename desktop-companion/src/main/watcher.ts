@@ -99,23 +99,32 @@ export class WatcherManager extends EventEmitter {
     const ext = path.extname(filePath).toLowerCase();
     if (!VALID_EXTENSIONS.includes(ext)) return;
 
+    // Record file size + mtime
+    let stat: fs.Stats;
+    try {
+      stat = fs.statSync(filePath);
+      this.fileSizes.set(filePath, stat.size);
+    } catch {
+      return;
+    }
+
+    // Skip files that were already processed in a previous session.
+    // Keyed on path + size + mtime so a genuinely new/changed file
+    // at the same path still gets picked up.
+    if (this.db.isFileProcessed(filePath, stat.size, stat.mtimeMs)) {
+      return;
+    }
+
     // Check if already in history (already uploaded) — skip duplicates
     const existing = this.db.getHistoryByPath(filePath);
     if (existing && existing.status === "done") {
+      this.db.markFileProcessed(filePath, stat.size, stat.mtimeMs);
       return; // Already uploaded successfully
     }
 
     // Clear any existing stabilization timer for this file
     const existingTimer = this.stabilizationTimers.get(filePath);
     if (existingTimer) clearTimeout(existingTimer);
-
-    // Record file size
-    try {
-      const stat = fs.statSync(filePath);
-      this.fileSizes.set(filePath, stat.size);
-    } catch {
-      return;
-    }
 
     const size = this.fileSizes.get(filePath) ?? 0;
     this.db.log("INFO", `Detected ${path.basename(filePath)} (${this.formatSize(size)}) — stabilizing…`);
@@ -148,7 +157,9 @@ export class WatcherManager extends EventEmitter {
         return;
       }
 
-      // File is stable — emit event
+      // File is stable — mark as processed so it isn't re-detected on
+      // next app launch, then emit the event.
+      this.db.markFileProcessed(filePath, stat.size, stat.mtimeMs);
       this.db.log("INFO", `Stabilized ${path.basename(filePath)} — queued for upload`);
       this.emit("file-stabilized", filePath, folderId, stat.size);
     } catch (err: any) {

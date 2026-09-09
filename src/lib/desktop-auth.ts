@@ -65,6 +65,17 @@ export async function requireBearerAuth(
   const authCtx: AuthCtx = { userId: claims.sub };
 
   return withDb(authCtx, async (db) => {
+    // The JWT may outlive the user row (e.g. DB reset or recreated account).
+    // Verify the user still exists — otherwise inserts that reference
+    // uploaded_by fail with a foreign-key violation.
+    const u = await db.maybe<{ id: string }>(
+      "select id from public.app_users where id = $1",
+      [claims.sub],
+    );
+    if (!u) {
+      throw new Response("Unauthorized — user no longer exists, please sign in again", { status: 401 });
+    }
+
     // Resolve role — pick the highest-privilege role if the user has multiple.
     const r = await db.query<{ role: string }>(
       "select role from public.user_roles where user_id = $1",

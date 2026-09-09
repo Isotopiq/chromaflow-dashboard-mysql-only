@@ -46,6 +46,13 @@ export class ApiClient {
       const err = await res.json().catch(() => ({ error: res.statusText }));
       const msg = (err as any)?.error ?? `HTTP ${res.status}`;
       const details = (err as any)?.details;
+      // Clear the stored token on 401 so the app shows as logged out —
+      // the JWT may outlive the user row after a DB reset/recreation.
+      if (res.status === 401) {
+        this.config.set("token", null);
+        this.config.set("userEmail", null);
+        this.db.log("WARN", "Session expired or user no longer exists — please sign in again in Settings");
+      }
       throw new Error(details ? `${msg}: ${JSON.stringify(details).slice(0, 500)}` : msg);
     }
     return res.json() as Promise<T>;
