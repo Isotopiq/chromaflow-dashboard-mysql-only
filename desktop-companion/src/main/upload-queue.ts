@@ -244,20 +244,33 @@ export class UploadQueue extends EventEmitter {
       });
     }
 
-    // 8. Create run
+    // 8. Create run — clamp trace arrays + peaks to server-side zod limits
     item.progress = 95;
     this.emit("progress", item);
+    const clampArray = (arr: number[], max: number) => {
+      if (arr.length <= max) return arr;
+      const step = arr.length / max;
+      const out: number[] = [];
+      for (let i = 0; i < max; i++) out.push(arr[Math.floor(i * step)]);
+      return out;
+    };
+    const MAX_TRACE = 8000;
+    const MAX_PEAKS = 1000;
 
     const runResult = await this.api.createRun({
       name: item.filename.replace(/\.(mzXML|mzML)$/i, ""),
       filePath: item.filePath,
       scansBlobPath: scansUrl.path,
-      fileFormat: parsed.summary.format,
+      fileFormat: parsed.summary.format === "mzXML" ? "mzXML" : "mzML",
       fileSize: this.formatSize(item.size),
-      ionMode: parsed.summary.ionMode,
-      msLevel: parsed.summary.msLevel,
-      trace: parsed.summary.trace,
-      peaks: parsed.summary.peaks,
+      ionMode: parsed.summary.ionMode === "negative" ? "negative" : "positive",
+      msLevel: parsed.summary.msLevel ?? 1,
+      trace: {
+        x: clampArray(parsed.summary.trace.x, MAX_TRACE),
+        tic: clampArray(parsed.summary.trace.tic, MAX_TRACE),
+        bpc: clampArray(parsed.summary.trace.bpc, MAX_TRACE),
+      },
+      peaks: (parsed.summary.peaks ?? []).slice(0, MAX_PEAKS),
     });
 
     // 9. Record in history
@@ -336,6 +349,30 @@ export class UploadQueue extends EventEmitter {
     if (url.startsWith("/")) {
       const base = this.config.get("apiEndpoint").replace(/\/+$/, "");
       fullUrl = `${base}${url}`;
+    }
+
+    // For local-storage URLs, split large uploads into 8 MB chunks so each
+    // request finishes well inside the reverse proxy's timeout (Easypanel /
+    // Traefik kills requests that run too long — caused 504s on big files).
+    const isLocalUpload = url.startsWith("/api/upload");
+    const CHUNK = 8 * 1024 * 1024;
+    if (isLocalUpload && data.length > CHUNK) {
+      const total = data.length;
+      for (let offset = 0; offset < total; offset += CHUNK) {
+        const chunk = data.subarray(offset, Math.min(offset + CHUNK, total));
+        const sep = fullUrl.includes("?") ? "&" : "?";
+        const res = await fetch(`${fullUrl}${sep}offset=${offset}&total=${total}`, {
+          method: "PUT",
+          body: chunk,
+          signal,
+          headers: { "Content-Type": "application/octet-stream" },
+        });
+        if (!res.ok) {
+          throw new Error(`Upload failed: ${res.status} ${res.statusText}`);
+        }
+        onProgress((offset + chunk.length) / total);
+      }
+      return;
     }
 
     const response = await fetch(fullUrl, {

@@ -232,10 +232,12 @@ export function verifyUploadToken(token: string): { key: string; contentType: st
       .digest("hex")
       .slice(0, 32);
     if (sig !== expected) return null;
-    // Accept any token within the current or previous 5-min window.
+    // Accept tokens within a 30-min window for raw-runs (large chunked
+    // uploads can take a while); 10 min for everything else.
     const now = Math.floor(Date.now() / 1000 / 300);
     const ts = parseInt(tsStr, 10);
-    if (Math.abs(now - ts) > 1) return null;
+    const window = key.startsWith("raw-runs/") ? 6 : 1;
+    if (Math.abs(now - ts) > window) return null;
     return { key, contentType };
   } catch {
     return null;
@@ -253,6 +255,33 @@ export async function localPut(
   await fs.writeFile(fp, body);
   // Sidecar .meta file with content-type for serving later.
   await fs.writeFile(`${fp}.meta`, contentType, "utf8");
+}
+
+/**
+ * Store one chunk of a file at a byte offset. Used by the desktop
+ * companion to work around reverse-proxy timeouts on large uploads —
+ * the client splits the file into small PUTs, each carrying `offset`.
+ * On offset 0 the file is (re)created; the .meta sidecar is written
+ * when `isFinal` is true.
+ */
+export async function localPutChunk(
+  key: string,
+  body: Uint8Array,
+  contentType: string,
+  offset: number,
+  isFinal: boolean,
+): Promise<void> {
+  const fp = localPath(key);
+  await ensureDir(fp);
+  const fh = await fs.open(fp, offset === 0 ? "w" : "r+");
+  try {
+    await fh.write(body, 0, body.length, offset);
+  } finally {
+    await fh.close();
+  }
+  if (isFinal) {
+    await fs.writeFile(`${fp}.meta`, contentType, "utf8");
+  }
 }
 
 // ---- Public API (works for both S3 and local) ----

@@ -4,7 +4,7 @@
 // here with a signed token. The browser PUTs the file body to this endpoint,
 // and we store it on the local filesystem.
 import { createFileRoute } from "@tanstack/react-router";
-import { verifyUploadToken, localPut } from "@/lib/storage.server";
+import { verifyUploadToken, localPut, localPutChunk } from "@/lib/storage.server";
 
 export const Route = createFileRoute("/api/upload")({
   server: {
@@ -19,14 +19,31 @@ export const Route = createFileRoute("/api/upload")({
         if (!decoded) {
           return Response.json({ error: "Invalid or expired upload token" }, { status: 403 });
         }
+
+        // Chunked upload support — the desktop companion sends large files
+        // in multiple PUTs carrying ?offset=<bytes>&total=<bytes>. Each
+        // chunk is small enough to fit inside reverse-proxy timeouts.
+        const offset = url.searchParams.get("offset");
+        const total = url.searchParams.get("total");
+        const isChunked = offset !== null && total !== null;
+
         // Limit to 500 MB for raw run uploads; 25 MB for branding/favicon.
         const body = await request.arrayBuffer();
         const isRawRun = decoded.key.startsWith("raw-runs/");
         const maxSize = isRawRun ? 500 * 1024 * 1024 : 25 * 1024 * 1024;
-        if (body.byteLength > maxSize) {
+        const effectiveSize = isChunked ? Number(total) : body.byteLength;
+        if (effectiveSize > maxSize) {
           return Response.json({ error: `File too large (max ${isRawRun ? "500" : "25"} MB)` }, { status: 413 });
         }
+
         try {
+          if (isChunked) {
+            const off = Number(offset);
+            const tot = Number(total);
+            const isFinal = off + body.byteLength >= tot;
+            await localPutChunk(decoded.key, new Uint8Array(body), decoded.contentType, off, isFinal);
+            return Response.json({ ok: true, key: decoded.key, received: off + body.byteLength });
+          }
           await localPut(decoded.key, new Uint8Array(body), decoded.contentType);
           return Response.json({ ok: true, key: decoded.key });
         } catch (e: any) {
