@@ -152,7 +152,7 @@ export function useDashboardStats() {
     uploadsSucceeded: 0,
     uploadsFailed: 0,
     queueDepth: 0,
-    watcherStatus: "watching",
+    watcherStatus: "idle",
   });
   const [hourly, setHourly] = useState<HourlyUpload[]>([]);
   const desktop = getDesktop();

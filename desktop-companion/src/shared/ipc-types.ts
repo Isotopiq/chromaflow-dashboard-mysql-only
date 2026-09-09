@@ -44,7 +44,7 @@ export type HistoryEntry = {
   size: number;
   durationMs: number;
   status: UploadStatus;
-  sha256: string;
+  sha256: string | null;
   runId: string | null;
   v3FolderId: string | null;
 };
@@ -131,8 +131,11 @@ export const IPC = {
 
   GET_DASHBOARD_STATS: "dashboard:stats",
   GET_HOURLY_UPLOADS: "dashboard:hourly",
+  RESET_STATS: "dashboard:reset-stats",
 
   GET_LAB_DATA: "lab:data",
+
+  GET_LOGS: "logs:get",
 
   SHOW_WINDOW: "window:show",
   QUIT_APP: "app:quit",

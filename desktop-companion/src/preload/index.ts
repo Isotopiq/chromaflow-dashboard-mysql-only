@@ -47,9 +47,13 @@ const api = {
   // ---- Dashboard ----
   getDashboardStats: () => ipcRenderer.invoke(IPC.GET_DASHBOARD_STATS),
   getHourlyUploads: () => ipcRenderer.invoke(IPC.GET_HOURLY_UPLOADS),
+  resetStats: () => ipcRenderer.invoke(IPC.RESET_STATS),
 
   // ---- Lab Data ----
   getLabData: () => ipcRenderer.invoke(IPC.GET_LAB_DATA),
+
+  // ---- Logs ----
+  getLogs: (limit?: number, level?: string) => ipcRenderer.invoke(IPC.GET_LOGS, limit, level),
 
   // ---- Event listeners (main → renderer) ----
   onQueueUpdate: (callback: (items: any[]) => void) => {

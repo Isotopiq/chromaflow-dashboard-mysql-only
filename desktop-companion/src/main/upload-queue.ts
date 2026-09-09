@@ -178,6 +178,20 @@ export class UploadQueue extends EventEmitter {
               this.processNext();
             }
           }, delay);
+        } else {
+          // Retries exhausted — record the failure in history so the
+          // dashboard "failed" count reflects it.
+          this.db.addHistory({
+            filename: next.filename,
+            sourceDir: path.dirname(next.filePath),
+            uploadedAt: Date.now(),
+            size: next.size,
+            durationMs: 0,
+            status: "failed",
+            sha256: null,
+            runId: null,
+            v3FolderId: next.folderId,
+          });
         }
       }
     } finally {

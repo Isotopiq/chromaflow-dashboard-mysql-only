@@ -54,9 +54,13 @@ export interface DesktopApi {
   // Dashboard
   getDashboardStats: () => Promise<DashboardStats & { watcherStatus: WatcherStatus }>;
   getHourlyUploads: () => Promise<HourlyUpload[]>;
+  resetStats: () => Promise<DashboardStats & { watcherStatus: WatcherStatus }>;
 
   // Lab Data
   getLabData: () => Promise<LabData>;
+
+  // Logs
+  getLogs: (limit?: number, level?: string) => Promise<LogEntry[]>;
 
   // Event listeners
   onQueueUpdate: (callback: (items: QueueItem[]) => void) => () => void;

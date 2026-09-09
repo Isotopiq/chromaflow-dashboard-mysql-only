@@ -233,6 +233,9 @@ export function Settings() {
                   <span className="text-[11px] text-[#374151]">Start watching on app launch</span>
                 </label>
               </SettingsField>
+              <SettingsField label="Reset statistics" hint="Clear the dashboard counters and upload history">
+                <ResetStatsButton />
+              </SettingsField>
             </div>
           )}
 
@@ -315,5 +318,42 @@ function SettingsField({ label, hint, children }: { label: string; hint?: string
       </div>
       <div className="flex-1 min-w-0">{children}</div>
     </div>
+  );
+}
+
+function ResetStatsButton() {
+  const [confirming, setConfirming] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const onClick = async () => {
+    if (!confirming) {
+      setConfirming(true);
+      return;
+    }
+    try {
+      await window.desktop?.resetStats();
+      setDone(true);
+      setConfirming(false);
+      setTimeout(() => setDone(false), 3000);
+    } catch {
+      setConfirming(false);
+    }
+  };
+
+  return (
+    <button
+      onClick={() => void onClick()}
+      className={cn(
+        "px-3 py-1.5 text-[11px] font-medium border transition-colors",
+        done
+          ? "border-[#BBF7D0] bg-[#ECFDF3] text-[#16A34A]"
+          : confirming
+            ? "border-[#FECACA] bg-[#FEE2E2] text-[#DC2626] hover:bg-[#FECACA]"
+            : "border-[#D1D5DB] bg-white text-[#374151] hover:bg-[#F3F4F6]",
+      )}
+      style={{ borderRadius: 2 }}
+    >
+      {done ? "✓ Statistics reset" : confirming ? "Click again to confirm" : "Reset dashboard stats"}
+    </button>
   );
 }

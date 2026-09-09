@@ -365,6 +365,11 @@ export class LocalDb extends EventEmitter {
   }
 
   // ---- Dashboard stats ----
+  resetStats() {
+    this.db.prepare("DELETE FROM upload_history").run();
+    this.db.prepare("DELETE FROM logs WHERE message LIKE 'Detected %' OR message LIKE 'Stabilized %' OR message LIKE 'Upload complete%' OR message LIKE 'Upload failed%' OR message LIKE 'Retry %'").run();
+  }
+
   getDashboardStats(): {
     filesDetected: number;
     uploadsSucceeded: number;
@@ -383,8 +388,8 @@ export class LocalDb extends EventEmitter {
       "SELECT COUNT(*) as count FROM upload_history WHERE status = 'failed' AND uploaded_at >= ?",
     ).get(todayMs) as any)?.count ?? 0;
 
-    const total = (this.db.prepare(
-      "SELECT COUNT(*) as count FROM upload_history WHERE uploaded_at >= ?",
+    const detected = (this.db.prepare(
+      "SELECT COUNT(*) as count FROM logs WHERE timestamp >= ? AND message LIKE 'Detected %'",
     ).get(todayMs) as any)?.count ?? 0;
 
     const queueDepth = (this.db.prepare(
@@ -392,7 +397,7 @@ export class LocalDb extends EventEmitter {
     ).get() as any)?.count ?? 0;
 
     return {
-      filesDetected: total,
+      filesDetected: Math.max(detected, succeeded + failed),
       uploadsSucceeded: succeeded,
       uploadsFailed: failed,
       queueDepth,

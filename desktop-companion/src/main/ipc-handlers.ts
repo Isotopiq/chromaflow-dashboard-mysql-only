@@ -228,6 +228,10 @@ export class IpcHandlers {
     ipcMain.handle(IPC.GET_HOURLY_UPLOADS, () => {
       return this.db.getHourlyUploads();
     });
+    ipcMain.handle(IPC.RESET_STATS, () => {
+      this.db.resetStats();
+      return this.db.getDashboardStats();
+    });
 
     // ---- Lab Data ----
     ipcMain.handle(IPC.GET_LAB_DATA, async () => {
@@ -237,5 +241,11 @@ export class IpcHandlers {
         return { methods: [], columns: [], batches: [], compoundLists: [] };
       }
     });
+
+    // ---- Logs ----
+    ipcMain.handle(IPC.GET_LOGS, (_, limit?: number, level?: string) => {
+      return this.db.getLogs(limit ?? 200, level as any);
+    });
+    ipcMain.handle("logs:clear", () => this.db.clearLogs());
   }
 }

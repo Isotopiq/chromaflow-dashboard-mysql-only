@@ -58,6 +58,8 @@ export function useLogEntries(maxEntries = 200): { entries: LogEntry[]; clear: (
 
   useEffect(() => {
     if (!desktop) return;
+    // Load existing logs from the DB first so the panel isn't empty on open
+    desktop.getLogs?.(maxEntries).then((existing) => setLogs(existing)).catch(() => {});
     const off = desktop.onLogEntry((entry) => {
       setLogs((prev) => [entry, ...prev].slice(0, maxEntries));
     });
