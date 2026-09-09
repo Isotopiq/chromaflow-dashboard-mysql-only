@@ -44,7 +44,9 @@ export class ApiClient {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error((err as any)?.error ?? `HTTP ${res.status}`);
+      const msg = (err as any)?.error ?? `HTTP ${res.status}`;
+      const details = (err as any)?.details;
+      throw new Error(details ? `${msg}: ${JSON.stringify(details).slice(0, 500)}` : msg);
     }
     return res.json() as Promise<T>;
   }

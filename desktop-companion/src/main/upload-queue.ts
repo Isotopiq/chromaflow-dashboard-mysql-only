@@ -270,21 +270,34 @@ export class UploadQueue extends EventEmitter {
     };
     const MAX_TRACE = 8000;
     const MAX_PEAKS = 1000;
+    const num = (v: any) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+    const numOrNull = (v: any) => (typeof v === "number" && Number.isFinite(v) ? v : null);
 
     const runResult = await this.api.createRun({
-      name: item.filename.replace(/\.(mzXML|mzML)$/i, ""),
-      filePath: item.filePath,
+      name: item.filename.replace(/\.(mzXML|mzML)$/i, "").slice(0, 300) || item.filename,
+      filePath: item.filePath.slice(0, 500),
       scansBlobPath: scansUrl.path,
       fileFormat: parsed.summary.format === "mzXML" ? "mzXML" : "mzML",
-      fileSize: this.formatSize(item.size),
+      fileSize: this.formatSize(item.size).slice(0, 40),
       ionMode: parsed.summary.ionMode === "negative" ? "negative" : "positive",
-      msLevel: parsed.summary.msLevel ?? 1,
+      msLevel: Math.min(3, Math.max(1, Math.floor(num(parsed.summary.msLevel) || 1))),
       trace: {
-        x: clampArray(parsed.summary.trace.x, MAX_TRACE),
-        tic: clampArray(parsed.summary.trace.tic, MAX_TRACE),
-        bpc: clampArray(parsed.summary.trace.bpc, MAX_TRACE),
+        x: clampArray((parsed.summary.trace.x ?? []).map(num), MAX_TRACE),
+        tic: clampArray((parsed.summary.trace.tic ?? []).map(num), MAX_TRACE),
+        bpc: clampArray((parsed.summary.trace.bpc ?? []).map(num), MAX_TRACE),
       },
-      peaks: (parsed.summary.peaks ?? []).slice(0, MAX_PEAKS),
+      peaks: (parsed.summary.peaks ?? []).slice(0, MAX_PEAKS).map((p: any) => ({
+        rt: num(p.rt),
+        area: num(p.area),
+        height: num(p.height),
+        fwhm: num(p.fwhm),
+        sn: num(p.sn),
+        mz: numOrNull(p.mz),
+        mzLow: numOrNull(p.mzLow),
+        mzHigh: numOrNull(p.mzHigh),
+        r2: numOrNull(p.r2),
+        asymmetry: numOrNull(p.asymmetry),
+      })),
     });
 
     // 9. Record in history
