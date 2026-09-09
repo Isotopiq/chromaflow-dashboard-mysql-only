@@ -41,10 +41,11 @@ export class WatcherManager extends EventEmitter {
     if (!folder.enabled) return;
 
     // Chokidar v4 removed glob support — watch the directory directly
-    // and filter by extension in the add/change handlers
+    // and filter by extension in the add/change handlers.
+    // ignoreInitial: false so existing files are also detected on startup.
     const watcher = chokidar.watch(folder.path, {
       persistent: true,
-      ignoreInitial: true,
+      ignoreInitial: false,
       depth: folder.recursive ? undefined : 0,
       awaitWriteFinish: {
         stabilityThreshold: 1000,
@@ -97,6 +98,12 @@ export class WatcherManager extends EventEmitter {
     // Check extension
     const ext = path.extname(filePath).toLowerCase();
     if (!VALID_EXTENSIONS.includes(ext)) return;
+
+    // Check if already in history (already uploaded) — skip duplicates
+    const existing = this.db.getHistoryByPath(filePath);
+    if (existing && existing.status === "done") {
+      return; // Already uploaded successfully
+    }
 
     // Clear any existing stabilization timer for this file
     const existingTimer = this.stabilizationTimers.get(filePath);

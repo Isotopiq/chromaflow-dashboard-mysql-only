@@ -48,6 +48,7 @@ export function useQueue() {
 // ---- Watch folders hook ----
 export function useWatchFolders() {
   const [folders, setFolders] = useState<WatchFolder[]>([]);
+  const [error, setError] = useState<string | null>(null);
   const desktop = getDesktop();
 
   const refresh = useCallback(async () => {
@@ -55,8 +56,10 @@ export function useWatchFolders() {
     try {
       const result = await desktop.getWatchFolders();
       setFolders(result);
-    } catch {
+      setError(null);
+    } catch (e: any) {
       setFolders([]);
+      setError(e?.message ?? "Failed to load watch folders");
     }
   }, [desktop]);
 
@@ -66,25 +69,40 @@ export function useWatchFolders() {
 
   const add = useCallback(async (folder: Partial<WatchFolder>) => {
     if (!desktop) return;
-    await desktop.addWatchFolder(folder);
-    await refresh();
+    try {
+      setError(null);
+      await desktop.addWatchFolder(folder);
+      await refresh();
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to add watch folder");
+    }
   }, [desktop, refresh]);
 
   const update = useCallback(async (folder: WatchFolder) => {
     if (!desktop) return;
-    await desktop.updateWatchFolder(folder);
-    await refresh();
+    try {
+      setError(null);
+      await desktop.updateWatchFolder(folder);
+      await refresh();
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to update watch folder");
+    }
   }, [desktop, refresh]);
 
   const remove = useCallback(async (id: string) => {
     if (!desktop) return;
-    await desktop.removeWatchFolder(id);
-    await refresh();
+    try {
+      setError(null);
+      await desktop.removeWatchFolder(id);
+      await refresh();
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to remove watch folder");
+    }
   }, [desktop, refresh]);
 
   const pickDirectory = useCallback(() => desktop?.pickDirectory() ?? Promise.resolve(null), [desktop]);
 
-  return { folders, add, update, remove, pickDirectory, refresh };
+  return { folders, add, update, remove, pickDirectory, refresh, error };
 }
 
 // ---- History hook ----

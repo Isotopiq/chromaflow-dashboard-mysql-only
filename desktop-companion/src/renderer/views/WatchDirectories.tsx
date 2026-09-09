@@ -4,7 +4,7 @@ import { cn, Icons, Toggle } from "../components/ui";
 import { useWatchFolders } from "../hooks/useDesktop";
 
 export function WatchDirectories() {
-  const { folders, add, update, remove, pickDirectory } = useWatchFolders();
+  const { folders, add, update, remove, pickDirectory, error } = useWatchFolders();
 
   const onAdd = async () => {
     const dir = await pickDirectory();
@@ -33,6 +33,13 @@ export function WatchDirectories() {
           + Add Directory
         </button>
       </div>
+
+      {error && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-[#FEF2F2] border border-[#FECACA] text-[11px] text-[#DC2626]" style={{ borderRadius: 2 }}>
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="8" r="6"/><path d="M6 6l4 4M10 6l-4 4" strokeLinecap="round"/></svg>
+          {error}
+        </div>
+      )}
 
       {folders.map((dir) => (
         <WatchDirRow

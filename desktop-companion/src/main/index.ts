@@ -132,16 +132,30 @@ app.whenReady().then(async () => {
   trayManager.setWatcher(watcherManager!);
   trayManager.create();
 
-  // Start watching configured folders from the API
+  // Start watching configured folders — try API first, fall back to local
+  let startedFromApi = false;
   try {
     const folders = await apiClient.listWatchFolders();
-    for (const folder of folders) {
+    if (folders.length > 0) {
+      for (const folder of folders) {
+        if (folder.enabled) {
+          watcherManager.startWatching(folder);
+        }
+      }
+      startedFromApi = true;
+    }
+  } catch {
+    // API not reachable
+  }
+
+  // Also start any local-only folders (not synced to API)
+  const localFolders = db.getLocalWatchFolders();
+  if (localFolders.length > 0) {
+    for (const folder of localFolders) {
       if (folder.enabled) {
         watcherManager.startWatching(folder);
       }
     }
-  } catch {
-    // API not reachable — folders will start when user configures them
   }
 
   // Set up auto-updater (production only)

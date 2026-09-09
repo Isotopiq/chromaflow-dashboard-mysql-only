@@ -34,6 +34,12 @@ export class UploadQueue extends EventEmitter {
   }
 
   enqueue(filePath: string, folderId: string, size: number) {
+    // Don't enqueue if already in the queue
+    const existing = this.queue.find(
+      (q) => q.filePath === filePath && (q.status === "queued" || q.status === "parsing" || q.status === "uploading"),
+    );
+    if (existing) return;
+
     const id = crypto.randomUUID();
     const item: QueueItem = {
       id,

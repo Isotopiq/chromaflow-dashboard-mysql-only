@@ -66,6 +66,19 @@ export class LocalDb extends EventEmitter {
         value TEXT
       );
 
+      CREATE TABLE IF NOT EXISTS watch_folders_local (
+        id TEXT PRIMARY KEY,
+        path TEXT NOT NULL,
+        enabled INTEGER DEFAULT 1,
+        recursive INTEGER DEFAULT 1,
+        stabilize_seconds INTEGER DEFAULT 30,
+        file_pattern TEXT DEFAULT '*.mzXML',
+        method_id TEXT,
+        column_id TEXT,
+        batch_id TEXT,
+        created_at INTEGER NOT NULL
+      );
+
       CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(timestamp);
       CREATE INDEX IF NOT EXISTS idx_history_uploaded_at ON upload_history(uploaded_at);
     `);
@@ -244,6 +257,94 @@ export class LocalDb extends EventEmitter {
       merged.archivePath,
       merged.maxRetries,
     );
+  }
+
+  // ---- Local watch folders (work without API) ----
+  addLocalWatchFolder(folder: {
+    id: string;
+    path: string;
+    enabled: boolean;
+    recursive: boolean;
+    stabilizeSeconds: number;
+    filePattern?: string;
+    methodId?: string | null;
+    columnId?: string | null;
+    batchId?: string | null;
+    archiveBehavior?: string;
+    archivePath?: string | null;
+    maxRetries?: number;
+  }): void {
+    this.db.prepare(`
+      INSERT OR REPLACE INTO watch_folders_local
+        (id, path, enabled, recursive, stabilize_seconds, file_pattern, method_id, column_id, batch_id, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      folder.id,
+      folder.path,
+      folder.enabled ? 1 : 0,
+      folder.recursive ? 1 : 0,
+      folder.stabilizeSeconds,
+      folder.filePattern ?? "*.mzXML",
+      folder.methodId ?? null,
+      folder.columnId ?? null,
+      folder.batchId ?? null,
+      Date.now(),
+    );
+  }
+
+  getLocalWatchFolders(): WatchFolder[] {
+    const rows = this.db.prepare("SELECT * FROM watch_folders_local ORDER BY created_at ASC").all() as any[];
+    return rows.map((r) => ({
+      id: r.id,
+      path: r.path,
+      enabled: !!r.enabled,
+      recursive: !!r.recursive,
+      stabilizeSeconds: r.stabilize_seconds,
+      filePattern: r.file_pattern,
+      methodId: r.method_id,
+      columnId: r.column_id,
+      batchId: r.batch_id,
+      archiveBehavior: "leave" as const,
+      archivePath: null,
+      maxRetries: 3,
+    }));
+  }
+
+  updateLocalWatchFolder(id: string, patch: Partial<{
+    enabled: boolean;
+    recursive: boolean;
+    stabilizeSeconds: number;
+    filePattern: string;
+    methodId: string | null;
+    columnId: string | null;
+    batchId: string | null;
+  }>): void {
+    const current = this.db.prepare("SELECT * FROM watch_folders_local WHERE id = ?").get(id) as any;
+    if (!current) return;
+    this.db.prepare(`
+      UPDATE watch_folders_local SET
+        enabled = ?,
+        recursive = ?,
+        stabilize_seconds = ?,
+        file_pattern = ?,
+        method_id = ?,
+        column_id = ?,
+        batch_id = ?
+      WHERE id = ?
+    `).run(
+      (patch.enabled ?? !!current.enabled) ? 1 : 0,
+      (patch.recursive ?? !!current.recursive) ? 1 : 0,
+      patch.stabilizeSeconds ?? current.stabilize_seconds,
+      patch.filePattern ?? current.file_pattern,
+      patch.methodId !== undefined ? patch.methodId : current.method_id,
+      patch.columnId !== undefined ? patch.columnId : current.column_id,
+      patch.batchId !== undefined ? patch.batchId : current.batch_id,
+      id,
+    );
+  }
+
+  removeLocalWatchFolder(id: string): void {
+    this.db.prepare("DELETE FROM watch_folders_local WHERE id = ?").run(id);
   }
 
   // ---- Settings ----

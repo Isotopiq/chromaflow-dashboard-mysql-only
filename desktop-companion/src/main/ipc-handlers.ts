@@ -1,11 +1,13 @@
 // IPC handlers — bridges the renderer and the main process services.
 import { BrowserWindow, dialog, IpcMain } from "electron";
+import crypto from "node:crypto";
 import type { LocalDb } from "./db";
 import type { ConfigManager } from "./config";
 import type { ApiClient } from "./api-client";
 import type { WatcherManager } from "./watcher";
 import type { UploadQueue } from "./upload-queue";
 import type { TrayManager } from "./tray";
+import type { WatchFolder } from "../shared/ipc-types";
 import { IPC } from "../shared/ipc-types";
 import { setQuitting } from "./index";
 
@@ -63,31 +65,90 @@ export class IpcHandlers {
 
     // ---- Watch folders ----
     ipcMain.handle(IPC.GET_WATCH_FOLDERS, async () => {
+      // Try API first, fall back to local
       try {
-        return await this.api.listWatchFolders();
+        const apiFolders = await this.api.listWatchFolders();
+        if (apiFolders.length > 0) return apiFolders;
       } catch {
-        return [];
+        // API not available — use local
       }
+      return this.db.getLocalWatchFolders();
     });
     ipcMain.handle(IPC.ADD_WATCH_FOLDER, async (_, folder: any) => {
-      const created = await this.api.upsertWatchFolder(folder);
-      // Start watching if enabled
-      if (created.enabled) {
-        this.watcher.startWatching(created);
+      const id = folder.id ?? crypto.randomUUID();
+      const localFolder: WatchFolder = {
+        id,
+        path: folder.path,
+        enabled: folder.enabled ?? true,
+        recursive: folder.recursive ?? true,
+        stabilizeSeconds: folder.stabilizeSeconds ?? 30,
+        filePattern: folder.filePattern ?? "*.mzXML",
+        methodId: folder.methodId ?? null,
+        columnId: folder.columnId ?? null,
+        batchId: folder.batchId ?? null,
+        archiveBehavior: folder.archiveBehavior ?? "leave",
+        archivePath: folder.archivePath ?? null,
+        maxRetries: folder.maxRetries ?? 3,
+      };
+
+      // Save locally first (always)
+      this.db.addLocalWatchFolder(localFolder);
+
+      // Try to sync to API
+      try {
+        const created = await this.api.upsertWatchFolder(folder);
+        // Start watching with the API-returned folder (has server ID)
+        if (created.enabled) {
+          this.watcher.startWatching(created);
+        }
+        return created;
+      } catch {
+        // API not available — use local folder
+        this.db.log("WARN", `Could not sync watch folder to V3 API, using local only: ${localFolder.path}`);
+        if (localFolder.enabled) {
+          this.watcher.startWatching(localFolder);
+        }
+        return localFolder;
       }
-      return created;
     });
     ipcMain.handle(IPC.UPDATE_WATCH_FOLDER, async (_, folder: any) => {
-      const updated = await this.api.upsertWatchFolder(folder);
-      this.watcher.stopWatching(updated.id);
-      if (updated.enabled) {
-        this.watcher.startWatching(updated);
+      // Update locally first
+      this.db.updateLocalWatchFolder(folder.id, {
+        enabled: folder.enabled,
+        recursive: folder.recursive,
+        stabilizeSeconds: folder.stabilizeSeconds,
+        filePattern: folder.filePattern,
+        methodId: folder.methodId,
+        columnId: folder.columnId,
+        batchId: folder.batchId,
+      });
+
+      this.watcher.stopWatching(folder.id);
+
+      // Try to sync to API
+      try {
+        const updated = await this.api.upsertWatchFolder(folder);
+        if (updated.enabled) {
+          this.watcher.startWatching(updated);
+        }
+        return updated;
+      } catch {
+        // API not available — use local folder
+        const localFolder = this.db.getLocalWatchFolders().find((f) => f.id === folder.id);
+        if (localFolder?.enabled) {
+          this.watcher.startWatching(localFolder);
+        }
+        return localFolder ?? folder;
       }
-      return updated;
     });
     ipcMain.handle(IPC.REMOVE_WATCH_FOLDER, async (_, id: string) => {
       this.watcher.stopWatching(id);
-      return this.api.deleteWatchFolder(id);
+      this.db.removeLocalWatchFolder(id);
+      try {
+        return await this.api.deleteWatchFolder(id);
+      } catch {
+        return { ok: true };
+      }
     });
     ipcMain.handle(IPC.PICK_DIRECTORY, async () => {
       const result = await dialog.showOpenDialog(this.window!, {
