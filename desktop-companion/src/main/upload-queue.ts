@@ -290,7 +290,16 @@ export class UploadQueue extends EventEmitter {
     signal: AbortSignal,
     onProgress: (progress: number) => void,
   ) {
-    const response = await fetch(url, {
+    // The server may return a relative URL (e.g. /api/upload?token=...) when
+    // using local filesystem storage instead of S3. Resolve it against the
+    // configured API endpoint.
+    let fullUrl = url;
+    if (url.startsWith("/")) {
+      const base = this.config.get("apiEndpoint").replace(/\/+$/, "");
+      fullUrl = `${base}${url}`;
+    }
+
+    const response = await fetch(fullUrl, {
       method: "PUT",
       body: data,
       signal,

@@ -19,10 +19,12 @@ export const Route = createFileRoute("/api/upload")({
         if (!decoded) {
           return Response.json({ error: "Invalid or expired upload token" }, { status: 403 });
         }
-        // Limit to 25 MB for branding/favicon uploads.
+        // Limit to 500 MB for raw run uploads; 25 MB for branding/favicon.
         const body = await request.arrayBuffer();
-        if (body.byteLength > 25 * 1024 * 1024) {
-          return Response.json({ error: "File too large (max 25 MB)" }, { status: 413 });
+        const isRawRun = decoded.key.startsWith("raw-runs/");
+        const maxSize = isRawRun ? 500 * 1024 * 1024 : 25 * 1024 * 1024;
+        if (body.byteLength > maxSize) {
+          return Response.json({ error: `File too large (max ${isRawRun ? "500" : "25"} MB)` }, { status: 413 });
         }
         try {
           await localPut(decoded.key, new Uint8Array(body), decoded.contentType);
