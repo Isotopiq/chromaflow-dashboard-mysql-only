@@ -17,7 +17,7 @@ export class WatcherManager extends EventEmitter {
   private folders: Map<string, WatchFolder> = new Map();
   private stabilizationTimers: Map<string, NodeJS.Timeout> = new Map();
   private fileSizes: Map<string, number> = new Map();
-  private paused = false;
+  private paused = true;
   private status: WatcherStatus = "idle";
 
   constructor(db: LocalDb, config: ConfigManager) {

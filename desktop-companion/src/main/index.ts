@@ -132,7 +132,9 @@ app.whenReady().then(async () => {
   trayManager.setWatcher(watcherManager!);
   trayManager.create();
 
-  // Start watching configured folders — try API first, fall back to local
+  // Start watching configured folders — try API first, fall back to local.
+  // The manager starts in paused mode so the user can edit folders before
+  // anything is actually enqueued; they must click Resume All.
   let startedFromApi = false;
   try {
     const folders = await apiClient.listWatchFolders();
@@ -157,6 +159,8 @@ app.whenReady().then(async () => {
       }
     }
   }
+
+  db.log("INFO", "Watchers loaded in paused mode — click Resume All when ready");
 
   // Set up auto-updater (production only)
   if (!isDev) {
