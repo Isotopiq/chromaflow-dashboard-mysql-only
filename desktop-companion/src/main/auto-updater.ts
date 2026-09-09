@@ -20,8 +20,8 @@ export function setupAutoUpdater(window: BrowserWindow) {
     });
   });
 
-  autoUpdater.on("error", (err) => {
-    console.error("[auto-updater]", err);
+  autoUpdater.on("error", () => {
+    // Silent — the repo has no releases endpoint, so every check 404s.
   });
 
   // Check for updates after a short delay (let the app start first)
