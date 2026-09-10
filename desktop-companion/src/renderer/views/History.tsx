@@ -17,12 +17,13 @@ export function History() {
     if (!d) { setEntries([]); setTotal(0); return; }
     let active = true;
     d.getHistory(page - 1, PAGE_SIZE)
-      .then((res) => { if (active) { setEntries(res.entries); setTotal(res.total); } })
+      .then((res) => { if (active) { setEntries(res?.entries ?? []); setTotal(res?.total ?? 0); } })
       .catch(() => { if (active) { setEntries([]); setTotal(0); } });
     return () => { active = false; };
   }, [page]);
 
-  const copy = (h: string) => {
+  const copy = (h: string | null) => {
+    if (!h) return;
     navigator.clipboard.writeText(h);
     setCopied(h);
     window.setTimeout(() => setCopied(null), 1500);
@@ -92,10 +93,16 @@ export function History() {
                 <td className="px-3 py-2"><StatusBadge status={row.status} /></td>
                 <td className="px-3 py-2">
                   <div className="flex items-center gap-1.5 group">
-                    <span className="text-[11px] font-mono text-[#6B7280]">{row.sha256.slice(0, 8)}…</span>
-                    <button onClick={() => copy(row.sha256)} className="opacity-0 group-hover:opacity-100 transition-opacity text-[#9CA3AF] hover:text-[#2563EB]">
-                      {copied === row.sha256 ? <span className="text-[9px] text-[#16A34A] font-bold">✓</span> : Icons.copy}
-                    </button>
+                    {row.sha256 ? (
+                      <>
+                        <span className="text-[11px] font-mono text-[#6B7280]">{row.sha256.slice(0, 8)}…</span>
+                        <button onClick={() => copy(row.sha256)} className="opacity-0 group-hover:opacity-100 transition-opacity text-[#9CA3AF] hover:text-[#2563EB]">
+                          {copied === row.sha256 ? <span className="text-[9px] text-[#16A34A] font-bold">✓</span> : Icons.copy}
+                        </button>
+                      </>
+                    ) : (
+                      <span className="text-[11px] text-[#9CA3AF]">—</span>
+                    )}
                   </div>
                 </td>
               </tr>
