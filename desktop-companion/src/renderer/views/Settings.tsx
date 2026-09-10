@@ -214,13 +214,6 @@ export function Settings() {
                   <span className="text-[11px] text-[#6B7280]">seconds</span>
                 </div>
               </SettingsField>
-              <SettingsField label="Default max retries" hint="How many times to retry a failed upload before marking it as failed">
-                <div className="flex items-center">
-                  <button onClick={() => update({ defaultMaxRetries: Math.max(0, draft.defaultMaxRetries - 1) })} className="w-8 h-7 border border-[#D1D5DB] bg-white text-[#374151] hover:bg-[#F3F4F6]" style={{ borderRadius: "2px 0 0 2px" }}>−</button>
-                  <div className="w-10 h-7 border-t border-b border-[#D1D5DB] bg-[#F9FAFB] flex items-center justify-center text-[12px] font-medium text-[#111827]">{draft.defaultMaxRetries}</div>
-                  <button onClick={() => update({ defaultMaxRetries: Math.min(10, draft.defaultMaxRetries + 1) })} className="w-8 h-7 border border-[#D1D5DB] bg-white text-[#374151] hover:bg-[#F3F4F6]" style={{ borderRadius: "0 2px 2px 0" }}>+</button>
-                </div>
-              </SettingsField>
               <SettingsField label="Concurrent uploads" hint="Maximum number of files uploading at the same time">
                 <div className="flex items-center gap-2">
                   <input type="number" min={1} max={10} value={draft.maxConcurrentUploads} onChange={(e) => update({ maxConcurrentUploads: Math.max(1, Math.min(10, Number(e.target.value) || 1)) })} className={cn(inp, "w-20")} style={{ borderRadius: 2 }} />

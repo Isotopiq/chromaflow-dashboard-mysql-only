@@ -22,34 +22,11 @@ export class IpcHandlers {
     private window: BrowserWindow | null,
   ) {}
 
-  registerAll(ipcMain: IpcMain) {
-    // ---- Window controls ----
-    ipcMain.handle(IPC.MINIMIZE, () => this.window?.minimize());
-    ipcMain.handle(IPC.MAXIMIZE, () => {
-      if (this.window?.isMaximized()) this.window?.unmaximize();
-      else this.window?.maximize();
-    });
-    ipcMain.handle(IPC.CLOSE, () => {
-      // Check if user has minimize-to-tray enabled
-      const minimizeToTray = this.config.get("minimizeToTray");
-      if (minimizeToTray) {
-        // Hide to tray instead of quitting
-        this.window?.hide();
-      } else {
-        // Actually quit the app
-        setQuitting(true);
-        require("electron").app.quit();
-      }
-    });
-    ipcMain.handle(IPC.SHOW_WINDOW, () => {
-      this.window?.show();
-      this.window?.focus();
-    });
-    ipcMain.handle(IPC.QUIT_APP, () => {
-      setQuitting(true);
-      require("electron").app.quit();
-    });
+  setWindow(window: BrowserWindow) {
+    this.window = window;
+  }
 
+  registerDataHandlers(ipcMain: IpcMain) {
     // ---- Queue ----
     ipcMain.handle(IPC.GET_QUEUE, () => this.queue.getQueue());
     ipcMain.handle(IPC.CANCEL_UPLOAD, (_, id: string) => this.queue.cancel(id));
@@ -94,7 +71,7 @@ export class IpcHandlers {
         batchId: folder.batchId ?? null,
         archiveBehavior: folder.archiveBehavior ?? "leave",
         archivePath: folder.archivePath ?? null,
-        maxRetries: folder.maxRetries ?? 3,
+        maxRetries: folder.maxRetries ?? 0,
       };
 
       // Save locally first (always)
@@ -156,13 +133,6 @@ export class IpcHandlers {
         return { ok: true };
       }
     });
-    ipcMain.handle(IPC.PICK_DIRECTORY, async () => {
-      const result = await dialog.showOpenDialog(this.window!, {
-        properties: ["openDirectory"],
-      });
-      if (result.canceled || result.filePaths.length === 0) return null;
-      return result.filePaths[0];
-    });
 
     // ---- History ----
     ipcMain.handle(IPC.GET_HISTORY, (_, page: number, pageSize: number) => {
@@ -177,24 +147,6 @@ export class IpcHandlers {
         ),
       ].join("\n");
       return csv;
-    });
-    ipcMain.handle(IPC.SAVE_HISTORY_CSV, async () => {
-      const { entries } = this.db.getHistory(0, 100000);
-      const csv = [
-        "filename,source_dir,uploaded_at,size,duration_ms,status,sha256,run_id",
-        ...entries.map((e: any) =>
-          `${e.filename},${e.sourceDir},${new Date(e.uploadedAt).toISOString()},${e.size},${e.durationMs},${e.status},${e.sha256 ?? ""},${e.runId ?? ""}`,
-        ),
-      ].join("\n");
-      const result = await dialog.showSaveDialog(this.window!, {
-        title: "Export History CSV",
-        defaultPath: "v3-companion-history.csv",
-        filters: [{ name: "CSV Files", extensions: ["csv"] }],
-      });
-      if (result.canceled || !result.filePath) return null;
-      const fs = require("node:fs") as typeof import("node:fs");
-      fs.writeFileSync(result.filePath, csv, "utf8");
-      return result.filePath;
     });
     ipcMain.handle(IPC.CLEAR_HISTORY, () => this.db.clearHistory());
 
@@ -247,5 +199,66 @@ export class IpcHandlers {
       return this.db.getLogs(limit ?? 200, level as any);
     });
     ipcMain.handle("logs:clear", () => this.db.clearLogs());
+  }
+
+  registerWindowHandlers(ipcMain: IpcMain) {
+    // ---- Window controls ----
+    ipcMain.handle(IPC.MINIMIZE, () => this.window?.minimize());
+    ipcMain.handle(IPC.MAXIMIZE, () => {
+      if (this.window?.isMaximized()) this.window?.unmaximize();
+      else this.window?.maximize();
+    });
+    ipcMain.handle(IPC.CLOSE, () => {
+      // Check if user has minimize-to-tray enabled
+      const minimizeToTray = this.config.get("minimizeToTray");
+      if (minimizeToTray) {
+        // Hide to tray instead of quitting
+        this.window?.hide();
+      } else {
+        // Actually quit the app
+        setQuitting(true);
+        require("electron").app.quit();
+      }
+    });
+    ipcMain.handle(IPC.SHOW_WINDOW, () => {
+      this.window?.show();
+      this.window?.focus();
+    });
+    ipcMain.handle(IPC.QUIT_APP, () => {
+      setQuitting(true);
+      require("electron").app.quit();
+    });
+
+    // ---- Dialogs ----
+    ipcMain.handle(IPC.PICK_DIRECTORY, async () => {
+      const result = await dialog.showOpenDialog(this.window!, {
+        properties: ["openDirectory"],
+      });
+      if (result.canceled || result.filePaths.length === 0) return null;
+      return result.filePaths[0];
+    });
+    ipcMain.handle(IPC.SAVE_HISTORY_CSV, async () => {
+      const { entries } = this.db.getHistory(0, 100000);
+      const csv = [
+        "filename,source_dir,uploaded_at,size,duration_ms,status,sha256,run_id",
+        ...entries.map((e: any) =>
+          `${e.filename},${e.sourceDir},${new Date(e.uploadedAt).toISOString()},${e.size},${e.durationMs},${e.status},${e.sha256 ?? ""},${e.runId ?? ""}`,
+        ),
+      ].join("\n");
+      const result = await dialog.showSaveDialog(this.window!, {
+        title: "Export History CSV",
+        defaultPath: "v3-companion-history.csv",
+        filters: [{ name: "CSV Files", extensions: ["csv"] }],
+      });
+      if (result.canceled || !result.filePath) return null;
+      const fs = require("node:fs") as typeof import("node:fs");
+      fs.writeFileSync(result.filePath, csv, "utf8");
+      return result.filePath;
+    });
+  }
+
+  registerAll(ipcMain: IpcMain) {
+    this.registerDataHandlers(ipcMain);
+    this.registerWindowHandlers(ipcMain);
   }
 }

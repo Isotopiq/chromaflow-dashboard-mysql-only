@@ -40,6 +40,7 @@ export type HistoryEntry = {
   id: number;
   filename: string;
   sourceDir: string;
+  filePath: string;
   uploadedAt: number;
   size: number;
   durationMs: number;

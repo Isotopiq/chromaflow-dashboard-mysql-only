@@ -8,21 +8,24 @@ import crypto from "node:crypto";
 import type { LocalDb } from "./db";
 import type { ApiClient } from "./api-client";
 import type { ConfigManager } from "./config";
+import type { WatcherManager } from "./watcher";
 import type { QueueItem, UploadStatus } from "../shared/ipc-types";
 
 export class UploadQueue extends EventEmitter {
   private db: LocalDb;
   private api: ApiClient;
   private config: ConfigManager;
+  private watcher: WatcherManager;
   private queue: QueueItem[] = [];
   private active: Map<string, AbortController> = new Map();
   private processing = false;
 
-  constructor(db: LocalDb, api: ApiClient, config: ConfigManager) {
+  constructor(db: LocalDb, api: ApiClient, config: ConfigManager, watcher: WatcherManager) {
     super();
     this.db = db;
     this.api = api;
     this.config = config;
+    this.watcher = watcher;
 
     // Load persisted queue items on startup
     this.queue = this.db.getQueueItems();
@@ -74,6 +77,19 @@ export class UploadQueue extends EventEmitter {
       item.status = "cancelled";
       item.error = "Cancelled by user";
       this.db.saveQueueItem(item);
+      this.markFileAsProcessed(item.filePath, item.size);
+      this.db.addHistory({
+        filename: item.filename,
+        sourceDir: path.dirname(item.filePath),
+        filePath: item.filePath,
+        uploadedAt: Date.now(),
+        size: item.size,
+        durationMs: 0,
+        status: "cancelled",
+        sha256: null,
+        runId: null,
+        v3FolderId: item.folderId,
+      });
     }
     this.queue = this.queue.filter((q) => q.id !== id);
     this.db.deleteQueueItem(id);
@@ -99,13 +115,31 @@ export class UploadQueue extends EventEmitter {
       controller.abort();
       this.active.delete(id);
     }
+    const item = this.queue.find((q) => q.id === id);
+    if (item) {
+      this.markFileAsProcessed(item.filePath, item.size);
+    }
     this.queue = this.queue.filter((q) => q.id !== id);
     this.db.deleteQueueItem(id);
     this.emit("queue-update", this.getQueue());
   }
 
+  private markFileAsProcessed(filePath: string, size: number) {
+    try {
+      const stat = fs.statSync(filePath);
+      this.watcher.markFileAsProcessed(filePath, stat.size, stat.mtimeMs);
+    } catch {
+      // File may have been deleted; use the last known size and now() as mtime.
+      this.watcher.markFileAsProcessed(filePath, size, Date.now());
+    }
+  }
+
   clearCompleted() {
     const doneIds = this.queue.filter((q) => q.status === "done").map((q) => q.id);
+    for (const id of doneIds) {
+      const item = this.queue.find((q) => q.id === id);
+      if (item) this.markFileAsProcessed(item.filePath, item.size);
+    }
     this.queue = this.queue.filter((q) => q.status !== "done");
     for (const id of doneIds) this.db.deleteQueueItem(id);
     this.emit("queue-update", this.getQueue());
@@ -113,6 +147,10 @@ export class UploadQueue extends EventEmitter {
 
   clearFailed() {
     const failedIds = this.queue.filter((q) => q.status === "failed" || q.status === "cancelled").map((q) => q.id);
+    for (const id of failedIds) {
+      const item = this.queue.find((q) => q.id === id);
+      if (item) this.markFileAsProcessed(item.filePath, item.size);
+    }
     this.queue = this.queue.filter((q) => q.status !== "failed" && q.status !== "cancelled");
     for (const id of failedIds) this.db.deleteQueueItem(id);
     this.emit("queue-update", this.getQueue());
@@ -124,6 +162,10 @@ export class UploadQueue extends EventEmitter {
       controller.abort();
     }
     this.active.clear();
+    // Mark every pending/completed/failed item as processed before removing
+    for (const item of this.queue) {
+      this.markFileAsProcessed(item.filePath, item.size);
+    }
     // Remove all items
     const allIds = this.queue.map((q) => q.id);
     this.queue = [];
@@ -154,6 +196,10 @@ export class UploadQueue extends EventEmitter {
       next.progress = 100;
       this.db.saveQueueItem(next);
       this.db.log("INFO", `Upload complete: ${next.filename}`);
+      // Remove completed upload from the queue (it already lives in history from processItem).
+      this.queue = this.queue.filter((q) => q.id !== next.id);
+      this.db.deleteQueueItem(next.id);
+      this.markFileAsProcessed(next.filePath, next.size);
     } catch (err: any) {
       if ((next.status as string) === "cancelled") {
         // Already handled
@@ -163,36 +209,21 @@ export class UploadQueue extends EventEmitter {
         this.db.saveQueueItem(next);
         this.db.log("ERROR", `Upload failed: ${next.filename} — ${next.error}`);
 
-        // Auto-retry with exponential backoff
-        const maxRetries = this.config.get("defaultMaxRetries");
-        if (next.retries < maxRetries) {
-          next.retries++;
-          const delay = Math.min(1000 * 2 ** next.retries, 30_000);
-          this.db.log("WARN", `Retry ${next.retries}/${maxRetries} for ${next.filename} in ${delay / 1000}s`);
-          setTimeout(() => {
-            if (next.status === "failed") {
-              next.status = "queued";
-              next.error = null;
-              this.db.saveQueueItem(next);
-              this.emit("queue-update", this.getQueue());
-              this.processNext();
-            }
-          }, delay);
-        } else {
-          // Retries exhausted — record the failure in history so the
-          // dashboard "failed" count reflects it.
-          this.db.addHistory({
-            filename: next.filename,
-            sourceDir: path.dirname(next.filePath),
-            uploadedAt: Date.now(),
-            size: next.size,
-            durationMs: 0,
-            status: "failed",
-            sha256: null,
-            runId: null,
-            v3FolderId: next.folderId,
-          });
-        }
+        // Record the failure in history so the dashboard reflects it.
+        this.db.addHistory({
+          filename: next.filename,
+          sourceDir: path.dirname(next.filePath),
+          filePath: next.filePath,
+          uploadedAt: Date.now(),
+          size: next.size,
+          durationMs: 0,
+          status: "failed",
+          sha256: null,
+          runId: null,
+          v3FolderId: next.folderId,
+        });
+        // Mark as processed so the watcher will not attempt to upload it again.
+        this.markFileAsProcessed(next.filePath, next.size);
       }
     } finally {
       this.active.delete(next.id);
@@ -304,6 +335,7 @@ export class UploadQueue extends EventEmitter {
     this.db.addHistory({
       filename: item.filename,
       sourceDir: path.dirname(item.filePath),
+      filePath: item.filePath,
       uploadedAt: Date.now(),
       size: item.size,
       durationMs: 0, // TODO: track duration

@@ -108,23 +108,25 @@ export class WatcherManager extends EventEmitter {
       return;
     }
 
-    // Skip files that were already processed in a previous session.
-    // Keyed on path + size + mtime so a genuinely new/changed file
-    // at the same path still gets picked up.
+    // Skip files that were already processed (success, failure, cancel, or manual remove).
     if (this.db.isFileProcessed(filePath, stat.size, stat.mtimeMs)) {
       return;
     }
 
-    // Check if already in history (already uploaded) — skip duplicates
+    // Skip files that are already in history and mark them so they are not
+    // re-checked on the next startup.
     const existing = this.db.getHistoryByPath(filePath);
-    if (existing && existing.status === "done") {
-      this.db.markFileProcessed(filePath, stat.size, stat.mtimeMs);
-      return; // Already uploaded successfully
+    if (existing) {
+      this.markFileAsProcessed(filePath, stat.size, stat.mtimeMs);
+      return;
     }
 
-    // Clear any existing stabilization timer for this file
-    const existingTimer = this.stabilizationTimers.get(filePath);
-    if (existingTimer) clearTimeout(existingTimer);
+    // If this file is already stabilizing, just reset its timer instead of
+    // logging a second "Detected" entry.
+    if (this.stabilizationTimers.has(filePath)) {
+      const existingTimer = this.stabilizationTimers.get(filePath);
+      if (existingTimer) clearTimeout(existingTimer);
+    }
 
     const size = this.fileSizes.get(filePath) ?? 0;
     this.db.log("INFO", `Detected ${path.basename(filePath)} (${this.formatSize(size)}) — stabilizing…`);
@@ -159,12 +161,25 @@ export class WatcherManager extends EventEmitter {
 
       // File is stable — mark as processed so it isn't re-detected on
       // next app launch, then emit the event.
-      this.db.markFileProcessed(filePath, stat.size, stat.mtimeMs);
+      this.markFileAsProcessed(filePath, stat.size, stat.mtimeMs);
       this.db.log("INFO", `Stabilized ${path.basename(filePath)} — queued for upload`);
       this.emit("file-stabilized", filePath, folderId, stat.size);
     } catch (err: any) {
       this.db.log("ERROR", `File disappeared during stabilization: ${filePath}`);
     }
+  }
+
+  /**
+   * Mark a file as permanently processed and cancel any pending stabilization.
+   * Called on stabilize, upload completion, failure, cancellation, or manual removal.
+   */
+  markFileAsProcessed(filePath: string, size: number, mtime: number) {
+    const existingTimer = this.stabilizationTimers.get(filePath);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+      this.stabilizationTimers.delete(filePath);
+    }
+    this.db.markFileProcessed(filePath, size, mtime);
   }
 
   pauseAll() {

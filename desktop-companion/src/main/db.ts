@@ -15,6 +15,7 @@ export class LocalDb extends EventEmitter {
     this.db = new Database(dbPath);
     this.db.pragma("journal_mode = WAL");
     this.init();
+    this.migrate();
   }
 
   private init() {
@@ -23,6 +24,7 @@ export class LocalDb extends EventEmitter {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         filename TEXT NOT NULL,
         source_dir TEXT NOT NULL,
+        file_path TEXT NOT NULL,
         uploaded_at INTEGER NOT NULL,
         size INTEGER NOT NULL,
         duration_ms INTEGER NOT NULL,
@@ -93,6 +95,21 @@ export class LocalDb extends EventEmitter {
     // Prune old logs (>7 days)
     const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
     this.db.prepare("DELETE FROM logs WHERE timestamp < ?").run(cutoff);
+  }
+
+  private migrate() {
+    try {
+      this.db.exec("ALTER TABLE upload_history ADD COLUMN file_path TEXT");
+    } catch {
+      // Column already exists
+    }
+    // Backfill file_path for rows that predate the column.
+    this.db.exec(`
+      UPDATE upload_history
+      SET file_path = source_dir || '\\' || filename
+      WHERE file_path IS NULL OR file_path = ''
+    `);
+    this.db.exec("CREATE INDEX IF NOT EXISTS idx_history_file_path ON upload_history(file_path)");
   }
 
   // ---- Logs ----
@@ -167,10 +184,10 @@ export class LocalDb extends EventEmitter {
   addHistory(entry: Omit<HistoryEntry, "id">): number {
     const result = this.db.prepare(`
       INSERT INTO upload_history
-        (filename, source_dir, uploaded_at, size, duration_ms, status, sha256, run_id, v3_folder_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (filename, source_dir, file_path, uploaded_at, size, duration_ms, status, sha256, run_id, v3_folder_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      entry.filename, entry.sourceDir, entry.uploadedAt, entry.size,
+      entry.filename, entry.sourceDir, entry.filePath, entry.uploadedAt, entry.size,
       entry.durationMs, entry.status, entry.sha256, entry.runId, entry.v3FolderId,
     );
     return Number(result.lastInsertRowid);
@@ -196,13 +213,14 @@ export class LocalDb extends EventEmitter {
 
   getHistoryByPath(filePath: string): HistoryEntry | null {
     const r = this.db.prepare(
-      "SELECT * FROM upload_history WHERE source_dir || '\\' || filename = ? ORDER BY uploaded_at DESC LIMIT 1",
+      "SELECT * FROM upload_history WHERE file_path = ? ORDER BY uploaded_at DESC LIMIT 1",
     ).get(filePath) as any;
     if (!r) return null;
     return {
       id: r.id,
       filename: r.filename,
       sourceDir: r.source_dir,
+      filePath: r.file_path,
       uploadedAt: r.uploaded_at,
       size: r.size,
       durationMs: r.duration_ms,
@@ -224,6 +242,7 @@ export class LocalDb extends EventEmitter {
         id: r.id,
         filename: r.filename,
         sourceDir: r.source_dir,
+        filePath: r.file_path,
         uploadedAt: r.uploaded_at,
         size: r.size,
         durationMs: r.duration_ms,

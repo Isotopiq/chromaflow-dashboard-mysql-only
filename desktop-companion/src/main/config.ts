@@ -11,7 +11,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   userEmail: null,
   maxConcurrentUploads: 3,
   defaultStabilizeSeconds: 30,
-  defaultMaxRetries: 3,
+  defaultMaxRetries: 0,
   notifications: true,
   logLevel: "INFO",
   minimizeToTray: true,

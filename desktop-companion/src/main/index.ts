@@ -5,6 +5,7 @@ import { app, BrowserWindow, ipcMain, dialog, shell } from "electron";
 import path from "node:path";
 import { TrayManager } from "./tray";
 import { IpcHandlers } from "./ipc-handlers";
+import { IPC } from "../shared/ipc-types";
 import { WatcherManager } from "./watcher";
 import { UploadQueue } from "./upload-queue";
 import { ApiClient } from "./api-client";
@@ -93,7 +94,7 @@ app.whenReady().then(async () => {
   }
 
   watcherManager = new WatcherManager(db, config);
-  uploadQueue = new UploadQueue(db, apiClient, config);
+  uploadQueue = new UploadQueue(db, apiClient, config, watcherManager);
   trayManager = new TrayManager();
 
   // Wire watcher → queue: when a file is stabilized, enqueue it
@@ -120,12 +121,18 @@ app.whenReady().then(async () => {
     mainWindow?.webContents.send("log:entry", entry);
   });
 
+  // Set up data IPC handlers BEFORE the window is created, so the
+  // renderer's initial `getQueue()` / `getDashboardStats()` calls always
+  // resolve. Window-dependent handlers are registered later.
+  const handlers = new IpcHandlers(db, config, apiClient, watcherManager, uploadQueue, trayManager, null);
+  handlers.registerDataHandlers(ipcMain);
+
   // Create the window FIRST so IpcHandlers and TrayManager can reference it
   await createWindow();
 
-  // Set up IPC handlers (after window exists)
-  const handlers = new IpcHandlers(db, config, apiClient, watcherManager!, uploadQueue, trayManager, mainWindow);
-  handlers.registerAll(ipcMain);
+  // Now that the window exists, register handlers that depend on it
+  handlers.setWindow(mainWindow!);
+  handlers.registerWindowHandlers(ipcMain);
 
   // Create the tray icon (after window exists)
   trayManager.setWindow(mainWindow!);
@@ -161,6 +168,15 @@ app.whenReady().then(async () => {
   }
 
   db.log("INFO", "Watchers loaded in paused mode — click Resume All when ready");
+
+  // Push initial state to the renderer after it has had time to mount.
+  // The data handlers were registered before the window, so `getQueue()`
+  // already works; this event is a safety net for the listener path.
+  setTimeout(() => {
+    if (!mainWindow || !uploadQueue || !watcherManager) return;
+    mainWindow.webContents.send(IPC.ON_QUEUE_UPDATE, uploadQueue.getQueue());
+    mainWindow.webContents.send(IPC.ON_WATCHER_STATUS, watcherManager.getStatus());
+  }, 500);
 
   // Set up auto-updater (production only)
   if (!isDev) {
