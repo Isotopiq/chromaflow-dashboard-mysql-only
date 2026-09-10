@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { DashboardStats, WatchFolder } from "@shared/ipc-types";
-import { Icons, HourlyBarChart } from "../components/ui";
+import { cn, Icons, HourlyBarChart } from "../components/ui";
 import { useDashboardStats, useHourlyUploads, useWatchFolders, useWatcherStatus } from "../hooks/useDesktop";
 
 export interface DashboardProps {
@@ -13,10 +13,10 @@ export function Dashboard({ onOpenModal }: DashboardProps) {
   const { folders } = useWatchFolders();
   const watcherStatus = useWatcherStatus();
   const paused = watcherStatus === "paused";
+  const watcherOk = watcherStatus === "watching";
   const activeDirs = folders.filter((f) => f.enabled).length;
 
   const cards = buildStatCards(stats);
-  const watcherOk = stats.watcherStatus === "watching";
 
   const togglePause = () => {
     if (paused) window.desktop?.resumeAll();
@@ -59,7 +59,16 @@ export function Dashboard({ onOpenModal }: DashboardProps) {
             ? <>Actively watching <strong className="text-[#111827]">{activeDirs} directories</strong> for .mzXML files</>
             : <strong className="text-[#111827]">Watcher paused</strong>}
         </span>
-        <button onClick={togglePause} className="px-3 py-1 text-[11px] font-medium text-[#DC2626] border border-[#FECACA] bg-[#FEF2F2] hover:bg-[#FEE2E2] transition-colors" style={{ borderRadius: 2 }}>
+        <button
+          onClick={togglePause}
+          className={cn(
+            "px-3 py-1 text-[11px] font-medium border transition-colors",
+            paused
+              ? "text-[#15803D] border-[#BBF7D0] bg-[#ECFDF3] hover:bg-[#D1FAE5]"
+              : "text-[#DC2626] border-[#FECACA] bg-[#FEF2F2] hover:bg-[#FEE2E2]"
+          )}
+          style={{ borderRadius: 2 }}
+        >
           {paused ? "Resume Watcher" : "Stop Watcher"}
         </button>
         <button onClick={onOpenModal} className="px-3 py-1 text-[11px] font-medium text-white bg-[#2563EB] hover:bg-[#1D4ED8] transition-colors" style={{ borderRadius: 2 }}>

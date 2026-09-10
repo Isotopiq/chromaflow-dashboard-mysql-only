@@ -110,6 +110,7 @@ export const IPC = {
   CLEAR_QUEUE: "queue:clear",
   PAUSE_ALL: "watcher:pause-all",
   RESUME_ALL: "watcher:resume-all",
+  GET_WATCHER_STATUS: "watcher:get-status",
 
   GET_WATCH_FOLDERS: "folders:get",
   ADD_WATCH_FOLDER: "folders:add",

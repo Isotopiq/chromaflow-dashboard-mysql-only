@@ -18,6 +18,7 @@ const api = {
   clearQueue: (mode: string) => ipcRenderer.invoke(IPC.CLEAR_QUEUE, mode),
   pauseAll: () => ipcRenderer.invoke(IPC.PAUSE_ALL),
   resumeAll: () => ipcRenderer.invoke(IPC.RESUME_ALL),
+  getWatcherStatus: () => ipcRenderer.invoke(IPC.GET_WATCHER_STATUS),
 
   // ---- Watch folders ----
   getWatchFolders: () => ipcRenderer.invoke(IPC.GET_WATCH_FOLDERS),

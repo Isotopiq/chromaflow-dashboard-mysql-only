@@ -39,11 +39,12 @@ export function usePauseAll() {
 
 // Watcher status hook
 export function useWatcherStatus(): WatcherStatus {
-  const [status, setStatus] = useState<WatcherStatus>("watching");
+  const [status, setStatus] = useState<WatcherStatus>("idle");
   const desktop = getDesktop();
 
   useEffect(() => {
     if (!desktop) return;
+    desktop.getWatcherStatus?.().then((s) => setStatus(s)).catch(() => {});
     const off = desktop.onWatcherStatus((s) => setStatus(s));
     return () => off?.();
   }, [desktop]);

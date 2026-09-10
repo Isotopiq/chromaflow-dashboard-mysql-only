@@ -37,6 +37,7 @@ export class IpcHandlers {
       else if (mode === "failed") this.queue.clearFailed();
       else this.queue.clearAll();
     });
+    ipcMain.handle(IPC.GET_WATCHER_STATUS, () => this.watcher.getStatus());
     ipcMain.handle(IPC.PAUSE_ALL, () => {
       this.watcher.pauseAll();
       this.tray.togglePauseLabel(true);

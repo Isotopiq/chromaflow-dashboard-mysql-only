@@ -27,6 +27,7 @@ export interface DesktopApi {
   clearQueue: (mode: string) => Promise<void>;
   pauseAll: () => Promise<void>;
   resumeAll: () => Promise<void>;
+  getWatcherStatus: () => Promise<WatcherStatus>;
 
   // Watch folders
   getWatchFolders: () => Promise<WatchFolder[]>;
