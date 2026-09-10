@@ -54,7 +54,7 @@ export function App() {
 
   useEffect(() => { if (view !== "dashboard") setModalOpen(false); }, [view]);
 
-  const pending = items.filter((i) => i.status === "queued" || i.status === "uploading").length;
+  const pending = items.filter((i) => i.status === "queued" || i.status === "uploading" || i.status === "parsing").length;
 
   const togglePause = () => {
     if (paused) window.desktop?.resumeAll();
@@ -108,9 +108,9 @@ export function App() {
 
           {/* Bottom status */}
           <div className="px-3 py-3 border-t border-[#E5E7EB] flex flex-col gap-1">
-            <div className={cn("flex items-center gap-1.5 text-[11px] font-medium", watcherStatus === "watching" ? "text-[#16A34A]" : watcherStatus === "paused" ? "text-[#D97706]" : watcherStatus === "error" ? "text-[#DC2626]" : "text-[#9CA3AF]")}>
-              <span className={cn("w-2 h-2 rounded-full shrink-0", watcherStatus === "watching" ? "bg-[#16A34A] pulse-dot" : watcherStatus === "paused" ? "bg-[#D97706]" : watcherStatus === "error" ? "bg-[#DC2626]" : "bg-[#9CA3AF]")} />
-              {watcherStatus === "watching" ? "Watching" : watcherStatus === "paused" ? "Paused" : watcherStatus === "error" ? "Error" : "Idle"}
+            <div className={cn("flex items-center gap-1.5 text-[11px] font-medium", pending > 0 ? "text-[#2563EB]" : watcherStatus === "watching" ? "text-[#16A34A]" : watcherStatus === "paused" ? "text-[#D97706]" : watcherStatus === "error" ? "text-[#DC2626]" : "text-[#9CA3AF]")}>
+              <span className={cn("w-2 h-2 rounded-full shrink-0", pending > 0 ? "bg-[#2563EB] pulse-dot" : watcherStatus === "watching" ? "bg-[#16A34A] pulse-dot" : watcherStatus === "paused" ? "bg-[#D97706]" : watcherStatus === "error" ? "bg-[#DC2626]" : "bg-[#9CA3AF]")} />
+              {pending > 0 ? `Processing ${pending} file${pending !== 1 ? "s" : ""}` : watcherStatus === "watching" ? "Watching" : watcherStatus === "paused" ? "Paused" : watcherStatus === "error" ? "Error" : "Idle"}
             </div>
           </div>
         </div>

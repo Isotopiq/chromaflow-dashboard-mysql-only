@@ -18,7 +18,9 @@ export class UploadQueue extends EventEmitter {
   private watcher: WatcherManager;
   private queue: QueueItem[] = [];
   private active: Map<string, AbortController> = new Map();
+  private activeWorkers: Map<string, Worker> = new Map();
   private processing = false;
+  private paused = true;
 
   constructor(db: LocalDb, api: ApiClient, config: ConfigManager, watcher: WatcherManager) {
     super();
@@ -27,8 +29,17 @@ export class UploadQueue extends EventEmitter {
     this.config = config;
     this.watcher = watcher;
 
-    // Load persisted queue items on startup
-    this.queue = this.db.getQueueItems();
+    // Load persisted queue items on startup. Any item left in a transient
+    // state (parsing/uploading) by a previous session is reset to queued so
+    // it can be picked up again once the user resumes.
+    this.queue = this.db.getQueueItems().map((item) => {
+      if (item.status === "parsing" || item.status === "uploading") {
+        const recovered = { ...item, status: "queued" as const, progress: 0, error: null };
+        this.db.saveQueueItem(recovered);
+        return recovered;
+      }
+      return item;
+    });
   }
 
   start() {
@@ -36,7 +47,13 @@ export class UploadQueue extends EventEmitter {
     this.processNext();
   }
 
-  enqueue(filePath: string, folderId: string, size: number) {
+  setPaused(paused: boolean) {
+    this.paused = paused;
+    if (!paused) this.processNext();
+    this.emit("queue-update", this.getQueue());
+  }
+
+  enqueue(filePath: string, folderId: string, size: number, opts?: { force?: boolean }) {
     // Don't enqueue if already in the queue
     const existing = this.queue.find(
       (q) => q.filePath === filePath && (q.status === "queued" || q.status === "parsing" || q.status === "uploading"),
@@ -55,6 +72,7 @@ export class UploadQueue extends EventEmitter {
       error: null,
       createdAt: Date.now(),
       retries: 0,
+      force: opts?.force,
     };
     this.queue.push(item);
     this.db.saveQueueItem(item);
@@ -72,6 +90,8 @@ export class UploadQueue extends EventEmitter {
       controller.abort();
       this.active.delete(id);
     }
+    this.activeWorkers.get(id)?.terminate();
+    this.activeWorkers.delete(id);
     const item = this.queue.find((q) => q.id === id);
     if (item) {
       item.status = "cancelled";
@@ -115,6 +135,8 @@ export class UploadQueue extends EventEmitter {
       controller.abort();
       this.active.delete(id);
     }
+    this.activeWorkers.get(id)?.terminate();
+    this.activeWorkers.delete(id);
     const item = this.queue.find((q) => q.id === id);
     if (item) {
       this.markFileAsProcessed(item.filePath, item.size);
@@ -157,11 +179,15 @@ export class UploadQueue extends EventEmitter {
   }
 
   clearAll() {
-    // Abort all active uploads
+    // Abort all active uploads and parsing workers
     for (const [, controller] of this.active) {
       controller.abort();
     }
     this.active.clear();
+    for (const [, worker] of this.activeWorkers) {
+      worker.terminate();
+    }
+    this.activeWorkers.clear();
     // Mark every pending/completed/failed item as processed before removing
     for (const item of this.queue) {
       this.markFileAsProcessed(item.filePath, item.size);
@@ -174,7 +200,7 @@ export class UploadQueue extends EventEmitter {
   }
 
   private async processNext() {
-    if (!this.processing) return;
+    if (!this.processing || this.paused) return;
 
     const maxConcurrent = this.config.get("maxConcurrentUploads");
     const activeCount = this.active.size;
@@ -201,8 +227,9 @@ export class UploadQueue extends EventEmitter {
       this.db.deleteQueueItem(next.id);
       this.markFileAsProcessed(next.filePath, next.size);
     } catch (err: any) {
-      if ((next.status as string) === "cancelled") {
-        // Already handled
+      const stillInQueue = this.queue.some((q) => q.id === next.id);
+      if (!stillInQueue || controller.signal.aborted || (next.status as string) === "cancelled") {
+        // The item was cancelled or removed while processing — do not resurrect it.
       } else {
         next.status = "failed";
         next.error = err?.message ?? "Upload failed";
@@ -227,6 +254,7 @@ export class UploadQueue extends EventEmitter {
       }
     } finally {
       this.active.delete(next.id);
+      this.activeWorkers.delete(next.id);
       this.emit("queue-update", this.getQueue());
       this.processNext();
     }
@@ -237,22 +265,26 @@ export class UploadQueue extends EventEmitter {
     item.status = "parsing";
     this.emit("progress", item);
 
-    const parsed = await this.parseFile(item.filePath);
+    const parsed = await this.parseFile(item.id, item.filePath);
+    if (signal.aborted) throw new Error("Cancelled by user");
 
     // 2. Compute SHA-256 hash
     const hash = await this.computeHash(item.filePath);
+    if (signal.aborted) throw new Error("Cancelled by user");
 
-    // 3. Check for duplicates
-    try {
-      const existing = await this.api.findRunByPath(item.filePath);
-      if (existing.run) {
-        this.db.log("INFO", `File already uploaded: ${item.filename} (run exists)`);
-        item.status = "done";
-        item.progress = 100;
-        return;
+    // 3. Check for duplicates (skipped when the user explicitly re-uploads)
+    if (!item.force) {
+      try {
+        const existing = await this.api.findRunByPath(item.filePath);
+        if (existing.run) {
+          this.db.log("INFO", `File already uploaded: ${item.filename} (run exists)`);
+          item.status = "done";
+          item.progress = 100;
+          return;
+        }
+      } catch {
+        // Ignore dedup check errors — proceed with upload
       }
-    } catch {
-      // Ignore dedup check errors — proceed with upload
     }
 
     // 4. Get upload URLs
@@ -290,6 +322,7 @@ export class UploadQueue extends EventEmitter {
     }
 
     // 8. Create run — clamp trace arrays + peaks to server-side zod limits
+    if (signal.aborted) throw new Error("Cancelled by user");
     item.progress = 95;
     this.emit("progress", item);
     const clampArray = (arr: number[], max: number) => {
@@ -349,7 +382,7 @@ export class UploadQueue extends EventEmitter {
     this.emit("progress", item);
   }
 
-  private async parseFile(filePath: string): Promise<{
+  private async parseFile(itemId: string, filePath: string): Promise<{
     summary: {
       format: string;
       ionMode: string;
@@ -361,10 +394,27 @@ export class UploadQueue extends EventEmitter {
     ms2Blob: Uint8Array;
   }> {
     return new Promise((resolve, reject) => {
-      const workerPath = path.join(__dirname, "parser-worker.js");
+      // The worker lives inside the asar in packaged builds unless unpacked;
+      // prefer the unpacked path when it exists.
+      const bundled = path.join(__dirname, "parser-worker.js");
+      const unpacked = bundled.replace("app.asar", "app.asar.unpacked");
+      const workerPath = fs.existsSync(unpacked) ? unpacked : bundled;
       const worker = new Worker(workerPath, { workerData: filePath });
+      this.activeWorkers.set(itemId, worker);
+
+      const timeout = setTimeout(() => {
+        worker.terminate();
+        this.activeWorkers.delete(itemId);
+        reject(new Error("Parse timeout (5 min)"));
+      }, 5 * 60 * 1000);
+
+      const cleanup = () => {
+        clearTimeout(timeout);
+        this.activeWorkers.delete(itemId);
+      };
 
       worker.on("message", (msg: any) => {
+        cleanup();
         if (msg.ok) {
           resolve(msg);
         } else {
@@ -374,14 +424,16 @@ export class UploadQueue extends EventEmitter {
       });
 
       worker.on("error", (err) => {
+        cleanup();
         reject(err);
       });
 
-      // Timeout after 5 minutes
-      setTimeout(() => {
-        worker.terminate();
-        reject(new Error("Parse timeout (5 min)"));
-      }, 5 * 60 * 1000);
+      worker.on("exit", (code) => {
+        if (code !== 0) {
+          cleanup();
+          reject(new Error(`Parser worker exited with code ${code}`));
+        }
+      });
     });
   }
 

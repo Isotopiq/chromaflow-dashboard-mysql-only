@@ -98,7 +98,7 @@ export class TrayManager {
 
   updateTooltip(status: string, watchedCount: number) {
     if (!this.tray) return;
-    const statusLabel = status === "watching" ? "Watching" : status === "paused" ? "Paused" : "Error";
+    const statusLabel = status === "watching" ? "Watching" : status === "paused" ? "Paused" : status === "idle" ? "Idle" : "Error";
     this.tray.setToolTip(`V3 Companion — ${statusLabel} ${watchedCount} director${watchedCount === 1 ? "y" : "ies"}`);
   }
 

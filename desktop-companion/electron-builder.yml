@@ -10,6 +10,8 @@ files:
   - dist/shared/**/*
   - resources/**/*
   - package.json
+asarUnpack:
+  - dist/main/parser-worker.js
 win:
   target:
     - nsis

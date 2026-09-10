@@ -211,6 +211,36 @@ export class LocalDb extends EventEmitter {
     this.db.prepare("DELETE FROM processed_files").run();
   }
 
+  unmarkFileProcessed(filePath: string) {
+    this.db.prepare("DELETE FROM processed_files WHERE file_path = ?").run(filePath);
+  }
+
+  getHistoryById(id: number): HistoryEntry | null {
+    const r = this.db.prepare(
+      "SELECT * FROM upload_history WHERE id = ?",
+    ).get(id) as any;
+    if (!r) return null;
+    return {
+      id: r.id,
+      filename: r.filename,
+      sourceDir: r.source_dir,
+      filePath: r.file_path,
+      uploadedAt: r.uploaded_at,
+      size: r.size,
+      durationMs: r.duration_ms,
+      status: r.status,
+      sha256: r.sha256,
+      runId: r.run_id,
+      v3FolderId: r.v3_folder_id,
+    };
+  }
+
+  deleteHistoryItems(ids: number[]) {
+    if (ids.length === 0) return;
+    const placeholders = ids.map(() => "?").join(", ");
+    this.db.prepare(`DELETE FROM upload_history WHERE id IN (${placeholders})`).run(...ids);
+  }
+
   getHistoryByPath(filePath: string): HistoryEntry | null {
     const r = this.db.prepare(
       "SELECT * FROM upload_history WHERE file_path = ? ORDER BY uploaded_at DESC LIMIT 1",

@@ -1,6 +1,7 @@
 // IPC handlers — bridges the renderer and the main process services.
 import { BrowserWindow, dialog, IpcMain } from "electron";
 import crypto from "node:crypto";
+import fs from "node:fs";
 import type { LocalDb } from "./db";
 import type { ConfigManager } from "./config";
 import type { ApiClient } from "./api-client";
@@ -40,10 +41,12 @@ export class IpcHandlers {
     ipcMain.handle(IPC.GET_WATCHER_STATUS, () => this.watcher.getStatus());
     ipcMain.handle(IPC.PAUSE_ALL, () => {
       this.watcher.pauseAll();
+      this.queue.setPaused(true);
       this.tray.togglePauseLabel(true);
     });
     ipcMain.handle(IPC.RESUME_ALL, () => {
       this.watcher.resumeAll();
+      this.queue.setPaused(false);
       this.tray.togglePauseLabel(false);
     });
 
@@ -138,6 +141,28 @@ export class IpcHandlers {
     // ---- History ----
     ipcMain.handle(IPC.GET_HISTORY, (_, page: number, pageSize: number) => {
       return this.db.getHistory(page, pageSize);
+    });
+    ipcMain.handle(IPC.DELETE_HISTORY_ITEMS, (_, ids: number[]) => {
+      if (this.config.get("forgetProcessedOnDelete")) {
+        for (const id of ids) {
+          const entry = this.db.getHistoryById(id);
+          if (entry) this.db.unmarkFileProcessed(entry.filePath);
+        }
+      }
+      this.db.deleteHistoryItems(ids);
+      return { ok: true };
+    });
+    ipcMain.handle(IPC.REUPLOAD_HISTORY_ITEM, (_, id: number) => {
+      const entry = this.db.getHistoryById(id);
+      if (!entry) return { ok: false, error: "History entry not found" };
+      try {
+        const stat = fs.statSync(entry.filePath);
+        this.db.unmarkFileProcessed(entry.filePath);
+        this.queue.enqueue(entry.filePath, entry.v3FolderId ?? "manual", stat.size, { force: true });
+        return { ok: true };
+      } catch {
+        return { ok: false, error: "File no longer exists on disk" };
+      }
     });
     ipcMain.handle(IPC.EXPORT_HISTORY_CSV, () => {
       const { entries } = this.db.getHistory(0, 100000);

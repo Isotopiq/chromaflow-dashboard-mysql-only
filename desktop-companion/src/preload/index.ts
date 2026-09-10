@@ -30,6 +30,8 @@ const api = {
   // ---- History ----
   getHistory: (page: number, pageSize: number) =>
     ipcRenderer.invoke(IPC.GET_HISTORY, page, pageSize),
+  deleteHistoryItems: (ids: number[]) => ipcRenderer.invoke(IPC.DELETE_HISTORY_ITEMS, ids),
+  reuploadHistoryItem: (id: number) => ipcRenderer.invoke(IPC.REUPLOAD_HISTORY_ITEM, id),
   exportHistoryCsv: () => ipcRenderer.invoke(IPC.EXPORT_HISTORY_CSV),
   saveHistoryCsv: () => ipcRenderer.invoke(IPC.SAVE_HISTORY_CSV),
   clearHistory: () => ipcRenderer.invoke(IPC.CLEAR_HISTORY),

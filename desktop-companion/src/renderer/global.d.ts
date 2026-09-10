@@ -38,6 +38,8 @@ export interface DesktopApi {
 
   // History
   getHistory: (page: number, pageSize: number) => Promise<{ entries: HistoryEntry[]; total: number }>;
+  deleteHistoryItems: (ids: number[]) => Promise<{ ok: boolean }>;
+  reuploadHistoryItem: (id: number) => Promise<{ ok: boolean; error?: string }>;
   exportHistoryCsv: () => Promise<string>;
   saveHistoryCsv: () => Promise<string | null>;
   clearHistory: () => Promise<void>;

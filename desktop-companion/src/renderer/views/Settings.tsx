@@ -17,6 +17,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   minimizeToTray: true,
   autoStart: false,
   stayLoggedIn: true,
+  forgetProcessedOnDelete: true,
 };
 
 const settingsSections: { id: SettingsSection; label: string; desc: string }[] = [
@@ -224,6 +225,12 @@ export function Settings() {
                 <label className="flex items-center gap-2 cursor-pointer">
                   <Toggle checked={draft.autoStart} onChange={(v) => update({ autoStart: v })} />
                   <span className="text-[11px] text-[#374151]">Start watching on app launch</span>
+                </label>
+              </SettingsField>
+              <SettingsField label="History deletion" hint="What happens when a row is removed from Upload History">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <Toggle checked={draft.forgetProcessedOnDelete} onChange={(v) => update({ forgetProcessedOnDelete: v })} />
+                  <span className="text-[11px] text-[#374151]">Forget processed marker when deleting history</span>
                 </label>
               </SettingsField>
               <SettingsField label="Reset statistics" hint="Clear the dashboard counters and upload history">

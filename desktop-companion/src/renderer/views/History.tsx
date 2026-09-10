@@ -11,6 +11,13 @@ export function History() {
   const [query, setQuery] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
   const [hovered, setHovered] = useState<number | null>(null);
+  const [selected, setSelected] = useState<number[]>([]);
+  const [refresh, setRefresh] = useState(0);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSelected([]);
+  }, [page, query]);
 
   useEffect(() => {
     const d = window.desktop;
@@ -20,7 +27,7 @@ export function History() {
       .then((res) => { if (active) { setEntries(res?.entries ?? []); setTotal(res?.total ?? 0); } })
       .catch(() => { if (active) { setEntries([]); setTotal(0); } });
     return () => { active = false; };
-  }, [page]);
+  }, [page, refresh]);
 
   const copy = (h: string | null) => {
     if (!h) return;
@@ -33,6 +40,44 @@ export function History() {
     const d = window.desktop;
     if (!d) return;
     try { await d.saveHistoryCsv(); } catch { /* noop */ }
+  };
+
+  const toggle = (id: number) => {
+    setSelected((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
+  };
+
+  const toggleAll = () => {
+    const visibleIds = filtered.map((e) => e.id);
+    const allSelected = visibleIds.every((id) => selected.includes(id));
+    setSelected(allSelected ? selected.filter((id) => !visibleIds.includes(id)) : Array.from(new Set([...selected, ...visibleIds])));
+  };
+
+  const deleteIds = async (ids: number[]) => {
+    const d = window.desktop;
+    if (!d || ids.length === 0) return;
+    setActionError(null);
+    try {
+      await d.deleteHistoryItems(ids);
+      setSelected((p) => p.filter((id) => !ids.includes(id)));
+      setRefresh((n) => n + 1);
+    } catch (e: any) {
+      setActionError(e?.message ?? "Failed to delete history");
+    }
+  };
+
+  const deleteSelected = () => deleteIds(selected);
+
+  const reupload = async (id: number) => {
+    const d = window.desktop;
+    if (!d) return;
+    setActionError(null);
+    try {
+      const result = await d.reuploadHistoryItem(id);
+      if (!result.ok) setActionError(result.error ?? "Reupload failed");
+      else setRefresh((n) => n + 1);
+    } catch (e: any) {
+      setActionError(e?.message ?? "Reupload failed");
+    }
   };
 
   const filtered = query
@@ -49,6 +94,14 @@ export function History() {
         <span className="text-[11px] text-[#6B7280]">Total uploads</span>
         <span className="bg-[#EBF1FE] text-[#2563EB] text-[10px] font-semibold px-1.5 py-0.5 border border-[#BFCFFB]" style={{ borderRadius: 2 }}>{total}</span>
         <div className="flex-1" />
+        {actionError && (
+          <span className="text-[11px] text-[#DC2626] font-medium">{actionError}</span>
+        )}
+        {selected.length > 0 && (
+          <button onClick={() => void deleteSelected()} className="px-2.5 py-1 text-[11px] text-[#DC2626] border border-[#FECACA] bg-[#FEF2F2] hover:bg-[#FEE2E2] transition-colors" style={{ borderRadius: 2 }}>
+            Delete {selected.length} selected
+          </button>
+        )}
         <button onClick={() => void exportCsv()} className="px-2.5 py-1 text-[11px] text-[#374151] border border-[#D1D5DB] bg-white hover:bg-[#F9FAFB] transition-colors" style={{ borderRadius: 2 }}>↓ Export CSV</button>
         <div className="relative">
           <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[#9CA3AF]">{Icons.search}</span>
@@ -65,9 +118,28 @@ export function History() {
 
       <div className="overflow-auto flex-1">
         <table className="w-full min-w-max border-collapse">
+          <colgroup>
+            <col className="w-8" />
+            <col />
+            <col className="w-[140px]" />
+            <col className="w-28" />
+            <col className="w-16" />
+            <col className="w-16" />
+            <col className="w-24" />
+            <col className="w-24" />
+            <col className="w-24" />
+          </colgroup>
           <thead>
             <tr className="bg-[#F3F4F6] sticky top-0 z-10">
-              {["Filename", "Source Directory", "Uploaded At", "Size", "Duration", "Status", "SHA-256"].map((h) => (
+              <th className="px-3 py-2 text-left">
+                <input
+                  type="checkbox"
+                  checked={filtered.length > 0 && filtered.every((e) => selected.includes(e.id))}
+                  onChange={toggleAll}
+                  className="w-3.5 h-3.5 accent-[#2563EB] cursor-pointer"
+                />
+              </th>
+              {["Filename", "Source Directory", "Uploaded At", "Size", "Duration", "Status", "SHA-256", "Actions"].map((h) => (
                 <th key={h} className="text-left text-[10px] font-semibold uppercase tracking-wider text-[#6B7280] px-3 py-2 whitespace-nowrap border-b border-[#E5E7EB]">{h}</th>
               ))}
             </tr>
@@ -75,7 +147,7 @@ export function History() {
           <tbody>
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={7} className="text-center text-[11px] text-[#9CA3AF] py-10">No history entries</td>
+                <td colSpan={9} className="text-center text-[11px] text-[#9CA3AF] py-10">No history entries</td>
               </tr>
             )}
             {filtered.map((row, i) => (
@@ -85,6 +157,9 @@ export function History() {
                 onMouseLeave={() => setHovered(null)}
                 className={cn("border-b border-[#F3F4F6] transition-colors", hovered === i ? "bg-[#EBF1FE]" : i % 2 === 0 ? "bg-white" : "bg-[#F9FAFB]")}
               >
+                <td className="px-3 py-2">
+                  <input type="checkbox" checked={selected.includes(row.id)} onChange={() => toggle(row.id)} className="w-3.5 h-3.5 accent-[#2563EB] cursor-pointer" />
+                </td>
                 <td className="px-3 py-2"><span className="text-[11px] text-[#111827] font-mono">{row.filename}</span></td>
                 <td className="px-3 py-2 max-w-[130px]"><span className="text-[11px] text-[#6B7280] truncate block">{row.sourceDir}</span></td>
                 <td className="px-3 py-2"><span className="text-[11px] text-[#6B7280] whitespace-nowrap">{timeAgo(row.uploadedAt)}</span></td>
@@ -103,6 +178,12 @@ export function History() {
                     ) : (
                       <span className="text-[11px] text-[#9CA3AF]">—</span>
                     )}
+                  </div>
+                </td>
+                <td className="px-3 py-2">
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => void reupload(row.id)} className="p-1 text-[#2563EB] hover:bg-[#EBF1FE] rounded-sm transition-colors" title="Reupload file">{Icons.retry}</button>
+                    <button onClick={() => void deleteIds([row.id])} className="p-1 text-[#9CA3AF] hover:text-[#DC2626] hover:bg-[#FEF2F2] rounded-sm transition-colors" title="Delete history row">{Icons.trash}</button>
                   </div>
                 </td>
               </tr>

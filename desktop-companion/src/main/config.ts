@@ -17,6 +17,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   minimizeToTray: true,
   autoStart: false,
   stayLoggedIn: true,
+  forgetProcessedOnDelete: true,
 };
 
 export class ConfigManager {

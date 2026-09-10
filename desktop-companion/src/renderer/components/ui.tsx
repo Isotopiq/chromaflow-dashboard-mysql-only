@@ -57,7 +57,11 @@ export function ProgressBar({ value, status }: { value: number; status: string }
   const color = status === "done" ? "bg-[#16A34A]" : status === "failed" ? "bg-[#DC2626]" : "bg-[#2563EB]";
   return (
     <div className="w-full h-1.5 bg-[#E5E7EB] overflow-hidden rounded-sm">
-      <div className={cn("h-full transition-all", color)} style={{ width: `${value}%` }} />
+      {status === "parsing" ? (
+        <div className="h-full w-1/3 bg-[#2563EB] rounded-sm animate-pulse" />
+      ) : (
+        <div className={cn("h-full transition-all", color)} style={{ width: `${value}%` }} />
+      )}
     </div>
   );
 }

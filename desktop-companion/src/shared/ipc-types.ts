@@ -18,6 +18,7 @@ export type QueueItem = {
   error: string | null;
   createdAt: number;
   retries: number;
+  force?: boolean;
 };
 
 export type WatchFolder = {
@@ -79,6 +80,7 @@ export type AppSettings = {
   minimizeToTray: boolean;
   autoStart: boolean;
   stayLoggedIn: boolean;
+  forgetProcessedOnDelete: boolean;
 };
 
 export type LabData = {
@@ -122,6 +124,8 @@ export const IPC = {
   EXPORT_HISTORY_CSV: "history:export-csv",
   SAVE_HISTORY_CSV: "history:save-csv",
   CLEAR_HISTORY: "history:clear",
+  DELETE_HISTORY_ITEMS: "history:delete-items",
+  REUPLOAD_HISTORY_ITEM: "history:reupload-item",
 
   GET_SETTINGS: "settings:get",
   SAVE_SETTINGS: "settings:save",

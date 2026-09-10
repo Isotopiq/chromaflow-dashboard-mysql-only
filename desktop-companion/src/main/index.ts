@@ -138,6 +138,7 @@ app.whenReady().then(async () => {
   trayManager.setWindow(mainWindow!);
   trayManager.setWatcher(watcherManager!);
   trayManager.create();
+  trayManager.togglePauseLabel(true);
 
   // Start watching configured folders — try API first, fall back to local.
   // The manager starts in paused mode so the user can edit folders before
@@ -184,8 +185,9 @@ app.whenReady().then(async () => {
     setupAutoUpdater(mainWindow!);
   }
 
-  // Start upload queue processor
+  // Start upload queue processor — initially paused; Resume All ungates it.
   uploadQueue.start();
+  uploadQueue.setPaused(true);
 });
 
 // App lifecycle

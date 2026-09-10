@@ -149,13 +149,12 @@ export class WatcherManager extends EventEmitter {
         // File is still being written — restart timer
         this.fileSizes.set(filePath, stat.size);
         const folder = this.folders.get(folderId);
-        if (folder) {
-          const delay = (folder.stabilizeSeconds || this.config.get("defaultStabilizeSeconds")) * 1000;
-          const timer = setTimeout(() => {
-            this.checkStabilized(filePath, folderId, stat.size);
-          }, delay);
-          this.stabilizationTimers.set(filePath, timer);
-        }
+        if (!folder) return;
+        const delay = (folder.stabilizeSeconds || this.config.get("defaultStabilizeSeconds")) * 1000;
+        const timer = setTimeout(() => {
+          this.checkStabilized(filePath, folderId, stat.size);
+        }, delay);
+        this.stabilizationTimers.set(filePath, timer);
         return;
       }
 
@@ -191,6 +190,11 @@ export class WatcherManager extends EventEmitter {
 
   resumeAll() {
     this.paused = false;
+    // Re-scan all configured folders so files that were dropped (or already
+    // present) while paused are detected now.
+    for (const folder of Array.from(this.folders.values())) {
+      this.startWatching(folder);
+    }
     this.updateStatus();
     this.emit("status", this.status);
     this.db.log("INFO", "All watchers resumed");

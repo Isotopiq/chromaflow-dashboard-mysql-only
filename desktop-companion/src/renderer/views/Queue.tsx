@@ -24,7 +24,7 @@ export function Queue() {
     ? items.filter((i) => i.filename.toLowerCase().includes(query.toLowerCase()))
     : items;
 
-  const pending = items.filter((i) => i.status === "queued" || i.status === "uploading").length;
+  const pending = items.filter((i) => i.status === "queued" || i.status === "uploading" || i.status === "parsing").length;
   const failed = items.filter((i) => i.status === "failed" || i.status === "cancelled").length;
   const done = items.filter((i) => i.status === "done").length;
 
@@ -211,7 +211,9 @@ function QueueRow({
       <td className="px-3 py-2"><StatusBadge status={row.status} /></td>
       <td className="px-3 py-2 w-28">
         <ProgressBar value={row.progress} status={row.status} />
-        <span className="text-[9px] text-[#9CA3AF] mt-0.5 block">{row.progress > 0 ? `${row.progress}%` : "—"}</span>
+        <span className="text-[9px] text-[#9CA3AF] mt-0.5 block">
+          {row.status === "parsing" ? "Parsing…" : row.progress > 0 ? `${row.progress}%` : "—"}
+        </span>
       </td>
       <td className="px-3 py-2">
         <div className="flex items-center gap-0.5">
