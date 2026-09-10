@@ -168,6 +168,7 @@ app.whenReady().then(async () => {
   }
 
   db.log("INFO", "Watchers loaded in paused mode — click Resume All when ready");
+  watcherManager.startAll();
 
   // Push initial state to the renderer after it has had time to mount.
   // The data handlers were registered before the window, so `getQueue()`
