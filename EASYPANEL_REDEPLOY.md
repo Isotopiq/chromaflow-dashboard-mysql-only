@@ -9,7 +9,7 @@ The V4 Docker image has been built and pushed to Docker Hub:
 - **`ddlidded/chroma-lab:v3`** — previous production (rollback)
 
 Both `v4` and `latest` point to the same image digest:
-`sha256:d196f413845393cf98a7499377ff0e471c186be52837f03e549852f5857937e7`
+`sha256:22c8ed513ad786b0faa5deacebf6d81744db3d2b68d6f20e14d61683aaaa63a4`
 
 ## What's new in V4
 
