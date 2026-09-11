@@ -6,6 +6,7 @@ import { z } from "zod";
 import { requireBearerAuth } from "@/lib/desktop-auth";
 import { createRunInDb } from "@/lib/lab-data.server";
 import { notify } from "@/lib/notifications.functions";
+import { withUser } from "@/db/index.server";
 
 const RunInput = z.object({
   name: z.string().min(1).max(300),
@@ -55,9 +56,47 @@ export const Route = createFileRoute("/api/desktop/create-run")({
           return Response.json({ error: "Invalid request body", details: e?.errors ?? e?.message }, { status: 400 });
         }
         try {
-          const run = await createRunInDb(ctx.db, ctx.userId, parsed, notify);
+          const run = await createRunInDb(ctx.db, ctx.userId, parsed);
+
+          // Notifications in a separate transaction — never block or rollback
+          // the actual run insert.
+          try {
+            await withUser(ctx.userId, async (notifyDb) => {
+              await notify(
+                notifyDb,
+                ctx.userId,
+                "run_parsed",
+                `Run "${parsed.name}" uploaded`,
+                `${run.peaks.length} peaks detected${run.peaks.length > 0 ? " and auto-annotated" : ""}.`,
+                `/runs/${run.id}`,
+              );
+              if (parsed.columnId) {
+                const col = await notifyDb.maybe<any>(
+                  "select name, used_injections, rated_injections from public.columns where id = $1",
+                  [parsed.columnId],
+                );
+                if (col && col.rated_injections > 0) {
+                  const pct = (Number(col.used_injections) / Number(col.rated_injections)) * 100;
+                  if (pct >= 90) {
+                    await notify(
+                      notifyDb,
+                      ctx.userId,
+                      "column_eol",
+                      `Column "${col.name}" nearing end of life`,
+                      `${col.used_injections}/${col.rated_injections} injections used (${pct.toFixed(0)}%). Consider replacing soon.`,
+                      `/columns/${parsed.columnId}`,
+                    );
+                  }
+                }
+              }
+            });
+          } catch {
+            // Notifications are best-effort.
+          }
+
           return Response.json({ run });
         } catch (e: any) {
+          console.error("[create-run] failed:", e);
           return Response.json({ error: e?.message ?? "Failed to create run" }, { status: 500 });
         }
       },

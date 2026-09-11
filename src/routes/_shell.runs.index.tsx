@@ -293,7 +293,7 @@ function RunsList() {
       upsertRunLocal(saved as any);
       updateJob(id, { status: "done" });
       toast.success(`${file.name} parsed: ${parsed.summary.peaks.length} peaks${parsed.summary.truncated ? " (scans truncated)" : ""}`);
-      qc.invalidateQueries({ queryKey: ["lab"] });
+      qc.invalidateQueries({ queryKey: ["lab-runs"] });
       nav({ to: "/runs/$runId", params: { runId: (saved as any).id } });
     } catch (err: any) {
       console.error(err);
@@ -497,7 +497,7 @@ function RunsList() {
                       }
                       setSelectedIds(new Set());
                       setBulkDeleting(false);
-                      qc.invalidateQueries({ queryKey: ["lab"] });
+                      qc.invalidateQueries({ queryKey: ["lab-runs"] });
                       if (ok) toast.success(`Deleted ${ok} run(s)`);
                       if (fail) toast.error(`Failed to delete ${fail} run(s)`);
                     }}
@@ -597,7 +597,7 @@ function RunsList() {
                               try {
                                 await deleteRunFn({ data: { runId: r.id } });
                                 removeRunLocal(r.id);
-                                qc.invalidateQueries({ queryKey: ["lab"] });
+                                qc.invalidateQueries({ queryKey: ["lab-runs"] });
                                 toast.success(`Deleted ${r.name}`);
                               } catch (e: any) {
                                 toast.error(e?.message ?? "Failed to delete run");

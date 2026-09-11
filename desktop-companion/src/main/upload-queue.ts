@@ -299,22 +299,7 @@ export class UploadQueue extends EventEmitter {
     const hash = await this.computeHash(item.filePath);
     if (signal.aborted) throw new Error("Cancelled by user");
 
-    // 3. Check for duplicates (skipped when the user explicitly re-uploads)
-    if (!item.force) {
-      try {
-        const existing = await this.api.findRunByPath(item.filePath);
-        if (existing.run) {
-          this.db.log("INFO", `File already uploaded: ${item.filename} (run exists)`);
-          item.status = "done";
-          item.progress = 100;
-          return;
-        }
-      } catch {
-        // Ignore dedup check errors — proceed with upload
-      }
-    }
-
-    // 4. Get upload URLs
+    // 3. Get upload URLs
     item.status = "uploading";
     item.progress = 10;
     this.emit("progress", item);
@@ -365,7 +350,7 @@ export class UploadQueue extends EventEmitter {
       for (let i = 0; i < max; i++) out.push(arr[Math.floor(i * step)]);
       return out;
     };
-    const MAX_TRACE = 8000;
+    const MAX_TRACE = 2500;
     const MAX_PEAKS = 1000;
     const num = (v: any) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
     const numOrNull = (v: any) => (typeof v === "number" && Number.isFinite(v) ? v : null);
@@ -400,6 +385,10 @@ export class UploadQueue extends EventEmitter {
         asymmetry: numOrNull(p.asymmetry),
       })),
     });
+
+    if (!runResult?.run?.id) {
+      throw new Error(`Server returned an invalid run: ${JSON.stringify(runResult).slice(0, 200)}`);
+    }
 
     // 9. Record in history
     this.db.addHistory({

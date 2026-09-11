@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireAuth, requirePermission } from "@/lib/auth-middleware";
-import { withAdmin } from "@/db/index.server";
+import { withAdmin, withUser } from "@/db/index.server";
 import { notify } from "@/lib/notifications.functions";
 import {
   createSignedUploadUrl,
@@ -766,7 +766,39 @@ export const createRun = createServerFn({ method: "POST" })
   .inputValidator((d) => RunInput.parse(d))
   .handler(async ({ data, context }) => {
     const { userId, db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
-    return createRunInDb(db, userId, data, notify);
+    const run = await createRunInDb(db, userId, data);
+
+    // Send notifications in a separate transaction so the upload is not held
+    // up (or rolled back) by a notification problem.
+    try {
+      await withUser(userId, async (notifyDb) => {
+        await notify(notifyDb, userId, "run_parsed",
+          `Run "${data.name}" uploaded`,
+          `${run.peaks.length} peaks detected${run.peaks.length > 0 ? " and auto-annotated" : ""}.`,
+          `/runs/${run.id}`,
+        );
+        if (data.columnId) {
+          const col = await notifyDb.maybe<any>(
+            "select name, used_injections, rated_injections from public.columns where id = $1",
+            [data.columnId],
+          );
+          if (col && col.rated_injections > 0) {
+            const pct = (Number(col.used_injections) / Number(col.rated_injections)) * 100;
+            if (pct >= 90) {
+              await notify(notifyDb, userId, "column_eol",
+                `Column "${col.name}" nearing end of life`,
+                `${col.used_injections}/${col.rated_injections} injections used (${pct.toFixed(0)}%). Consider replacing soon.`,
+                `/columns/${data.columnId}`,
+              );
+            }
+          }
+        }
+      });
+    } catch {
+      // Notifications are best-effort.
+    }
+
+    return run;
   });
 
 const AnnotateInput = z.object({

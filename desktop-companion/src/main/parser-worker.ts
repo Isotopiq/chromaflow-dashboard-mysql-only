@@ -4,7 +4,7 @@
 //
 // The worker receives a file path via workerData, reads the file,
 // parses it, and posts the result back.
-import { parentPort, workerData } from "node:worker_threads";
+import { parentPort, workerData, isMainThread } from "node:worker_threads";
 import fs from "node:fs";
 import { XMLParser } from "fast-xml-parser";
 import { inflate, deflate } from "pako";
@@ -34,8 +34,8 @@ type WorkerRunSummary = {
   ms2Count: number;
 };
 
-// ---------- decode helpers ----------
-function b64ToFloat(
+// ---------- Decode helpers ----------
+function b64ToFloatArray(
   b64: string,
   precision: 32 | 64,
   compressed: boolean,
@@ -44,19 +44,20 @@ function b64ToFloat(
   const bin = Buffer.from(b64, "base64");
   const bytes = compressed ? inflate(bin) : new Uint8Array(bin);
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const n = precision === 64 ? bytes.byteLength >>> 3 : bytes.byteLength >>> 2;
+  const size = precision === 64 ? 8 : 4;
+  const n = Math.floor(bytes.byteLength / size);
   const out = new Float32Array(n);
-  if (precision === 64) {
-    for (let i = 0; i < n; i++) out[i] = dv.getFloat64(i * 8, littleEndian);
-  } else {
-    for (let i = 0; i < n; i++) out[i] = dv.getFloat32(i * 4, littleEndian);
+  for (let i = 0; i < n; i++) {
+    out[i] = precision === 64
+      ? dv.getFloat64(i * size, littleEndian)
+      : dv.getFloat32(i * size, littleEndian);
   }
   return out;
 }
 
 function pickArrays(arr: any[]): {
-  mz: { precision: 32 | 64; compressed: boolean; raw: string } | null;
-  intensity: { precision: 32 | 64; compressed: boolean; raw: string } | null;
+  mz: { precision: 32 | 64; compressed: boolean; raw: string; littleEndian: boolean } | null;
+  intensity: { precision: 32 | 64; compressed: boolean; raw: string; littleEndian: boolean } | null;
 } {
   let mz: any = null, intensity: any = null;
   for (const a of arr) {
@@ -66,23 +67,42 @@ function pickArrays(arr: any[]): {
     const isInt = accs.includes("MS:1000515");
     const precision: 32 | 64 = accs.includes("MS:1000523") ? 64 : 32;
     const compressed = accs.includes("MS:1000574");
+    // mzML usually defaults to little-endian; MS:1000520 is big-endian.
+    const littleEndian = !accs.includes("MS:1000520");
     const bin = a?.binary;
     if (typeof bin !== "string") continue;
-    const slot = { precision, compressed, raw: bin };
+    const slot = { precision, compressed, raw: bin, littleEndian };
     if (isMz) mz = slot;
     if (isInt) intensity = slot;
   }
   return { mz, intensity };
 }
 
-function getRetentionTime(scan: any): number {
-  const sl = scan?.scanList?.scan;
+function parseMzXmlRetentionTime(scan: any): number {
+  const raw = scan?.["@_retentionTime"] ?? scan?.["@_startTime"] ?? "";
+  if (typeof raw !== "string") return 0;
+  if (raw.startsWith("PT")) {
+    const minMatch = raw.match(/(\d+(?:\.\d+)?)M/);
+    const secMatch = raw.match(/(\d+(?:\.\d+)?)S/);
+    let seconds = 0;
+    if (minMatch) seconds += parseFloat(minMatch[1]) * 60;
+    if (secMatch) seconds += parseFloat(secMatch[1]);
+    return seconds / 60;
+  }
+  const n = parseFloat(raw);
+  if (Number.isFinite(n)) return n / 60; // assume seconds for bare numbers
+  return 0;
+}
+
+function getRetentionTime(spec: any): number {
+  const sl = spec?.scanList?.scan;
   const sList = Array.isArray(sl) ? sl : [sl].filter(Boolean);
   for (const s of sList) {
     const cv = Array.isArray(s?.cvParam) ? s.cvParam : [s?.cvParam].filter(Boolean);
     for (const c of cv) {
       if (c?.["@_accession"] === "MS:1000016") {
         const v = parseFloat(c["@_value"]);
+        if (!Number.isFinite(v)) continue;
         const unit = c["@_unitName"] ?? c["@_unitAccession"] ?? "";
         return /second|MS:1000038/i.test(unit) ? v / 60 : v;
       }
@@ -91,7 +111,12 @@ function getRetentionTime(scan: any): number {
   return 0;
 }
 
-function detectIonMode(spec: any): "positive" | "negative" | null {
+function detectIonMode(spec: any, isMzXml: boolean): "positive" | "negative" | null {
+  if (isMzXml) {
+    const polarity = String(spec?.["@_polarity"] ?? spec?.["@_scanType"] ?? "");
+    if (/positive|\+/i.test(polarity)) return "positive";
+    if (/negative|\-/i.test(polarity)) return "negative";
+  }
   const cv = Array.isArray(spec?.cvParam) ? spec.cvParam : [spec?.cvParam].filter(Boolean);
   for (const c of cv) {
     if (c?.["@_accession"] === "MS:1000130") return "positive";
@@ -100,34 +125,92 @@ function detectIonMode(spec: any): "positive" | "negative" | null {
   return null;
 }
 
-function centroidAndThreshold(mz: any, intens: any): {
-  mz: any; intens: any;
+function parseMzXmlPeaks(peaksNode: any): { mz: Float32Array; intens: Float32Array } | null {
+  if (!peaksNode) return null;
+  const node = Array.isArray(peaksNode) ? peaksNode[0] : peaksNode;
+  const raw = typeof node === "string" ? node : node?.["#text"] ?? null;
+  if (typeof raw !== "string") return null;
+  const attrs = typeof node === "object" ? node : {};
+  const compressionType = attrs?.["@_compressionType"] ?? "";
+  const precision = (parseInt(attrs?.["@_precision"] ?? "32", 10) === 64 ? 64 : 32) as 32 | 64;
+  const byteOrder = attrs?.["@_byteOrder"] ?? "network";
+  const contentType = attrs?.["@_contentType"] ?? "m/z-int";
+  const compressed = compressionType === "zlib";
+  const littleEndian = /little/i.test(byteOrder) || /Intel|LSB/i.test(byteOrder);
+
+  const bin = Buffer.from(raw, "base64");
+  const bytes = compressed ? inflate(bin) : new Uint8Array(bin);
+  const pairSize = precision === 64 ? 16 : 8;
+  const n = Math.floor(bytes.byteLength / pairSize);
+  if (n === 0) return { mz: new Float32Array(0), intens: new Float32Array(0) };
+
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const mz = new Float32Array(n);
+  const intens = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    if (precision === 64) {
+      mz[i] = dv.getFloat64(i * 16, littleEndian);
+      intens[i] = dv.getFloat64(i * 16 + 8, littleEndian);
+    } else {
+      mz[i] = dv.getFloat32(i * 8, littleEndian);
+      intens[i] = dv.getFloat32(i * 8 + 4, littleEndian);
+    }
+  }
+
+  if (contentType === "m/z") {
+    return { mz, intens: new Float32Array(n).fill(1) };
+  }
+  if (contentType === "intensity") {
+    return { mz: new Float32Array(n).map((_, i) => i + 1), intens };
+  }
+  return { mz, intens };
+}
+
+function centroidAndThreshold(mz: Float32Array, intens: Float32Array): {
+  mz: Float32Array;
+  intens: Float32Array;
 } {
   const n = intens.length;
   if (n === 0) return { mz: new Float32Array(0), intens: new Float32Array(0) };
+
   let nonZero = 0;
   for (let i = 0; i < n; i++) if (intens[i] > 0) nonZero++;
-  const isCentroid = nonZero / n < 0.5;
-  const positives: number[] = [];
-  for (let i = 0; i < n; i++) if (intens[i] > 0) positives.push(intens[i]);
-  positives.sort((a, b) => a - b);
-  const lowerHalf = positives.slice(0, Math.max(1, Math.floor(positives.length / 2)));
-  const med = lowerHalf[Math.floor(lowerHalf.length / 2)] || 0;
-  let madSum = 0;
-  for (const v of lowerHalf) madSum += Math.abs(v - med);
-  const mad = (madSum / Math.max(1, lowerHalf.length)) * 1.4826;
-  const noise = Math.max(med + 3 * mad, 1);
+  // Small peak lists are almost certainly centroid data (explicit peaks only).
+  const isCentroid = n <= 50 || nonZero / n < 0.5;
+
   const outMz: number[] = [];
   const outIn: number[] = [];
+
   if (isCentroid) {
+    // Keep every non-zero, finite peak.
     for (let i = 0; i < n; i++) {
-      const v = intens[i];
-      if (v > noise) { outMz.push(mz[i]); outIn.push(v); }
+      if (intens[i] > 0 && Number.isFinite(mz[i]) && Number.isFinite(intens[i])) {
+        outMz.push(mz[i]);
+        outIn.push(intens[i]);
+      }
     }
   } else {
+    // Profile data: pick local maxima above a robust noise threshold.
+    const positives: number[] = [];
+    for (let i = 0; i < n; i++) if (intens[i] > 0) positives.push(intens[i]);
+    positives.sort((a, b) => a - b);
+    const lowerHalf = positives.slice(0, Math.max(1, Math.floor(positives.length / 2)));
+    const med = lowerHalf[Math.floor(lowerHalf.length / 2)] || 0;
+    let madSum = 0;
+    for (const v of lowerHalf) madSum += Math.abs(v - med);
+    const mad = (madSum / Math.max(1, lowerHalf.length)) * 1.4826;
+    const noise = Math.max(med + 3 * mad, 1);
+
     for (let i = 1; i < n - 1; i++) {
-      if (intens[i] > noise && intens[i] >= intens[i - 1] && intens[i] >= intens[i + 1]) {
-        outMz.push(mz[i]); outIn.push(intens[i]);
+      if (
+        intens[i] > noise &&
+        intens[i] >= intens[i - 1] &&
+        intens[i] >= intens[i + 1] &&
+        Number.isFinite(mz[i]) &&
+        Number.isFinite(intens[i])
+      ) {
+        outMz.push(mz[i]);
+        outIn.push(intens[i]);
       }
     }
   }
@@ -135,7 +218,7 @@ function centroidAndThreshold(mz: any, intens: any): {
 }
 
 // ---------- Mass trace building + peak picking ----------
-type Scan = { rt: number; mz: any; intens: any };
+type Scan = { rt: number; mz: Float32Array; intens: Float32Array };
 type Trace = { mz: number; scanIdx: number[]; intens: number[] };
 
 function buildMassTraces(scans: Scan[], ppm: number, maxGap: number): Trace[] {
@@ -191,17 +274,20 @@ function pickTracePeaks(t: Trace, scanRts: number[], totalScans: number, ppm: nu
   const y = t.intens;
   if (y.length < 5) return [];
   const smoothed = savitzkyGolay(y);
-  const peaks: TracePeak[] = [];
   const noise = Math.max(...y) / 100;
+  const peaks: TracePeak[] = [];
   for (let i = 2; i < smoothed.length - 2; i++) {
     if (smoothed[i] > smoothed[i - 1] && smoothed[i] >= smoothed[i + 1] && smoothed[i] > noise * 3) {
       const height = y[i];
       const rt = scanRts[t.scanIdx[i]];
+      if (!Number.isFinite(rt)) continue;
+
       // Estimate FWHM
       let halfLeft = i, halfRight = i;
       while (halfLeft > 0 && y[halfLeft] > height / 2) halfLeft--;
       while (halfRight < y.length - 1 && y[halfRight] > height / 2) halfRight++;
       const fwhm = scanRts[t.scanIdx[Math.min(halfRight, scanRts.length - 1)]] - scanRts[t.scanIdx[Math.max(halfLeft, 0)]];
+
       // Area via trapezoidal integration
       let area = 0;
       for (let j = 0; j < y.length - 1; j++) {
@@ -209,21 +295,30 @@ function pickTracePeaks(t: Trace, scanRts: number[], totalScans: number, ppm: nu
         area += (y[j] + y[j + 1]) / 2 * Math.abs(dt);
       }
       const sn = height / Math.max(noise, 1e-9);
+
       // R² from Gaussian fit
-      const sigma = fwhm / 2.355;
+      const sigma = Math.abs(fwhm) / 2.355;
       let ssRes = 0, ssTot = 0;
       const yMean = y.reduce((a, b) => a + b, 0) / y.length;
       for (let j = 0; j < y.length; j++) {
-        const predicted = height * Math.exp(-((scanRts[t.scanIdx[j]] - rt) ** 2) / (2 * sigma * sigma));
+        const predicted = sigma > 0
+          ? height * Math.exp(-((scanRts[t.scanIdx[j]] - rt) ** 2) / (2 * sigma * sigma))
+          : height;
         ssRes += (y[j] - predicted) ** 2;
         ssTot += (y[j] - yMean) ** 2;
       }
       const r2 = ssTot > 0 ? Math.max(0, 1 - ssRes / ssTot) : 0;
+
       // Asymmetry at 10% height
       let tenLeft = i, tenRight = i;
       while (tenLeft > 0 && y[tenLeft] > height * 0.1) tenLeft--;
       while (tenRight < y.length - 1 && y[tenRight] > height * 0.1) tenRight++;
-      const asymmetry = (scanRts[t.scanIdx[Math.min(tenRight, scanRts.length - 1)]] - rt) / Math.max(rt - scanRts[t.scanIdx[Math.max(tenLeft, 0)]], 1e-9);
+      const rtLeft = scanRts[t.scanIdx[Math.max(tenLeft, 0)]];
+      const rtRight = scanRts[t.scanIdx[Math.min(tenRight, scanRts.length - 1)]];
+      const asymmetry = rtLeft !== 0 && Number.isFinite(rtLeft) && Number.isFinite(rtRight)
+        ? (rtRight - rt) / Math.max(rt - rtLeft, 1e-9)
+        : 1;
+
       peaks.push({
         rt, area, height, fwhm: Math.abs(fwhm), sn, mz: t.mz,
         mzLow: t.mz * (1 - ppm / 1e6), mzHigh: t.mz * (1 + ppm / 1e6),
@@ -263,7 +358,7 @@ function packMS2Scans(scans: any[]): Uint8Array {
 }
 
 // ---------- Main parser ----------
-async function parseMzML(text: string): Promise<{
+export async function parseMzML(text: string): Promise<{
   summary: WorkerRunSummary;
   scansBlob: Uint8Array;
   ms2Blob: Uint8Array;
@@ -299,49 +394,31 @@ async function parseMzML(text: string): Promise<{
 
   for (const spec of spectra) {
     const msLevel = isMzXml
-      ? parseInt(spec?.["@_msLevel"] ?? "1")
+      ? parseInt(spec?.["@_msLevel"] ?? "1", 10)
       : parseInt(
           (Array.isArray(spec?.cvParam) ? spec.cvParam : [spec?.cvParam])
             .find((c: any) => c?.["@_accession"] === "MS:1000511")?.["@_value"] ?? "1",
+          10,
         );
 
-    const rt = isMzXml
-      ? parseFloat(spec?.["@_retentionTime"] ?? "0") / 60
-      : getRetentionTime(spec);
+    const rt = isMzXml ? parseMzXmlRetentionTime(spec) : getRetentionTime(spec);
 
-    const detected = detectIonMode(spec);
+    const detected = detectIonMode(spec, isMzXml);
     if (detected) ionMode = detected;
 
     if (msLevel === 1) {
       let ticVal = 0, bpcVal = 0;
-      let mzArr: any = new Float32Array(0), intArr: any = new Float32Array(0);
+      let mzArr: Float32Array = new Float32Array(0);
+      let intArr: Float32Array = new Float32Array(0);
 
       if (isMzXml) {
-        const peaksNode = spec?.peaks;
-        if (peaksNode) {
-          const raw = typeof peaksNode === "string" ? peaksNode : peaksNode?.["#text"] ?? peaksNode;
-          if (typeof raw === "string") {
-            const compressed = (spec?.["@_compressionType"] ?? "") === "zlib";
-            const precision = parseInt(spec?.["@_precision"] ?? "32") as 32 | 64;
-            const bin = Buffer.from(raw, "base64");
-            const bytes = compressed ? inflate(bin) : new Uint8Array(bin);
-            const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-            const n = bytes.byteLength / (precision / 8) / 2;
-            mzArr = new Float32Array(n);
-            intArr = new Float32Array(n);
-            for (let i = 0; i < n; i++) {
-              if (precision === 64) {
-                mzArr[i] = dv.getFloat64(i * 16, true);
-                intArr[i] = dv.getFloat64(i * 16 + 8, true);
-              } else {
-                mzArr[i] = dv.getFloat32(i * 8, true);
-                intArr[i] = dv.getFloat32(i * 8 + 4, true);
-              }
-            }
-          }
+        const peaks = parseMzXmlPeaks(spec?.peaks);
+        if (peaks) {
+          mzArr = peaks.mz;
+          intArr = peaks.intens;
         }
-        ticVal = parseFloat(spec?.["@_totIonCurrent"] ?? "0");
-        bpcVal = parseFloat(spec?.["@_basePeakIntensity"] ?? "0");
+        ticVal = parseFloat(spec?.["@_totIonCurrent"] ?? "0") || 0;
+        bpcVal = parseFloat(spec?.["@_basePeakIntensity"] ?? "0") || 0;
       } else {
         const arrs = Array.isArray(spec?.binaryDataArrayList?.binaryDataArray)
           ? spec.binaryDataArrayList.binaryDataArray
@@ -350,8 +427,8 @@ async function parseMzML(text: string): Promise<{
             : [];
         const { mz, intensity } = pickArrays(arrs);
         if (mz && intensity) {
-          mzArr = b64ToFloat(mz.raw, mz.precision, mz.compressed);
-          intArr = b64ToFloat(intensity.raw, intensity.precision, intensity.compressed);
+          mzArr = b64ToFloatArray(mz.raw, mz.precision, mz.compressed, mz.littleEndian);
+          intArr = b64ToFloatArray(intensity.raw, intensity.precision, intensity.compressed, intensity.littleEndian);
         }
       }
 
@@ -373,10 +450,10 @@ async function parseMzML(text: string): Promise<{
         truncated = true;
       } else {
         pointBudget -= kept.mz.length;
-        scans.push({ rt: +rt.toFixed(4), mz: kept.mz, intens: kept.intens });
+        scans.push({ rt: Number.isFinite(rt) ? +rt.toFixed(4) : 0, mz: kept.mz, intens: kept.intens });
       }
 
-      x.push(+rt.toFixed(4));
+      x.push(Number.isFinite(rt) ? +rt.toFixed(4) : 0);
       tic.push(ticVal);
       bpc.push(bpcVal);
     }
@@ -425,14 +502,16 @@ async function parseMzML(text: string): Promise<{
 }
 
 // ---------- Worker entry point ----------
-const filePath = workerData as string;
-async function main() {
-  try {
-    const text = fs.readFileSync(filePath, "utf-8");
-    const { summary, scansBlob, ms2Blob } = await parseMzML(text);
-    parentPort?.postMessage({ ok: true, summary, scansBlob, ms2Blob }, [scansBlob.buffer as ArrayBuffer, ms2Blob.buffer as ArrayBuffer]);
-  } catch (err: any) {
-    parentPort?.postMessage({ ok: false, error: err?.message ?? String(err) });
+if (!isMainThread) {
+  const filePath = workerData as string;
+  async function main() {
+    try {
+      const text = fs.readFileSync(filePath, "utf-8");
+      const { summary, scansBlob, ms2Blob } = await parseMzML(text);
+      parentPort?.postMessage({ ok: true, summary, scansBlob, ms2Blob }, [scansBlob.buffer as ArrayBuffer, ms2Blob.buffer as ArrayBuffer]);
+    } catch (err: any) {
+      parentPort?.postMessage({ ok: false, error: err?.message ?? String(err) });
+    }
   }
+  main();
 }
-main();

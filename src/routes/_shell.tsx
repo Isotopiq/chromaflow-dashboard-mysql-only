@@ -32,7 +32,7 @@ function ShellLayout() {
     staleTime: 5 * 60_000,
     gcTime: 30 * 60_000,
     placeholderData: keepPreviousData,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
   });
 
   // Runs data: slower — runs + peaks + V3 tables. Loads in the background
@@ -45,7 +45,7 @@ function ShellLayout() {
     staleTime: 5 * 60_000,
     gcTime: 30 * 60_000,
     placeholderData: keepPreviousData,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
   });
 
   // Merge core + runs into the Zustand store as they arrive.

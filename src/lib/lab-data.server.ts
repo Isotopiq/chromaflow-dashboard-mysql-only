@@ -737,14 +737,33 @@ export async function createRunInDb(
   db: Db,
   userId: string,
   data: RunInputData,
-  notifyFn?: (db: Db, userId: string, type: string, title: string, body: string, link: string) => Promise<void>,
-) {
+): Promise<Run> {
+  // Sanitize every numeric peak field so we never feed NaN/Infinity to Postgres.
+  const finite = (v: any, fallback: number | null = 0): number | null => {
+    if (v == null) return fallback;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : fallback;
+  };
+  const peaks = data.peaks.map((p) => ({
+    rt: finite(p.rt) as number,
+    area: finite(p.area) as number,
+    height: finite(p.height) as number,
+    fwhm: finite(p.fwhm) as number,
+    sn: finite(p.sn) as number,
+    mz: finite(p.mz, null),
+    mzLow: finite(p.mzLow, null),
+    mzHigh: finite(p.mzHigh, null),
+    r2: finite(p.r2, null),
+    asymmetry: finite(p.asymmetry, null),
+  }));
+
   const summary = {
     name: data.name,
     fileSize: data.fileSize,
     ionMode: data.ionMode,
     trace: data.trace,
   };
+
   const run = await db.one<any>(
     `insert into public.runs
        (method_id, column_id, batch_id, file_path, file_format, scans_blob_path,
@@ -756,16 +775,27 @@ export async function createRunInDb(
       JSON.stringify(summary), userId,
     ],
   );
+
+  // Batch-insert peaks in a single statement instead of one round trip per peak.
   let peakRows: any[] = [];
-  for (const p of data.peaks) {
-    const r = await db.one<any>(
+  if (peaks.length > 0) {
+    const values: string[] = [];
+    const params: any[] = [];
+    let idx = 1;
+    for (const p of peaks) {
+      values.push(
+        `($${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++})`,
+      );
+      params.push(
+        run.id, p.rt, p.area, p.height, p.fwhm, p.sn,
+        p.mz, p.mzLow, p.mzHigh, p.r2, p.asymmetry,
+      );
+    }
+    peakRows = await db.many<any>(
       `insert into public.peaks (run_id, rt, area, height, fwhm, sn, mz, mz_low, mz_high, r2, asymmetry)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) returning *`,
-      [run.id, p.rt, p.area, p.height, p.fwhm, p.sn,
-       p.mz ?? null, p.mzLow ?? null, p.mzHigh ?? null,
-       p.r2 ?? null, p.asymmetry ?? null],
+       values ${values.join(",")} returning *`,
+      params,
     );
-    peakRows.push(r);
   }
 
   // ---- Auto-annotate against the analyte library ----
@@ -822,37 +852,6 @@ export async function createRunInDb(
     }
   } catch {
     // Auto-annotation is best-effort; never fail the upload because of it.
-  }
-
-  // ---- Notifications (optional — only if notifyFn provided) ----
-  if (notifyFn) {
-    try {
-      await notifyFn(
-        db, userId, "run_parsed",
-        `Run "${data.name}" uploaded`,
-        `${peakRows.length} peaks detected${peakRows.length > 0 ? " and auto-annotated" : ""}.`,
-        `/runs/${run.id}`,
-      );
-      if (data.columnId) {
-        const col = await db.maybe<any>(
-          "select name, used_injections, rated_injections from public.columns where id = $1",
-          [data.columnId],
-        );
-        if (col && col.rated_injections > 0) {
-          const pct = (Number(col.used_injections) / Number(col.rated_injections)) * 100;
-          if (pct >= 90) {
-            await notifyFn(
-              db, userId, "column_eol",
-              `Column "${col.name}" nearing end of life`,
-              `${col.used_injections}/${col.rated_injections} injections used (${pct.toFixed(0)}%). Consider replacing soon.`,
-              `/columns/${data.columnId}`,
-            );
-          }
-        }
-      }
-    } catch {
-      // Notifications are best-effort.
-    }
   }
 
   return mapRun(run, peakRows.map(mapPeak).sort((a: any, b: any) => a.rt - b.rt));
