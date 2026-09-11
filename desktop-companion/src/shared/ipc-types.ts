@@ -28,6 +28,7 @@ export type WatchFolder = {
   methodId: string | null;
   columnId: string | null;
   batchId: string | null;
+  compoundListId: string | null;
   filePattern: string;
   // Desktop-specific local settings
   recursive: boolean;
@@ -81,6 +82,7 @@ export type AppSettings = {
   autoStart: boolean;
   stayLoggedIn: boolean;
   forgetProcessedOnDelete: boolean;
+  uploadAssignmentMode: "per-folder" | "per-file";
 };
 
 export type LabData = {

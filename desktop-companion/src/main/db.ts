@@ -78,6 +78,7 @@ export class LocalDb extends EventEmitter {
         method_id TEXT,
         column_id TEXT,
         batch_id TEXT,
+        compound_list_id TEXT,
         created_at INTEGER NOT NULL
       );
 
@@ -100,6 +101,11 @@ export class LocalDb extends EventEmitter {
   private migrate() {
     try {
       this.db.exec("ALTER TABLE upload_history ADD COLUMN file_path TEXT");
+    } catch {
+      // Column already exists
+    }
+    try {
+      this.db.exec("ALTER TABLE watch_folders_local ADD COLUMN compound_list_id TEXT");
     } catch {
       // Column already exists
     }
@@ -344,14 +350,15 @@ export class LocalDb extends EventEmitter {
     methodId?: string | null;
     columnId?: string | null;
     batchId?: string | null;
+    compoundListId?: string | null;
     archiveBehavior?: string;
     archivePath?: string | null;
     maxRetries?: number;
   }): void {
     this.db.prepare(`
       INSERT OR REPLACE INTO watch_folders_local
-        (id, path, enabled, recursive, stabilize_seconds, file_pattern, method_id, column_id, batch_id, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, path, enabled, recursive, stabilize_seconds, file_pattern, method_id, column_id, batch_id, compound_list_id, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       folder.id,
       folder.path,
@@ -362,6 +369,7 @@ export class LocalDb extends EventEmitter {
       folder.methodId ?? null,
       folder.columnId ?? null,
       folder.batchId ?? null,
+      folder.compoundListId ?? null,
       Date.now(),
     );
   }
@@ -378,6 +386,7 @@ export class LocalDb extends EventEmitter {
       methodId: r.method_id,
       columnId: r.column_id,
       batchId: r.batch_id,
+      compoundListId: r.compound_list_id,
       archiveBehavior: "leave" as const,
       archivePath: null,
       maxRetries: 3,
@@ -392,6 +401,7 @@ export class LocalDb extends EventEmitter {
     methodId: string | null;
     columnId: string | null;
     batchId: string | null;
+    compoundListId: string | null;
   }>): void {
     const current = this.db.prepare("SELECT * FROM watch_folders_local WHERE id = ?").get(id) as any;
     if (!current) return;
@@ -403,7 +413,8 @@ export class LocalDb extends EventEmitter {
         file_pattern = ?,
         method_id = ?,
         column_id = ?,
-        batch_id = ?
+        batch_id = ?,
+        compound_list_id = ?
       WHERE id = ?
     `).run(
       (patch.enabled ?? !!current.enabled) ? 1 : 0,
@@ -413,6 +424,7 @@ export class LocalDb extends EventEmitter {
       patch.methodId !== undefined ? patch.methodId : current.method_id,
       patch.columnId !== undefined ? patch.columnId : current.column_id,
       patch.batchId !== undefined ? patch.batchId : current.batch_id,
+      patch.compoundListId !== undefined ? patch.compoundListId : current.compound_list_id,
       id,
     );
   }

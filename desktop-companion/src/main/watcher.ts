@@ -208,6 +208,10 @@ export class WatcherManager extends EventEmitter {
     return this.watchers.size;
   }
 
+  getFolder(id: string): WatchFolder | undefined {
+    return this.folders.get(id);
+  }
+
   private updateStatus() {
     if (this.paused) {
       this.status = "paused";

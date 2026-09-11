@@ -73,6 +73,7 @@ export class IpcHandlers {
         methodId: folder.methodId ?? null,
         columnId: folder.columnId ?? null,
         batchId: folder.batchId ?? null,
+        compoundListId: folder.compoundListId ?? null,
         archiveBehavior: folder.archiveBehavior ?? "leave",
         archivePath: folder.archivePath ?? null,
         maxRetries: folder.maxRetries ?? 0,

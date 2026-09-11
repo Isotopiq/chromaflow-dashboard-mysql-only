@@ -18,6 +18,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   autoStart: false,
   stayLoggedIn: true,
   forgetProcessedOnDelete: true,
+  uploadAssignmentMode: "per-folder",
 };
 
 const settingsSections: { id: SettingsSection; label: string; desc: string }[] = [
@@ -226,6 +227,17 @@ export function Settings() {
                   <Toggle checked={draft.autoStart} onChange={(v) => update({ autoStart: v })} />
                   <span className="text-[11px] text-[#374151]">Start watching on app launch</span>
                 </label>
+              </SettingsField>
+              <SettingsField label="Upload metadata" hint="Choose when to assign method/column/batch to each file">
+                <select
+                  value={draft.uploadAssignmentMode}
+                  onChange={(e) => update({ uploadAssignmentMode: e.target.value as AppSettings["uploadAssignmentMode"] })}
+                  className="px-2 py-1.5 text-[12px] bg-white border border-[#D1D5DB] text-[#111827] outline-none focus:border-[#2563EB] w-40"
+                  style={{ borderRadius: 2 }}
+                >
+                  <option value="per-folder">Per watch folder</option>
+                  <option value="per-file">Per individual upload</option>
+                </select>
               </SettingsField>
               <SettingsField label="History deletion" hint="What happens when a row is removed from Upload History">
                 <label className="flex items-center gap-2 cursor-pointer">

@@ -18,6 +18,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   autoStart: false,
   stayLoggedIn: true,
   forgetProcessedOnDelete: true,
+  uploadAssignmentMode: "per-folder",
 };
 
 export class ConfigManager {

@@ -321,10 +321,16 @@ export class UploadQueue extends EventEmitter {
       });
     }
 
-    // 8. Create run — clamp trace arrays + peaks to server-side zod limits
+    // 8. Resolve folder metadata and create run — clamp trace arrays + peaks to server-side zod limits
     if (signal.aborted) throw new Error("Cancelled by user");
     item.progress = 95;
     this.emit("progress", item);
+
+    const folder = this.watcher.getFolder(item.folderId);
+    if (!folder?.columnId) {
+      this.emit("toast", { type: "warn", message: `${item.filename} is uploading without a column; the run will not appear in Column/Method/Batch portal views until one is set.` });
+    }
+
     const clampArray = (arr: number[], max: number) => {
       if (arr.length <= max) return arr;
       const step = arr.length / max;
@@ -339,9 +345,13 @@ export class UploadQueue extends EventEmitter {
 
     const runResult = await this.api.createRun({
       name: item.filename.replace(/\.(mzXML|mzML)$/i, "").slice(0, 300) || item.filename,
-      filePath: item.filePath.slice(0, 500),
+      methodId: folder?.methodId ?? null,
+      columnId: folder?.columnId ?? null,
+      batchId: folder?.batchId ?? null,
+      filePath: rawUrl.path.slice(0, 500),
       scansBlobPath: scansUrl.path,
       fileFormat: parsed.summary.format === "mzXML" ? "mzXML" : "mzML",
+      compoundListId: folder?.compoundListId ?? null,
       fileSize: this.formatSize(item.size).slice(0, 40),
       ionMode: parsed.summary.ionMode === "negative" ? "negative" : "positive",
       msLevel: Math.min(3, Math.max(1, Math.floor(num(parsed.summary.msLevel) || 1))),
