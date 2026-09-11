@@ -16,6 +16,7 @@ const api = {
   retryUpload: (id: string) => ipcRenderer.invoke(IPC.RETRY_UPLOAD, id),
   removeQueueItem: (id: string) => ipcRenderer.invoke(IPC.REMOVE_QUEUE_ITEM, id),
   clearQueue: (mode: string) => ipcRenderer.invoke(IPC.CLEAR_QUEUE, mode),
+  assignQueueMetadata: (id: string, metadata: any) => ipcRenderer.invoke(IPC.ASSIGN_QUEUE_METADATA, id, metadata),
   pauseAll: () => ipcRenderer.invoke(IPC.PAUSE_ALL),
   resumeAll: () => ipcRenderer.invoke(IPC.RESUME_ALL),
   getWatcherStatus: () => ipcRenderer.invoke(IPC.GET_WATCHER_STATUS),
@@ -63,6 +64,11 @@ const api = {
     const handler = (_: any, items: any[]) => callback(items);
     ipcRenderer.on(IPC.ON_QUEUE_UPDATE, handler);
     return () => ipcRenderer.removeListener(IPC.ON_QUEUE_UPDATE, handler);
+  },
+  onQueueNeedsConfig: (callback: (item: any) => void) => {
+    const handler = (_: any, item: any) => callback(item);
+    ipcRenderer.on(IPC.ON_QUEUE_NEEDS_CONFIG, handler);
+    return () => ipcRenderer.removeListener(IPC.ON_QUEUE_NEEDS_CONFIG, handler);
   },
   onLogEntry: (callback: (entry: any) => void) => {
     const handler = (_: any, entry: any) => callback(entry);

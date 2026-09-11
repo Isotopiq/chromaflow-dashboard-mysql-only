@@ -53,6 +53,19 @@ export class UploadQueue extends EventEmitter {
     this.emit("queue-update", this.getQueue());
   }
 
+  assignMetadata(id: string, metadata: QueueItem["assignment"]) {
+    const item = this.queue.find((q) => q.id === id);
+    if (!item) return;
+    item.assignment = metadata;
+    if (item.status === "pending") {
+      item.status = "queued";
+      item.error = null;
+    }
+    this.db.saveQueueItem(item);
+    this.emit("queue-update", this.getQueue());
+    this.processNext();
+  }
+
   enqueue(filePath: string, folderId: string, size: number, opts?: { force?: boolean }) {
     // Don't enqueue if already in the queue
     const existing = this.queue.find(
@@ -73,6 +86,7 @@ export class UploadQueue extends EventEmitter {
       createdAt: Date.now(),
       retries: 0,
       force: opts?.force,
+      assignment: null,
     };
     this.queue.push(item);
     this.db.saveQueueItem(item);
@@ -207,7 +221,20 @@ export class UploadQueue extends EventEmitter {
     if (activeCount >= maxConcurrent) return;
 
     const next = this.queue.find((q) => q.status === "queued");
-    if (!next) return;
+    if (!next) {
+      const waiting = this.queue.find((q) => q.status === "pending" && !q.assignment);
+      if (waiting) this.emit("needs-config", waiting);
+      return;
+    }
+
+    // Per-file mode: hold item until user assigns metadata.
+    if (this.config.get("uploadAssignmentMode") === "per-file" && !next.assignment) {
+      next.status = "pending";
+      this.db.saveQueueItem(next);
+      this.emit("queue-update", this.getQueue());
+      this.emit("needs-config", next);
+      return;
+    }
 
     next.status = "parsing";
     this.db.saveQueueItem(next);
@@ -326,8 +353,8 @@ export class UploadQueue extends EventEmitter {
     item.progress = 95;
     this.emit("progress", item);
 
-    const folder = this.watcher.getFolder(item.folderId);
-    if (!folder?.columnId) {
+    const meta = item.assignment ?? this.watcher.getFolder(item.folderId);
+    if (!meta?.columnId) {
       this.emit("toast", { type: "warn", message: `${item.filename} is uploading without a column; the run will not appear in Column/Method/Batch portal views until one is set.` });
     }
 
@@ -345,13 +372,13 @@ export class UploadQueue extends EventEmitter {
 
     const runResult = await this.api.createRun({
       name: item.filename.replace(/\.(mzXML|mzML)$/i, "").slice(0, 300) || item.filename,
-      methodId: folder?.methodId ?? null,
-      columnId: folder?.columnId ?? null,
-      batchId: folder?.batchId ?? null,
+      methodId: meta?.methodId ?? null,
+      columnId: meta?.columnId ?? null,
+      batchId: meta?.batchId ?? null,
       filePath: rawUrl.path.slice(0, 500),
       scansBlobPath: scansUrl.path,
       fileFormat: parsed.summary.format === "mzXML" ? "mzXML" : "mzML",
-      compoundListId: folder?.compoundListId ?? null,
+      compoundListId: meta?.compoundListId ?? null,
       fileSize: this.formatSize(item.size).slice(0, 40),
       ionMode: parsed.summary.ionMode === "negative" ? "negative" : "positive",
       msLevel: Math.min(3, Math.max(1, Math.floor(num(parsed.summary.msLevel) || 1))),

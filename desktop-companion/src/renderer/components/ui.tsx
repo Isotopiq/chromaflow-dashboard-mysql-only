@@ -39,6 +39,7 @@ export function StatusBadge({ status }: { status: string }) {
     uploading: { label: "Uploading", cls: "bg-[#EBF1FE] text-[#2563EB] border border-[#BFCFFB]" },
     parsing:   { label: "Parsing",   cls: "bg-[#EBF1FE] text-[#2563EB] border border-[#BFCFFB]" },
     queued:    { label: "Queued",    cls: "bg-[#F3F4F6] text-[#6B7280] border border-[#E5E7EB]" },
+    pending:   { label: "Needs metadata", cls: "bg-[#FFFBEB] text-[#B45309] border border-[#FDE68A]" },
     done:      { label: "Done",      cls: "bg-[#ECFDF3] text-[#15803D] border border-[#BBF7D0]" },
     failed:    { label: "Failed",    cls: "bg-[#FEF2F2] text-[#DC2626] border border-[#FECACA]" },
     cancelled: { label: "Cancelled", cls: "bg-[#F3F4F6] text-[#6B7280] border border-[#E5E7EB]" },

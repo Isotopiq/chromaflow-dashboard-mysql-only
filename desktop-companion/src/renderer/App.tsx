@@ -15,6 +15,8 @@ import { WatchDirectories } from "./views/WatchDirectories";
 import { History } from "./views/History";
 import { Settings } from "./views/Settings";
 import { UploadModal } from "./views/UploadModal";
+import { AssignModal } from "./views/AssignModal";
+import type { QueueItem } from "@shared/ipc-types";
 
 // ─── Nav config ───────────────────────────────────────────────────────────────
 const navItems = [
@@ -40,6 +42,7 @@ export function App() {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [maximized, setMaximized] = useState(false);
+  const [assignItem, setAssignItem] = useState<QueueItem | null>(null);
 
   const win = useWindowControls();
   const watcherStatus = useWatcherStatus();
@@ -52,9 +55,17 @@ export function App() {
     return () => off?.();
   }, []);
 
+  // Listen for per-file metadata requests
+  useEffect(() => {
+    const d = window.desktop;
+    if (!d) return;
+    const off = d.onQueueNeedsConfig((item) => setAssignItem(item));
+    return () => off?.();
+  }, []);
+
   useEffect(() => { if (view !== "dashboard") setModalOpen(false); }, [view]);
 
-  const pending = items.filter((i) => i.status === "queued" || i.status === "uploading" || i.status === "parsing").length;
+  const pending = items.filter((i) => i.status === "queued" || i.status === "uploading" || i.status === "parsing" || i.status === "pending").length;
 
   const togglePause = () => {
     if (paused) window.desktop?.resumeAll();
@@ -150,11 +161,12 @@ export function App() {
           {/* View */}
           <div className="flex-1 min-h-0 relative">
             {view === "dashboard"   && <Dashboard onOpenModal={() => setModalOpen(true)} />}
-            {view === "queue"       && <Queue />}
+            {view === "queue"       && <Queue onAssign={setAssignItem} />}
             {view === "directories" && <WatchDirectories />}
             {view === "history"     && <History />}
             {view === "settings"    && <Settings />}
             {modalOpen && view === "dashboard" && <UploadModal onClose={() => setModalOpen(false)} />}
+            {assignItem && <AssignModal item={assignItem} onClose={() => setAssignItem(null)} />}
           </div>
 
           {/* Log / output panel */}

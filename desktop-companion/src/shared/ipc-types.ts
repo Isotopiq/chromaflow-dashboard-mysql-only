@@ -4,7 +4,7 @@
 
 export type View = "dashboard" | "queue" | "directories" | "history" | "settings";
 export type WatcherStatus = "idle" | "watching" | "paused" | "error";
-export type UploadStatus = "queued" | "parsing" | "uploading" | "done" | "failed" | "cancelled";
+export type UploadStatus = "queued" | "pending" | "parsing" | "uploading" | "done" | "failed" | "cancelled";
 export type LogLevel = "INFO" | "WARN" | "ERROR" | "DEBUG";
 
 export type QueueItem = {
@@ -19,6 +19,12 @@ export type QueueItem = {
   createdAt: number;
   retries: number;
   force?: boolean;
+  assignment?: {
+    methodId: string | null;
+    columnId: string | null;
+    batchId: string | null;
+    compoundListId: string | null;
+  } | null;
 };
 
 export type WatchFolder = {
@@ -101,6 +107,7 @@ export type AuthStatus = {
 export const IPC = {
   // Events (main → renderer)
   ON_QUEUE_UPDATE: "queue:update",
+  ON_QUEUE_NEEDS_CONFIG: "queue:needs-config",
   ON_LOG_ENTRY: "log:entry",
   ON_WATCHER_STATUS: "watcher:status",
   ON_UPLOAD_PROGRESS: "upload:progress",
@@ -112,6 +119,7 @@ export const IPC = {
   RETRY_UPLOAD: "queue:retry",
   REMOVE_QUEUE_ITEM: "queue:remove",
   CLEAR_QUEUE: "queue:clear",
+  ASSIGN_QUEUE_METADATA: "queue:assign-metadata",
   PAUSE_ALL: "watcher:pause-all",
   RESUME_ALL: "watcher:resume-all",
   GET_WATCHER_STATUS: "watcher:get-status",

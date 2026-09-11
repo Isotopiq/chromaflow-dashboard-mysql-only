@@ -25,6 +25,7 @@ export interface DesktopApi {
   retryUpload: (id: string) => Promise<void>;
   removeQueueItem: (id: string) => Promise<void>;
   clearQueue: (mode: string) => Promise<void>;
+  assignQueueMetadata: (id: string, metadata: { methodId: string | null; columnId: string | null; batchId: string | null; compoundListId: string | null }) => Promise<void>;
   pauseAll: () => Promise<void>;
   resumeAll: () => Promise<void>;
   getWatcherStatus: () => Promise<WatcherStatus>;
@@ -67,6 +68,7 @@ export interface DesktopApi {
 
   // Event listeners
   onQueueUpdate: (callback: (items: QueueItem[]) => void) => () => void;
+  onQueueNeedsConfig: (callback: (item: QueueItem) => void) => () => void;
   onLogEntry: (callback: (entry: LogEntry) => void) => () => void;
   onWatcherStatus: (callback: (status: WatcherStatus) => void) => () => void;
   onUploadProgress: (callback: (item: QueueItem) => void) => () => void;

@@ -480,7 +480,7 @@ export class LocalDb extends EventEmitter {
     ).get(todayMs) as any)?.count ?? 0;
 
     const queueDepth = (this.db.prepare(
-      "SELECT COUNT(*) as count FROM queue_items WHERE status IN ('queued', 'uploading', 'parsing')",
+      "SELECT COUNT(*) as count FROM queue_items WHERE status IN ('queued', 'uploading', 'parsing', 'pending')",
     ).get() as any)?.count ?? 0;
 
     return {

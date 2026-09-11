@@ -109,6 +109,9 @@ app.whenReady().then(async () => {
   uploadQueue.on("queue-update", (items: any[]) => {
     mainWindow?.webContents.send("queue:update", items);
   });
+  uploadQueue.on("needs-config", (item: any) => {
+    mainWindow?.webContents.send(IPC.ON_QUEUE_NEEDS_CONFIG, item);
+  });
   uploadQueue.on("toast", (toast: any) => {
     mainWindow?.webContents.send(IPC.ON_TOAST, toast);
   });

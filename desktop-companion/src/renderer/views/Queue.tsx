@@ -3,7 +3,7 @@ import type { QueueItem } from "@shared/ipc-types";
 import { cn, Icons, StatusBadge, ProgressBar } from "../components/ui";
 import { useQueue, useWatcherStatus } from "../hooks/useDesktop";
 
-export function Queue() {
+export function Queue({ onAssign }: { onAssign?: (item: QueueItem) => void }) {
   const { items, cancel, retry, remove, clearQueue } = useQueue();
   const watcherStatus = useWatcherStatus();
   const paused = watcherStatus === "paused";
@@ -24,7 +24,7 @@ export function Queue() {
     ? items.filter((i) => i.filename.toLowerCase().includes(query.toLowerCase()))
     : items;
 
-  const pending = items.filter((i) => i.status === "queued" || i.status === "uploading" || i.status === "parsing").length;
+  const pending = items.filter((i) => i.status === "queued" || i.status === "uploading" || i.status === "parsing" || i.status === "pending").length;
   const failed = items.filter((i) => i.status === "failed" || i.status === "cancelled").length;
   const done = items.filter((i) => i.status === "done").length;
 
@@ -161,6 +161,7 @@ export function Queue() {
                 onCancel={() => void cancel(row.id)}
                 onRetry={() => void retry(row.id)}
                 onRemove={() => void remove(row.id)}
+                onAssign={() => onAssign?.(row)}
               />
             ))}
           </tbody>
@@ -180,6 +181,7 @@ function QueueRow({
   onCancel,
   onRetry,
   onRemove,
+  onAssign,
 }: {
   row: QueueItem;
   alt: boolean;
@@ -190,6 +192,7 @@ function QueueRow({
   onCancel: () => void;
   onRetry: () => void;
   onRemove: () => void;
+  onAssign?: () => void;
 }) {
   const dir = extractDir(row.filePath);
   const sizeStr = formatBytes(row.size);
@@ -223,8 +226,13 @@ function QueueRow({
           {row.status === "done" && (
             <span className="p-1 text-[#16A34A]" title="Upload complete">{Icons.check}</span>
           )}
-          {(row.status === "queued" || row.status === "uploading" || row.status === "parsing") && (
+          {(row.status === "queued" || row.status === "uploading" || row.status === "parsing" || row.status === "pending") && (
             <button onClick={onCancel} className="p-1 text-[#9CA3AF] hover:text-[#DC2626] hover:bg-[#FEF2F2] rounded-sm transition-colors" title="Cancel upload">{Icons.cancel}</button>
+          )}
+          {row.status === "pending" && onAssign && (
+            <button onClick={onAssign} className="p-1 text-[#B45309] hover:bg-[#FFFBEB] rounded-sm transition-colors" title="Assign metadata">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 8h12M8 2v12" strokeLinecap="round"/></svg>
+            </button>
           )}
           <button onClick={onRemove} className="p-1 text-[#9CA3AF] hover:text-[#DC2626] hover:bg-[#FEF2F2] rounded-sm transition-colors" title="Remove from queue">
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 4h12M6 4V2h4v2M3 4l1 10h8l1-10" strokeLinecap="round" strokeLinejoin="round"/></svg>
