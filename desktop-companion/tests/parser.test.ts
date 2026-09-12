@@ -24,16 +24,17 @@ function float32ZlibBase64(values: number[], littleEndian: boolean): string {
 
 function makeMzXMLPeaks(intensityByScan: number[]): string {
   const scans = intensityByScan.map((intens, i) => {
-    // One centroid peak per scan at m/z 100 with the supplied intensity.
-    // Explicit zeros between make the arrays sparse enough to be treated as centroid.
-    const mz = [0, 0, 0, 0, 100, 0, 0, 0, 0];
-    const int = [0, 0, 0, 0, intens, 0, 0, 0, 0];
+    // Main centroid at m/z 100 plus a small secondary at m/z 200 so the
+    // per-scan noise floor stays below the signal. Explicit zeros keep the
+    // arrays sparse enough to be treated as centroid data.
+    const mz = [0, 100, 0, 200, 0];
+    const int = [0, intens, 0, Math.max(10, Math.round(intens / 10)), 0];
     const pairs: number[] = [];
     for (let j = 0; j < mz.length; j++) {
       pairs.push(mz[j], int[j]);
     }
     const b64 = float32ZlibBase64(pairs, true);
-    return `<scan msLevel="1" retentionTime="PT${(i + 1) * 60}S" polarity="+"><peaks precision="32" byteOrder="little" compressionType="zlib" contentType="m/z-int">${b64}</peaks></scan>`;
+    return `<scan msLevel="1" retentionTime="PT${(i + 1) * 15}S" polarity="+"><peaks precision="32" byteOrder="little" compressionType="zlib" contentType="m/z-int">${b64}</peaks></scan>`;
   });
   return `<?xml version="1.0"?>
     <mzXML>
@@ -45,14 +46,14 @@ function makeMzXMLPeaks(intensityByScan: number[]): string {
 
 function makeMzMLPeaks(intensityByScan: number[]): string {
   const spectra = intensityByScan.map((intens, i) => {
-    const mzB64 = float32ZlibBase64([100], true);
-    const intB64 = float32ZlibBase64([intens], true);
+    const mzB64 = float32ZlibBase64([0, 100, 0, 200, 0], true);
+    const intB64 = float32ZlibBase64([0, intens, 0, Math.max(10, Math.round(intens / 10)), 0], true);
     return `<spectrum id="s${i}">
       <cvParam accession="MS:1000511" value="1"/>
       <cvParam accession="MS:1000130"/>
       <scanList>
         <scan>
-          <cvParam accession="MS:1000016" value="${(i + 1) * 60}" unitName="second"/>
+          <cvParam accession="MS:1000016" value="${(i + 1) * 15}" unitName="second"/>
         </scan>
       </scanList>
       <binaryDataArrayList count="2">
@@ -140,24 +141,29 @@ describe("Parser configuration", () => {
 });
 
 describe("parseMzML output", () => {
-  it("parses a 5-scan mzXML file and detects the peak", async () => {
-    const xml = makeMzXMLPeaks([40, 80, 200, 80, 40]);
+  // A Gaussian-shaped signal across 7 scans (15 s apart, sigma ≈ 0.35 min)
+  // that survives the CentWave-style peak picker (S/N, FWHM, asymmetry and
+  // R² checks). Values are exp(-(t-1.0)²/(2·0.35²)) · 2000.
+  const signal = [201, 721, 1550, 2000, 1550, 721, 201];
+
+  it("parses a 7-scan mzXML file and detects the peak", async () => {
+    const xml = makeMzXMLPeaks(signal);
     const { summary } = await parseMzML(xml);
     expect(summary.format).toBe("mzXML");
-    expect(summary.scanCount).toBe(5);
-    expect(summary.trace.x.length).toBe(5);
+    expect(summary.scanCount).toBe(7);
+    expect(summary.trace.x.length).toBe(7);
     expect(summary.peaks.length).toBeGreaterThanOrEqual(1);
     const peak = summary.peaks[0];
     expect(peak.mz).toBeCloseTo(100, 0);
     expect(peak.height).toBeGreaterThan(0);
   });
 
-  it("parses a 5-scan mzML file and detects the peak", async () => {
-    const xml = makeMzMLPeaks([40, 80, 200, 80, 40]);
+  it("parses a 7-scan mzML file and detects the peak", async () => {
+    const xml = makeMzMLPeaks(signal);
     const { summary } = await parseMzML(xml);
     expect(summary.format).toBe("mzML");
-    expect(summary.scanCount).toBe(5);
-    expect(summary.trace.x.length).toBe(5);
+    expect(summary.scanCount).toBe(7);
+    expect(summary.trace.x.length).toBe(7);
     expect(summary.peaks.length).toBeGreaterThanOrEqual(1);
     const peak = summary.peaks[0];
     expect(peak.mz).toBeCloseTo(100, 0);

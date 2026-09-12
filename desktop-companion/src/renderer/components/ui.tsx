@@ -99,7 +99,7 @@ export function SectionDivider({ label }: { label: string }) {
 
 // ─── Windows-style dropdown menu ──────────────────────────────────────────────
 export interface MenuItem {
-  label: string;
+  label?: string;
   action?: () => void;
   separator?: boolean;
   disabled?: boolean;

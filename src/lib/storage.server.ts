@@ -160,13 +160,13 @@ async function getS3(): Promise<S3ClientLike> {
 /** Lazily import AWS SDK command classes + presigner only when needed. */
 async function getS3Commands() {
   const [
-    { GetObjectCommand, PutObjectCommand, DeleteObjectsCommand },
+    { GetObjectCommand, PutObjectCommand, DeleteObjectsCommand, HeadObjectCommand },
     { getSignedUrl },
   ] = await Promise.all([
     import("@aws-sdk/client-s3"),
     import("@aws-sdk/s3-request-presigner"),
   ]);
-  return { GetObjectCommand, PutObjectCommand, DeleteObjectsCommand, getSignedUrl };
+  return { GetObjectCommand, PutObjectCommand, DeleteObjectsCommand, HeadObjectCommand, getSignedUrl };
 }
 
 /** Resolve the bucket name from the effective config. */
@@ -261,27 +261,74 @@ export async function localPut(
  * Store one chunk of a file at a byte offset. Used by the desktop
  * companion to work around reverse-proxy timeouts on large uploads —
  * the client splits the file into small PUTs, each carrying `offset`.
- * On offset 0 the file is (re)created; the .meta sidecar is written
- * when `isFinal` is true.
+ * Chunks must arrive in order: `offset` must equal the current file size.
+ * The .meta sidecar is written when `offset + body.length === total`.
  */
 export async function localPutChunk(
   key: string,
   body: Uint8Array,
   contentType: string,
   offset: number,
-  isFinal: boolean,
+  total: number,
 ): Promise<void> {
+  if (!Number.isInteger(offset) || !Number.isInteger(total) || offset < 0 || total <= 0) {
+    throw new Error("Invalid chunk offset/total");
+  }
+  if (offset + body.length > total) {
+    throw new Error("Chunk exceeds declared total size");
+  }
   const fp = localPath(key);
   await ensureDir(fp);
-  const fh = await fs.open(fp, offset === 0 ? "w" : "r+");
+  let current = 0;
   try {
-    await fh.write(body, 0, body.length, offset);
+    current = (await fs.stat(fp)).size;
+  } catch {
+    // File does not exist yet — only offset 0 is valid.
+  }
+  if (offset !== current) {
+    throw new Error(`Chunk out of order: expected offset ${current}, got ${offset}`);
+  }
+  const fh = await fs.open(fp, "a");
+  try {
+    await fh.write(body);
   } finally {
     await fh.close();
   }
-  if (isFinal) {
+  if (offset + body.length === total) {
     await fs.writeFile(`${fp}.meta`, contentType, "utf8");
   }
+}
+
+/** Stream a request body to the local filesystem without buffering it all. */
+export async function localPutStream(
+  key: string,
+  body: ReadableStream<Uint8Array> | null,
+  contentType: string,
+  maxSize: number,
+): Promise<void> {
+  const fp = localPath(key);
+  await ensureDir(fp);
+  const fh = await fs.open(fp, "w");
+  let written = 0;
+  try {
+    if (body) {
+      const reader = body.getReader();
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (value) {
+          written += value.byteLength;
+          if (written > maxSize) {
+            throw new Error(`File too large (max ${maxSize} bytes)`);
+          }
+          await fh.write(value);
+        }
+      }
+    }
+  } finally {
+    await fh.close();
+  }
+  await fs.writeFile(`${fp}.meta`, contentType, "utf8");
 }
 
 // ---- Public API (works for both S3 and local) ----

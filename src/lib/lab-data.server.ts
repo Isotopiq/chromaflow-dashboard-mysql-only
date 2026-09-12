@@ -106,6 +106,7 @@ export function mapRun(r: any, peaks: Peak[] = []): Run {
     peaks,
     ionMode: (s.ionMode as Run["ionMode"]) ?? "positive",
     scansBlobPath: r.scans_blob_path ?? null,
+    ms2BlobPath: r.ms2_blob_path ?? null,
     msLevel: r.ms_level ?? 1,
     notes: r.notes ?? "",
   };
@@ -278,6 +279,7 @@ export function mapImportWatchFolder(r: any): ImportWatchFolder {
     methodId: r.method_id ?? null,
     columnId: r.column_id ?? null,
     batchId: r.batch_id ?? null,
+    compoundListId: r.compound_list_id ?? null,
     filePattern: r.file_pattern ?? "*.mzXML",
     createdBy: r.created_by ?? null,
     createdAt: String(r.created_at),
@@ -720,6 +722,7 @@ type RunInputData = {
   batchId?: string | null;
   filePath: string;
   scansBlobPath?: string | null;
+  ms2BlobPath?: string | null;
   fileFormat: "mzML" | "mzXML" | "raw";
   fileSize: string;
   ionMode: "positive" | "negative";
@@ -766,12 +769,12 @@ export async function createRunInDb(
 
   const run = await db.one<any>(
     `insert into public.runs
-       (method_id, column_id, batch_id, file_path, file_format, scans_blob_path,
+       (method_id, column_id, batch_id, file_path, file_format, scans_blob_path, ms2_blob_path,
         ms_level, parsed_status, summary_json, uploaded_by)
-      values ($1,$2,$3,$4,$5,$6,$7,'parsed',$8,$9) returning *`,
+      values ($1,$2,$3,$4,$5,$6,$7,$8,'parsed',$9,$10) returning *`,
     [
       data.methodId || null, data.columnId || null, data.batchId || null,
-      data.filePath, data.fileFormat, data.scansBlobPath || null, data.msLevel,
+      data.filePath, data.fileFormat, data.scansBlobPath || null, data.ms2BlobPath || null, data.msLevel,
       JSON.stringify(summary), userId,
     ],
   );

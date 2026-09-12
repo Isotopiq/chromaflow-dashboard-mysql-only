@@ -53,14 +53,18 @@ export class IpcHandlers {
 
     // ---- Watch folders ----
     ipcMain.handle(IPC.GET_WATCH_FOLDERS, async () => {
-      // Try API first, fall back to local
+      const localFolders = this.db.getLocalWatchFolders();
       try {
         const apiFolders = await this.api.listWatchFolders();
-        if (apiFolders.length > 0) return apiFolders;
+        if (apiFolders.length === 0) return localFolders;
+        const apiIds = new Set(apiFolders.map((f) => f.id));
+        const merged = apiFolders.map((f) => this.db.mergeWatchFolder(f));
+        // Include local-only folders that have not been synced to the API.
+        const localOnly = localFolders.filter((f) => !apiIds.has(f.id));
+        return [...merged, ...localOnly];
       } catch {
-        // API not available — use local
+        return localFolders;
       }
-      return this.db.getLocalWatchFolders();
     });
     ipcMain.handle(IPC.ADD_WATCH_FOLDER, async (_, folder: any) => {
       const id = folder.id ?? crypto.randomUUID();
@@ -86,11 +90,12 @@ export class IpcHandlers {
       // Try to sync to API
       try {
         const created = await this.api.upsertWatchFolder(folder);
-        // Start watching with the API-returned folder (has server ID)
-        if (created.enabled) {
-          this.watcher.startWatching(created);
+        const merged = this.db.mergeWatchFolder(created);
+        // Start watching with the merged folder (API fields + local settings)
+        if (merged.enabled) {
+          this.watcher.startWatching(merged);
         }
-        return created;
+        return merged;
       } catch {
         // API not available — use local folder
         this.db.log("WARN", `Could not sync watch folder to V3 API, using local only: ${localFolder.path}`);
@@ -110,6 +115,7 @@ export class IpcHandlers {
         methodId: folder.methodId,
         columnId: folder.columnId,
         batchId: folder.batchId,
+        compoundListId: folder.compoundListId,
       });
 
       this.watcher.stopWatching(folder.id);
@@ -117,10 +123,11 @@ export class IpcHandlers {
       // Try to sync to API
       try {
         const updated = await this.api.upsertWatchFolder(folder);
-        if (updated.enabled) {
-          this.watcher.startWatching(updated);
+        const merged = this.db.mergeWatchFolder(updated);
+        if (merged.enabled) {
+          this.watcher.startWatching(merged);
         }
-        return updated;
+        return merged;
       } catch {
         // API not available — use local folder
         const localFolder = this.db.getLocalWatchFolders().find((f) => f.id === folder.id);

@@ -4,12 +4,33 @@
 
 The V4 Docker image has been built and pushed to Docker Hub:
 
-- **`ddlidded/chroma-lab:v4`** — versioned tag
-- **`ddlidded/chroma-lab:latest`** — latest tag
+- **`ddlidded/chroma-lab:v4`** — versioned tag (recommended)
+- **`ddlidded/chroma-lab:latest`** — floating tag (make sure it was re-pushed)
 - **`ddlidded/chroma-lab:v3`** — previous production (rollback)
 
-Both `v4` and `latest` point to the same image digest:
-`sha256:22c8ed513ad786b0faa5deacebf6d81744db3d2b68d6f20e14d61683aaaa63a4`
+## REQUIRED: persistent volume
+
+The bundled PostgreSQL database and uploaded files live under `/app/data`.
+**If no volume is mounted, the container now refuses to start** (a startup
+guard exits with a `FATAL` error) so a redeploy can no longer silently wipe
+your data.
+
+### Easypanel volume setup (manual)
+
+1. In the Easypanel service, go to **Storage** (sometimes labelled **Volumes** or **Mounts**).
+2. Click **Add Volume** and enter:
+   - **Volume name:** `chroma-lab-data`
+   - **Mount path (container):** `/app/data`
+   - **Type:** named/persistent volume (the default)
+3. Save, then deploy.
+
+If you prefer a bind mount to a host directory instead:
+
+- **Host path:** `/var/lib/chroma-lab` (or any host directory you manage)
+- **Container path:** `/app/data`
+
+If you intentionally want ephemeral storage (testing only), set the
+environment variable `ALLOW_EPHEMERAL=1` to bypass the guard.
 
 ## What's new in V4
 
@@ -86,7 +107,7 @@ If V4 causes issues, roll back to V3:
 ## Notes
 
 - The V4 image includes all V3 functionality plus the new endpoints.
-- No database migrations are required — V4 uses the same schema as V3.
+- No manual database migration is required — the schema script runs on container start and is idempotent (it adds `compound_list_id`, `ms2_blob_path`, etc. if missing).
 - The `import_watch_folders` table is created on first use (auto-migrated).
 - Existing sessions/cookies remain valid (same JWT signing key).
 - The desktop companion app is optional — V4 works perfectly without it.

@@ -1,10 +1,14 @@
 // Bearer token auth helper for desktop companion REST endpoints.
 //
 // Reads the JWT from the Authorization header (instead of the session cookie),
-// verifies it, resolves the user's role + permissions, and opens a DB
-// transaction with the correct RLS context. Mirrors the logic in
+// verifies it, resolves the user's role + permissions, and runs the handler
+// inside a DB transaction with the correct RLS context. Mirrors the logic in
 // auth-middleware.ts's `requireAuth` but for REST handlers (createFileRoute)
 // rather than server functions (createServerFn).
+//
+// IMPORTANT: the handler runs INSIDE withDb — `ctx.db` is only valid for the
+// duration of the callback. Returning `db` from the callback and using it
+// afterwards would fail because the pooled client is released on return.
 
 import { verifySession } from "./auth/jwt.server";
 import { withDb, type Db, type AuthCtx } from "@/db/index.server";
@@ -43,14 +47,16 @@ const PRIORITY: AppRole[] = ["admin", "developer", "reviewer", "user"];
 
 /**
  * Extract + verify the bearer token from the Authorization header, resolve
- * the user's role, and open a DB transaction with RLS context.
+ * the user's role, and run `fn(ctx)` inside a DB transaction with RLS context.
  *
  * Throws a Response(401) if the token is missing, invalid, or expired.
- * Returns a context object with userId, email, role, permission flags, and db.
+ * Any error thrown by `fn` rolls the transaction back and propagates — return
+ * a Response from `fn` for expected client errors instead of throwing.
  */
-export async function requireBearerAuth(
+export async function requireBearerAuth<T>(
   request: Request,
-): Promise<BearerAuthContext> {
+  fn: (ctx: BearerAuthContext) => Promise<T>,
+): Promise<T> {
   const authHeader = request.headers.get("Authorization") ?? "";
   const match = authHeader.match(/^Bearer\s+(.+)$/i);
   if (!match) {
@@ -85,12 +91,12 @@ export async function requireBearerAuth(
     const role: AppRole = PRIORITY.find((p) => roles.includes(p)) ?? "user";
     const flags = roleToFlags(role);
 
-    return {
+    return fn({
       userId: claims.sub,
       email: claims.email,
       role,
       ...flags,
       db,
-    };
+    });
   });
 }

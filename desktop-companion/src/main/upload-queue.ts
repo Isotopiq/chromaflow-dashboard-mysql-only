@@ -69,7 +69,7 @@ export class UploadQueue extends EventEmitter {
   enqueue(filePath: string, folderId: string, size: number, opts?: { force?: boolean }) {
     // Don't enqueue if already in the queue
     const existing = this.queue.find(
-      (q) => q.filePath === filePath && (q.status === "queued" || q.status === "parsing" || q.status === "uploading"),
+      (q) => q.filePath === filePath && (q.status === "queued" || q.status === "pending" || q.status === "parsing" || q.status === "uploading"),
     );
     if (existing) return;
 
@@ -362,6 +362,7 @@ export class UploadQueue extends EventEmitter {
       batchId: meta?.batchId ?? null,
       filePath: rawUrl.path.slice(0, 500),
       scansBlobPath: scansUrl.path,
+      ms2BlobPath: ms2Url.path,
       fileFormat: parsed.summary.format === "mzXML" ? "mzXML" : "mzML",
       compoundListId: meta?.compoundListId ?? null,
       fileSize: this.formatSize(item.size).slice(0, 40),

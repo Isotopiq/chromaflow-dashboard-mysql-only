@@ -729,6 +729,7 @@ const RunInput = z.object({
   batchId: z.string().optional().nullable(),
   filePath: z.string().max(500),
   scansBlobPath: z.string().max(500).optional().nullable(),
+  ms2BlobPath: z.string().max(500).optional().nullable(),
   fileFormat: z.enum(["mzML", "mzXML", "raw"]).default("mzML"),
   fileSize: z.string().max(40),
   ionMode: z.enum(["positive", "negative"]).default("positive"),
@@ -855,19 +856,21 @@ export const getRunMS2Spectra = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { db } = context as { userId: string; email: string; isAdmin: boolean; db: import("@/db/index.server").Db };
     const run = await db.maybe<any>(
-      "select file_path, scans_blob_path from public.runs where id = $1",
+      "select file_path, scans_blob_path, ms2_blob_path from public.runs where id = $1",
       [data.runId],
     );
     if (!run) throw new Error("Run not found");
-    // MS2 blob path: replace .scans.bin with .ms2.bin
-    const ms2Path = (run.scans_blob_path || "").replace(/\.scans\.bin$/, ".ms2.bin");
-    if (!ms2Path.endsWith(".ms2.bin")) return { spectra: [], hasMS2: false };
+    // MS2 blob path: prefer the stored column; fall back to deriving it from
+    // the scans blob path for runs created before ms2_blob_path existed.
+    const ms2Path =
+      run.ms2_blob_path ||
+      (run.scans_blob_path || "").replace(/\.scans\.bin$/, ".ms2.bin");
+    if (!ms2Path || !ms2Path.endsWith(".ms2.bin")) return { spectra: [], hasMS2: false };
 
     // Read MS2 blob from storage
-    const { getObject } = await import("@/lib/storage.server");
     let blob: Uint8Array | null = null;
     try {
-      blob = await getObject(ms2Path);
+      blob = await downloadObject("raw-runs", ms2Path);
     } catch {
       return { spectra: [], hasMS2: false };
     }
@@ -1347,12 +1350,12 @@ export const addManualPeak = createServerFn({ method: "POST" })
 // ---- Delete run ----
 async function deleteRunInternal(db: import("@/db/index.server").Db, userId: string, runId: string, isAdmin = false) {
   const run = await db.maybe<any>(
-    "select id, uploaded_by, file_path, scans_blob_path from public.runs where id=$1",
+    "select id, uploaded_by, file_path, scans_blob_path, ms2_blob_path from public.runs where id=$1",
     [runId]);
   if (!run) return { ok: true, missing: true };
   if (run.uploaded_by && run.uploaded_by !== userId && !isAdmin)
     throw new Error("You don't have permission to delete this run.");
-  const paths = [run.file_path, run.scans_blob_path].filter(
+  const paths = [run.file_path, run.scans_blob_path, run.ms2_blob_path].filter(
     (p): p is string => typeof p === "string" && p.length > 0);
   if (paths.length > 0) await removeObjects("raw-runs", paths);
   await db.query("delete from public.peaks where run_id=$1", [runId]);

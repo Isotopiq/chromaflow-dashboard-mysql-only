@@ -44,7 +44,9 @@ export class LocalDb extends EventEmitter {
         progress INTEGER DEFAULT 0,
         error TEXT,
         created_at INTEGER NOT NULL,
-        retries INTEGER DEFAULT 0
+        retries INTEGER DEFAULT 0,
+        assignment TEXT,
+        force INTEGER DEFAULT 0
       );
 
       CREATE TABLE IF NOT EXISTS logs (
@@ -109,6 +111,16 @@ export class LocalDb extends EventEmitter {
     } catch {
       // Column already exists
     }
+    try {
+      this.db.exec("ALTER TABLE queue_items ADD COLUMN assignment TEXT");
+    } catch {
+      // Column already exists
+    }
+    try {
+      this.db.exec("ALTER TABLE queue_items ADD COLUMN force INTEGER DEFAULT 0");
+    } catch {
+      // Column already exists
+    }
     // Backfill file_path for rows that predate the column.
     this.db.exec(`
       UPDATE upload_history
@@ -156,11 +168,13 @@ export class LocalDb extends EventEmitter {
   saveQueueItem(item: QueueItem) {
     this.db.prepare(`
       INSERT OR REPLACE INTO queue_items
-        (id, filename, file_path, folder_id, size, status, progress, error, created_at, retries)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, filename, file_path, folder_id, size, status, progress, error, created_at, retries, assignment, force)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       item.id, item.filename, item.filePath, item.folderId, item.size,
       item.status, item.progress, item.error, item.createdAt, item.retries,
+      item.assignment ? JSON.stringify(item.assignment) : null,
+      item.force ? 1 : 0,
     );
   }
 
@@ -179,6 +193,8 @@ export class LocalDb extends EventEmitter {
       error: r.error,
       createdAt: r.created_at,
       retries: r.retries,
+      force: r.force === 1,
+      assignment: r.assignment ? JSON.parse(r.assignment) : null,
     }));
   }
 
@@ -376,21 +392,47 @@ export class LocalDb extends EventEmitter {
 
   getLocalWatchFolders(): WatchFolder[] {
     const rows = this.db.prepare("SELECT * FROM watch_folders_local ORDER BY created_at ASC").all() as any[];
-    return rows.map((r) => ({
-      id: r.id,
-      path: r.path,
-      enabled: !!r.enabled,
-      recursive: !!r.recursive,
-      stabilizeSeconds: r.stabilize_seconds,
-      filePattern: r.file_pattern,
-      methodId: r.method_id,
-      columnId: r.column_id,
-      batchId: r.batch_id,
-      compoundListId: r.compound_list_id,
-      archiveBehavior: "leave" as const,
-      archivePath: null,
-      maxRetries: 3,
-    }));
+    return rows.map((r) => {
+      const local = this.getWatchFolderLocal(r.id);
+      return {
+        id: r.id,
+        path: r.path,
+        enabled: !!r.enabled,
+        recursive: !!r.recursive,
+        stabilizeSeconds: r.stabilize_seconds,
+        filePattern: r.file_pattern,
+        methodId: r.method_id,
+        columnId: r.column_id,
+        batchId: r.batch_id,
+        compoundListId: r.compound_list_id,
+        archiveBehavior: (local?.archiveBehavior as WatchFolder["archiveBehavior"]) ?? "leave",
+        archivePath: local?.archivePath ?? null,
+        maxRetries: local?.maxRetries ?? 3,
+      };
+    });
+  }
+
+  /**
+   * Merge an API-returned watch folder with desktop-local settings
+   * (recursive, stabilizeSeconds, archive options) that the server
+   * does not store. The API row is authoritative for shared fields.
+   */
+  mergeWatchFolder(folder: WatchFolder): WatchFolder {
+    const full = this.db.prepare("SELECT * FROM watch_folders_local WHERE id = ?").get(folder.id) as any;
+    const local = this.getWatchFolderLocal(folder.id);
+    return {
+      ...folder,
+      recursive: full ? !!full.recursive : (local?.recursive ?? true),
+      stabilizeSeconds: full?.stabilize_seconds ?? local?.stabilizeSeconds ?? 30,
+      filePattern: full?.file_pattern ?? folder.filePattern ?? "*.mzXML",
+      methodId: folder.methodId ?? full?.method_id ?? null,
+      columnId: folder.columnId ?? full?.column_id ?? null,
+      batchId: folder.batchId ?? full?.batch_id ?? null,
+      compoundListId: folder.compoundListId !== undefined ? folder.compoundListId : (full?.compound_list_id ?? null),
+      archiveBehavior: (local?.archiveBehavior as WatchFolder["archiveBehavior"]) ?? "leave",
+      archivePath: local?.archivePath ?? null,
+      maxRetries: local?.maxRetries ?? 3,
+    };
   }
 
   updateLocalWatchFolder(id: string, patch: Partial<{

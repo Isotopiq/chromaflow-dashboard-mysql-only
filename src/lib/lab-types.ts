@@ -46,6 +46,7 @@ export type Run = {
   peaks: Peak[];
   ionMode: "positive" | "negative";
   scansBlobPath?: string | null;
+  ms2BlobPath?: string | null;
   msLevel?: number;
   notes?: string;
 };
@@ -331,6 +332,7 @@ export type ImportWatchFolder = {
   methodId: string | null;
   columnId: string | null;
   batchId: string | null;
+  compoundListId: string | null;
   filePattern: string;
   createdBy: string | null;
   createdAt: string;

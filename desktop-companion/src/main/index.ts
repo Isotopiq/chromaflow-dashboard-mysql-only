@@ -143,6 +143,7 @@ app.whenReady().then(async () => {
   // Create the tray icon (after window exists)
   trayManager.setWindow(mainWindow!);
   trayManager.setWatcher(watcherManager!);
+  trayManager.setQueue(uploadQueue!);
   trayManager.create();
   trayManager.togglePauseLabel(true);
 
@@ -154,8 +155,9 @@ app.whenReady().then(async () => {
     const folders = await apiClient.listWatchFolders();
     if (folders.length > 0) {
       for (const folder of folders) {
-        if (folder.enabled) {
-          watcherManager.startWatching(folder);
+        const merged = db.mergeWatchFolder(folder);
+        if (merged.enabled) {
+          watcherManager.startWatching(merged);
         }
       }
       startedFromApi = true;

@@ -142,6 +142,7 @@ export class WatcherManager extends EventEmitter {
 
   private checkStabilized(filePath: string, folderId: string, originalSize: number) {
     this.stabilizationTimers.delete(filePath);
+    if (this.paused) return;
 
     try {
       const stat = fs.statSync(filePath);
@@ -183,6 +184,11 @@ export class WatcherManager extends EventEmitter {
 
   pauseAll() {
     this.paused = true;
+    // Stop pending stabilization timers so files are not queued while paused.
+    for (const [, timer] of this.stabilizationTimers) {
+      clearTimeout(timer);
+    }
+    this.stabilizationTimers.clear();
     this.status = "paused";
     this.emit("status", this.status);
     this.db.log("INFO", "All watchers paused");

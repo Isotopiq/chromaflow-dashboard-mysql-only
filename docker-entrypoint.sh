@@ -17,6 +17,22 @@ PG_DB="${POSTGRES_DB:-chroma_lab}"
 mkdir -p /run/postgresql
 chown postgres:postgres /run/postgresql
 
+# ---- 0. Persistence guard ----
+# The bundled PostgreSQL stores all data under /app/data. If that path is
+# not a mounted volume, every redeploy silently wipes the database. Fail
+# loudly unless the operator explicitly opts into ephemeral storage.
+if [ "${ALLOW_EPHEMERAL:-0}" != "1" ]; then
+  if ! awk '$2 == "/app/data" { found=1 } END { exit !found }' /proc/mounts 2>/dev/null; then
+    echo "[entrypoint] FATAL: /app/data is not a mounted volume."
+    echo "[entrypoint]   The bundled database and uploads live under /app/data."
+    echo "[entrypoint]   Without a persistent volume, every redeploy wipes ALL data."
+    echo "[entrypoint]   Easypanel fix: Storage -> Add Volume ->"
+    echo "[entrypoint]     name: chroma-lab-data   mount path: /app/data"
+    echo "[entrypoint]   Or set ALLOW_EPHEMERAL=1 to override (NOT recommended)."
+    exit 1
+  fi
+fi
+
 # Ensure the uploads directory exists (volume may be empty on first deploy).
 mkdir -p /app/data/uploads
 

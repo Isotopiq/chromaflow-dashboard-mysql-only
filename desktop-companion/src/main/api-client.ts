@@ -123,6 +123,7 @@ export class ApiClient {
     methodId?: string | null;
     columnId?: string | null;
     batchId?: string | null;
+    compoundListId?: string | null;
     filePattern?: string;
   }): Promise<WatchFolder> {
     return this.request("POST", "/api/desktop/watch-folders", folder);

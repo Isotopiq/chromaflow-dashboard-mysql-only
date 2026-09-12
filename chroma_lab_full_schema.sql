@@ -369,6 +369,7 @@ create table if not exists public.runs (
   file_path       text not null,
   file_format     text default 'mzML' check (file_format in ('mzML','mzXML','raw')),
   scans_blob_path text,
+  ms2_blob_path   text,
   ms_level        smallint default 1,
   parsed_status   text default 'parsed' check (parsed_status in ('parsed','parsing','failed')),
   summary_json    jsonb default '{}'::jsonb,
@@ -382,6 +383,9 @@ do $$ begin
 exception when others then null; end $$;
 do $$ begin
   alter table public.runs add column if not exists injection_id uuid references public.column_injections(id) on delete set null;
+exception when others then null; end $$;
+do $$ begin
+  alter table public.runs add column if not exists ms2_blob_path text;
 exception when others then null; end $$;
 alter table public.runs enable row level security;
 drop policy if exists "runs: read all"   on public.runs;
@@ -955,10 +959,14 @@ create table if not exists public.import_watch_folders (
   method_id    uuid references public.methods(id) on delete set null,
   column_id    uuid references public.columns(id) on delete set null,
   batch_id     uuid references public.batches(id) on delete set null,
+  compound_list_id uuid references public.compound_lists(id) on delete set null,
   file_pattern text default '*.mzXML',
   created_by   uuid references public.app_users(id) on delete set null,
   created_at   timestamptz not null default now()
 );
+do $$ begin
+  alter table public.import_watch_folders add column if not exists compound_list_id uuid references public.compound_lists(id) on delete set null;
+exception when others then null; end $$;
 alter table public.import_watch_folders enable row level security;
 drop policy if exists "watch_folders: read all" on public.import_watch_folders;
 drop policy if exists "watch_folders: write auth" on public.import_watch_folders;

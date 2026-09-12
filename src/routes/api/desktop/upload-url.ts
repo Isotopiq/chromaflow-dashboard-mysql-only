@@ -17,29 +17,29 @@ export const Route = createFileRoute("/api/desktop/upload-url")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        let ctx;
         try {
-          ctx = await requireBearerAuth(request);
+          return await requireBearerAuth(request, async (ctx) => {
+            let parsed;
+            try {
+              parsed = Body.parse(await request.json());
+            } catch {
+              return Response.json({ error: "Invalid request body" }, { status: 400 });
+            }
+            const safe = parsed.filename.replace(/[^a-zA-Z0-9._-]/g, "_");
+            const stamp = Date.now();
+            const path = `${ctx.userId}/${stamp}-${safe}${parsed.suffix ?? ""}`;
+            const { url } = await createSignedUploadUrl(
+              parsed.bucket as BucketName,
+              path,
+              parsed.contentType ?? "application/octet-stream",
+            );
+            // `path` is the key within the bucket (no prefix) — matches the
+            // browser createUploadUrl server fn so file_path/scans_blob_path
+            // stored on runs work with downloadObject("raw-runs", path).
+            return Response.json({ signedUrl: url, path, bucket: parsed.bucket });
+          });
         } catch (e: any) {
-          return e instanceof Response ? e : Response.json({ error: "Unauthorized" }, { status: 401 });
-        }
-        let parsed;
-        try {
-          parsed = Body.parse(await request.json());
-        } catch {
-          return Response.json({ error: "Invalid request body" }, { status: 400 });
-        }
-        try {
-          const safe = parsed.filename.replace(/[^a-zA-Z0-9._-]/g, "_");
-          const stamp = Date.now();
-          const path = `${ctx.userId}/${stamp}-${safe}${parsed.suffix ?? ""}`;
-          const { url, key } = await createSignedUploadUrl(
-            parsed.bucket as BucketName,
-            path,
-            parsed.contentType ?? "application/octet-stream",
-          );
-          return Response.json({ signedUrl: url, path: key, bucket: parsed.bucket });
-        } catch (e: any) {
+          if (e instanceof Response) return e;
           return Response.json({ error: e?.message ?? "Failed to create upload URL" }, { status: 500 });
         }
       },

@@ -3,6 +3,7 @@ import { app, Tray, Menu, nativeImage, BrowserWindow } from "electron";
 import path from "node:path";
 import { setQuitting } from "./index";
 import type { WatcherManager } from "./watcher";
+import type { UploadQueue } from "./upload-queue";
 
 // __dirname is available natively in CommonJS
 
@@ -10,6 +11,7 @@ export class TrayManager {
   private tray: Tray | null = null;
   private window: BrowserWindow | null = null;
   private watcher: WatcherManager | null = null;
+  private queue: UploadQueue | null = null;
 
   setWindow(window: BrowserWindow) {
     this.window = window;
@@ -17,6 +19,10 @@ export class TrayManager {
 
   setWatcher(watcher: WatcherManager) {
     this.watcher = watcher;
+  }
+
+  setQueue(queue: UploadQueue) {
+    this.queue = queue;
   }
 
   create() {
@@ -63,8 +69,10 @@ export class TrayManager {
           const newPaused = !paused;
           if (newPaused) {
             this.watcher?.pauseAll();
+            this.queue?.setPaused(true);
           } else {
             this.watcher?.resumeAll();
+            this.queue?.setPaused(false);
           }
           this.updateMenu(newPaused);
         },

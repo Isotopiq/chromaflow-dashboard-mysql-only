@@ -13,22 +13,19 @@ export const Route = createFileRoute("/api/desktop/find-run")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        let ctx;
         try {
-          ctx = await requireBearerAuth(request);
+          return await requireBearerAuth(request, async (ctx) => {
+            let parsed;
+            try {
+              parsed = Body.parse(await request.json());
+            } catch {
+              return Response.json({ error: "Invalid request body" }, { status: 400 });
+            }
+            const result = await findRunByPathInDb(ctx.db, ctx.userId, parsed.filePath);
+            return Response.json(result);
+          });
         } catch (e: any) {
-          return e instanceof Response ? e : Response.json({ error: "Unauthorized" }, { status: 401 });
-        }
-        let parsed;
-        try {
-          parsed = Body.parse(await request.json());
-        } catch {
-          return Response.json({ error: "Invalid request body" }, { status: 400 });
-        }
-        try {
-          const result = await findRunByPathInDb(ctx.db, ctx.userId, parsed.filePath);
-          return Response.json(result);
-        } catch (e: any) {
+          if (e instanceof Response) return e;
           return Response.json({ error: e?.message ?? "Failed to find run" }, { status: 500 });
         }
       },
