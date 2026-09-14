@@ -207,8 +207,9 @@ function ColumnDetail({ column }: { column: Column }) {
         runId: injRun || null,
       };
       if (editingInj) {
-        const updated = await updateInjectionFn({ data: { id: editingInj, ...payload } });
-        upsertInjectionLocal(updated as any);
+        const res = await updateInjectionFn({ data: { id: editingInj, ...payload } });
+        if (res.injection) upsertInjectionLocal(res.injection as any);
+        if (res.column) upsertColumnLocal(res.column as any);
         toast.success("Injection updated");
       } else {
         const res = await createInjectionFn({ data: payload });

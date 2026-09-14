@@ -1585,12 +1585,13 @@ export const createInjection = createServerFn({ method: "POST" })
     if (data.runId) {
       await db.query("update public.runs set injection_id=$1 where id=$2", [row.id, data.runId]);
     }
-    // Each logged injection consumes one unit of the column's rated life —
-    // keep used_injections in step so the health metric reflects the log.
+    // injection_num is the column's running injection count (the dialog
+    // suggests max+1), so the usage counter tracks the highest asserted
+    // number — logging injection #27 means 27 injections consumed.
     const updatedCol = await db.maybe<any>(
-      `update public.columns set used_injections = used_injections + 1, updated_at = now()
+      `update public.columns set used_injections = greatest(used_injections, $2), updated_at = now()
        where id = $1 returning *`,
-      [data.columnId],
+      [data.columnId, data.injectionNum],
     );
     return { injection: mapInjection(row), column: updatedCol ? mapColumn(updatedCol) : null };
   });
@@ -1625,7 +1626,16 @@ export const updateInjection = createServerFn({ method: "POST" })
       `update public.column_injections set ${sets.join(", ")} where id=$${p} returning *`,
       vals,
     );
-    return mapInjection(row);
+    // Raising the asserted injection number raises the usage counter.
+    let column: any = null;
+    if (data.injectionNum !== undefined) {
+      column = await db.maybe<any>(
+        `update public.columns set used_injections = greatest(used_injections, $2), updated_at = now()
+         where id = $1 returning *`,
+        [row.column_id, data.injectionNum],
+      );
+    }
+    return { injection: mapInjection(row), column: column ? mapColumn(column) : null };
   });
 
 export const deleteInjection = createServerFn({ method: "POST" })
@@ -1637,23 +1647,40 @@ export const deleteInjection = createServerFn({ method: "POST" })
     const { db } = ctx;
     await db.query("update public.runs set injection_id=null where injection_id=$1", [data.id]);
     const deleted = await db.maybe<any>(
-      "delete from public.column_injections where id=$1 returning column_id, created_at",
+      "delete from public.column_injections where id=$1 returning column_id, created_at, injection_num",
       [data.id],
     );
     let column: any = null;
     if (deleted) {
-      // Only decrement if this injection was logged after the most recent
-      // usage reset — deleting pre-reset history must not undercount.
+      // Recompute the counter only when the deleted row was both logged after
+      // the last usage reset AND was at/above the current counter (i.e. it
+      // was the asserted max). Otherwise the counter is left alone, which
+      // preserves manually-set baselines and pre-reset history.
       column = await db.maybe<any>(
         `update public.columns c set
-           used_injections = greatest(0, used_injections - 1), updated_at = now()
+           used_injections = greatest(
+             coalesce((
+               select se.injections_after from public.column_service_events se
+               where se.column_id = c.id and se.reset_usage = true
+               order by se.created_at desc limit 1
+             ), 0),
+             coalesce((
+               select max(ci.injection_num) from public.column_injections ci
+               where ci.column_id = c.id
+                 and ci.created_at > coalesce((
+                   select max(created_at) from public.column_service_events
+                   where column_id = c.id and reset_usage = true
+                 ), 'epoch'::timestamptz)
+             ), 0)),
+           updated_at = now()
          where c.id = $1
            and $2::timestamptz > coalesce((
              select max(created_at) from public.column_service_events
              where column_id = c.id and reset_usage = true
            ), 'epoch'::timestamptz)
+           and $3 >= c.used_injections
          returning *`,
-        [deleted.column_id, deleted.created_at],
+        [deleted.column_id, deleted.created_at, deleted.injection_num],
       );
       if (!column) {
         column = await db.maybe<any>(

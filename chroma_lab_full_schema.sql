@@ -383,18 +383,19 @@ create policy "column_injections: write auth" on public.column_injections for al
   with check (true);
 
 -- Reconcile used_injections with the injection log: raise the counter to at
--- least the number of injections logged since the most recent usage reset.
--- greatest() never lowers the value, so manually-set baselines are preserved.
--- Runs on every startup — idempotent and self-healing for rows logged before
--- the counter increment existed.
+-- least the highest injection number logged since the most recent usage
+-- reset (injection_num is the asserted running count). greatest() never
+-- lowers the value, so manually-set baselines are preserved. Runs on every
+-- startup — idempotent and self-healing for rows logged before the counter
+-- tracking existed.
 update public.columns c set used_injections = greatest(
   c.used_injections,
-  (select count(*) from public.column_injections ci
+  coalesce((select max(ci.injection_num) from public.column_injections ci
     where ci.column_id = c.id
       and ci.created_at > coalesce((
         select max(created_at) from public.column_service_events se
         where se.column_id = c.id and se.reset_usage = true
-      ), 'epoch'::timestamptz))
+      ), 'epoch'::timestamptz)), 0)
 );
 
 do $$ begin
