@@ -23,13 +23,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { RotateCcw, Shield, Wrench, Trash2 } from "lucide-react";
+import { RotateCcw, Shield, Wrench, Trash2, Pencil } from "lucide-react";
 import { useLab } from "@/lib/store";
-import type { Column, ColumnServiceEvent } from "@/lib/lab-types";
+import type { Column, ColumnServiceEvent, User } from "@/lib/lab-types";
 import {
   listColumnServiceEvents,
   logColumnService,
   deleteColumnServiceEvent,
+  updateColumnServiceEvent,
 } from "@/lib/lab.functions";
 
 type Kind = ColumnServiceEvent["kind"];
@@ -49,22 +50,39 @@ const KIND_ICON: Record<Kind, React.ReactNode> = {
 };
 
 export function ColumnServicePanel({ column }: { column: Column }) {
-  const { upsertColumnLocal } = useLab();
+  const { users, currentUser, upsertColumnLocal } = useLab();
+  const isAdmin = currentUser?.role === "admin";
   const listFn = useServerFn(listColumnServiceEvents);
   const logFn = useServerFn(logColumnService);
   const delFn = useServerFn(deleteColumnServiceEvent);
+  const updateFn = useServerFn(updateColumnServiceEvent);
 
   const [events, setEvents] = useState<ColumnServiceEvent[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  // Log form state
   const [kind, setKind] = useState<Kind>("guard_change");
   const [resetUsage, setResetUsage] = useState(true);
   const [resetInstalledAt, setResetInstalledAt] = useState(false);
   const [serial, setSerial] = useState("");
   const [status, setStatus] = useState<Column["status"]>("healthy");
   const [notes, setNotes] = useState("");
+
+  // Edit dialog state
+  const [editTarget, setEditTarget] = useState<ColumnServiceEvent | null>(null);
+  const [editKind, setEditKind] = useState<Kind>("guard_change");
+  const [editSerial, setEditSerial] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+  const [editPerformer, setEditPerformer] = useState<string>("__none__");
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const resolveUserName = (userId: string | null | undefined): string => {
+    if (!userId) return "Unknown";
+    const u = users.find((x: User) => x.id === userId);
+    return u?.name ?? "Unknown user";
+  };
 
   const load = async () => {
     try {
@@ -116,8 +134,42 @@ export function ColumnServicePanel({ column }: { column: Column }) {
     try {
       await delFn({ data: { id } });
       setEvents((prev) => (prev ?? []).filter((e) => e.id !== id));
+      toast.success("Service event deleted");
     } catch (err: any) {
       toast.error(err?.message ?? "Failed to delete entry");
+    }
+  };
+
+  const openEdit = (ev: ColumnServiceEvent) => {
+    setEditTarget(ev);
+    setEditKind(ev.kind);
+    setEditSerial(ev.serial);
+    setEditNotes(ev.notes);
+    setEditPerformer(ev.performedBy ?? "__none__");
+  };
+
+  const saveEdit = async () => {
+    if (!editTarget) return;
+    setSavingEdit(true);
+    try {
+      const updated = await updateFn({
+        data: {
+          id: editTarget.id,
+          kind: editKind,
+          serial: editSerial,
+          notes: editNotes,
+          performedBy: editPerformer !== "__none__" ? editPerformer : null,
+        },
+      });
+      setEvents((prev) =>
+        (prev ?? []).map((e) => (e.id === updated.id ? updated : e)),
+      );
+      toast.success("Service event updated");
+      setEditTarget(null);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to update service event");
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -179,24 +231,44 @@ export function ColumnServicePanel({ column }: { column: Column }) {
                   )}
                 </div>
                 <div className="text-[10px] text-muted-foreground">
-                  {new Date(ev.createdAt).toLocaleString()}
+                  <span className="font-medium text-foreground/70">
+                    {new Date(ev.createdAt).toLocaleString()}
+                  </span>
+                  <span className="mx-1">·</span>
+                  <span>by <span className="font-medium text-foreground/70">{resolveUserName(ev.performedBy)}</span></span>
                 </div>
                 {ev.notes && <p className="mt-1 whitespace-pre-wrap">{ev.notes}</p>}
               </div>
             </div>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-6 w-6 shrink-0"
-              onClick={() => remove(ev.id)}
-              aria-label="Delete entry"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
+            {isAdmin && (
+              <div className="flex shrink-0 items-center gap-0.5">
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-6 w-6"
+                  onClick={() => openEdit(ev)}
+                  aria-label="Edit entry"
+                  title="Edit event"
+                >
+                  <Pencil className="h-3 w-3" />
+                </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-6 w-6"
+                  onClick={() => remove(ev.id)}
+                  aria-label="Delete entry"
+                  title="Delete entry"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            )}
           </div>
         ))}
       </div>
 
+      {/* Log service event dialog */}
       <Dialog open={open} onOpenChange={(o) => !busy && setOpen(o)}>
         <DialogContent className="max-w-lg">
           <form onSubmit={submit}>
@@ -292,6 +364,10 @@ export function ColumnServicePanel({ column }: { column: Column }) {
                   placeholder="Guard lot #, observed back-pressure before/after, technician…"
                 />
               </div>
+
+              <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-[10px] text-muted-foreground">
+                Logged as <span className="font-medium text-foreground/70">{currentUser?.name ?? "current user"}</span> at {new Date().toLocaleString()}
+              </div>
             </div>
 
             <DialogFooter className="gap-2 sm:gap-2">
@@ -308,6 +384,79 @@ export function ColumnServicePanel({ column }: { column: Column }) {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit service event dialog (admin only) */}
+      <Dialog open={!!editTarget} onOpenChange={(o) => !savingEdit && !o && setEditTarget(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit service event</DialogTitle>
+            <DialogDescription>
+              Update the event type, serial number, notes, or reassign the performer.
+              Injection counts and reset flags are preserved from the original event.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 py-4">
+            <div>
+              <Label htmlFor="edit-kind">Event type</Label>
+              <Select value={editKind} onValueChange={(k) => setEditKind(k as Kind)}>
+                <SelectTrigger id="edit-kind"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="guard_change">Guard cartridge change</SelectItem>
+                  <SelectItem value="reset">Injection count reset</SelectItem>
+                  <SelectItem value="maintenance">Maintenance</SelectItem>
+                  <SelectItem value="install">New column installed</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="edit-serial">Serial #</Label>
+              <Input
+                id="edit-serial"
+                value={editSerial}
+                onChange={(e) => setEditSerial(e.target.value)}
+                maxLength={100}
+                placeholder="Cartridge / column serial"
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-notes">Notes</Label>
+              <Textarea
+                id="edit-notes"
+                rows={3}
+                value={editNotes}
+                onChange={(e) => setEditNotes(e.target.value)}
+                maxLength={5000}
+                placeholder="Notes…"
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-performer">Performed by</Label>
+              <Select value={editPerformer} onValueChange={setEditPerformer}>
+                <SelectTrigger id="edit-performer"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Unknown / none</SelectItem>
+                  {users.map((u: User) => (
+                    <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setEditTarget(null)}
+              disabled={savingEdit}
+            >
+              Cancel
+            </Button>
+            <Button type="button" onClick={saveEdit} disabled={savingEdit}>
+              {savingEdit ? "Saving…" : "Update event"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </Card>

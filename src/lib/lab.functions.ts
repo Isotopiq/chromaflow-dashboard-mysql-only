@@ -1485,9 +1485,59 @@ export const deleteColumnServiceEvent = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((d) => z.object({ id: z.string() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { db } = context as { db: import("@/db/index.server").Db };
+    const { db, isAdmin } = context as { db: import("@/db/index.server").Db; isAdmin: boolean };
+    if (!isAdmin) throw new Response("Forbidden — admin only", { status: 403 });
     await db.query("delete from public.column_service_events where id = $1", [data.id]);
     return { ok: true };
+  });
+
+export const updateColumnServiceEvent = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((d) =>
+    z.object({
+      id: z.string().uuid(),
+      kind: z.enum(["reset", "guard_change", "maintenance", "install"]).optional(),
+      serial: z.string().max(100).optional(),
+      notes: z.string().max(5000).optional(),
+      performedBy: z.string().uuid().nullable().optional(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { db, isAdmin } = context as { db: import("@/db/index.server").Db; isAdmin: boolean };
+    if (!isAdmin) throw new Response("Forbidden — admin only", { status: 403 });
+    const sets: string[] = [];
+    const params: any[] = [];
+    if (data.kind !== undefined) {
+      params.push(data.kind);
+      sets.push(`kind=$${params.length}`);
+    }
+    if (data.serial !== undefined) {
+      params.push(data.serial);
+      sets.push(`serial=$${params.length}`);
+    }
+    if (data.notes !== undefined) {
+      params.push(data.notes);
+      sets.push(`notes=$${params.length}`);
+    }
+    if (data.performedBy !== undefined) {
+      params.push(data.performedBy);
+      sets.push(`performed_by=$${params.length}`);
+    }
+    if (sets.length === 0) {
+      const row = await db.maybe<any>(
+        `select * from public.column_service_events where id=$1`,
+        [data.id],
+      );
+      if (!row) throw new Response("Service event not found", { status: 404 });
+      return mapServiceEvent(row);
+    }
+    params.push(data.id);
+    const row = await db.maybe<any>(
+      `update public.column_service_events set ${sets.join(", ")} where id=$${params.length} returning *`,
+      params,
+    );
+    if (!row) throw new Response("Service event not found", { status: 404 });
+    return mapServiceEvent(row);
   });
 
 // ---- Column injection tracking ----
