@@ -1398,6 +1398,11 @@ export const deleteBatch = createServerFn({ method: "POST" })
   });
 
 // ---- Column service log (guard changes, usage resets) ----
+const SERVICE_EVENT_SELECT = `
+  select e.*, p.display_name as performed_by_name
+    from public.column_service_events e
+    left join public.profiles p on p.id = e.performed_by`;
+
 function mapServiceEvent(r: any) {
   return {
     id: r.id as string,
@@ -1409,6 +1414,7 @@ function mapServiceEvent(r: any) {
     serial: r.serial ?? "",
     notes: r.notes ?? "",
     performedBy: r.performed_by ?? null,
+    performedByName: r.performed_by_name ?? null,
     createdAt: String(r.created_at),
   };
 }
@@ -1419,8 +1425,7 @@ export const listColumnServiceEvents = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { db } = context as { db: import("@/db/index.server").Db };
     const rows = await db.many<any>(
-      `select * from public.column_service_events
-        where column_id = $1 order by created_at desc limit 200`,
+      `${SERVICE_EVENT_SELECT} where e.column_id = $1 order by e.created_at desc limit 200`,
       [data.columnId],
     );
     return rows.map(mapServiceEvent);
@@ -1477,8 +1482,13 @@ export const logColumnService = createServerFn({ method: "POST" })
        values ($1,$2,$3,$4,$5,$6,$7,$8) returning *`,
       [data.columnId, data.kind, before, after, data.resetUsage, data.serial, data.notes, userId],
     );
+    // Re-select with the performer name join so the UI can display it immediately.
+    const eventWithName = await db.maybe<any>(
+      `${SERVICE_EVENT_SELECT} where e.id = $1`,
+      [event.id],
+    );
 
-    return { column: mapColumn(updated), event: mapServiceEvent(event) };
+    return { column: mapColumn(updated), event: mapServiceEvent(eventWithName ?? event) };
   });
 
 export const deleteColumnServiceEvent = createServerFn({ method: "POST" })
@@ -1525,19 +1535,24 @@ export const updateColumnServiceEvent = createServerFn({ method: "POST" })
     }
     if (sets.length === 0) {
       const row = await db.maybe<any>(
-        `select * from public.column_service_events where id=$1`,
+        `${SERVICE_EVENT_SELECT} where e.id=$1`,
         [data.id],
       );
       if (!row) throw new Response("Service event not found", { status: 404 });
       return mapServiceEvent(row);
     }
     params.push(data.id);
-    const row = await db.maybe<any>(
+    const updated = await db.maybe<any>(
       `update public.column_service_events set ${sets.join(", ")} where id=$${params.length} returning *`,
       params,
     );
-    if (!row) throw new Response("Service event not found", { status: 404 });
-    return mapServiceEvent(row);
+    if (!updated) throw new Response("Service event not found", { status: 404 });
+    // Re-select with the performer name join so the UI can display it immediately.
+    const row = await db.maybe<any>(
+      `${SERVICE_EVENT_SELECT} where e.id=$1`,
+      [data.id],
+    );
+    return mapServiceEvent(row ?? updated);
   });
 
 // ---- Column injection tracking ----

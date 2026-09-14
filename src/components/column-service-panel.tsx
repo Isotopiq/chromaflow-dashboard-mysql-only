@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -31,6 +32,7 @@ import {
   logColumnService,
   deleteColumnServiceEvent,
   updateColumnServiceEvent,
+  listAdminUsers,
 } from "@/lib/lab.functions";
 
 type Kind = ColumnServiceEvent["kind"];
@@ -50,12 +52,23 @@ const KIND_ICON: Record<Kind, React.ReactNode> = {
 };
 
 export function ColumnServicePanel({ column }: { column: Column }) {
-  const { users, currentUser, upsertColumnLocal } = useLab();
+  const { currentUser, upsertColumnLocal } = useLab();
   const isAdmin = currentUser?.role === "admin";
   const listFn = useServerFn(listColumnServiceEvents);
   const logFn = useServerFn(logColumnService);
   const delFn = useServerFn(deleteColumnServiceEvent);
   const updateFn = useServerFn(updateColumnServiceEvent);
+  const listUsersFn = useServerFn(listAdminUsers);
+  // User list is admin-only — needed for the "performed by" dropdown and
+  // name resolution. The store's `users` array is only populated on the
+  // admin page, so fetch it here instead.
+  const { data: adminUsers } = useQuery({
+    queryKey: ["admin-users"],
+    queryFn: () => listUsersFn(),
+    enabled: isAdmin,
+    staleTime: 5 * 60_000,
+  });
+  const users: User[] = adminUsers ?? [];
 
   const [events, setEvents] = useState<ColumnServiceEvent[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -78,9 +91,10 @@ export function ColumnServicePanel({ column }: { column: Column }) {
   const [editPerformer, setEditPerformer] = useState<string>("__none__");
   const [savingEdit, setSavingEdit] = useState(false);
 
-  const resolveUserName = (userId: string | null | undefined): string => {
-    if (!userId) return "Unknown";
-    const u = users.find((x: User) => x.id === userId);
+  const resolveUserName = (ev: ColumnServiceEvent): string => {
+    if (ev.performedByName) return ev.performedByName;
+    if (!ev.performedBy) return "Unknown";
+    const u = users.find((x: User) => x.id === ev.performedBy);
     return u?.name ?? "Unknown user";
   };
 
@@ -235,7 +249,7 @@ export function ColumnServicePanel({ column }: { column: Column }) {
                     {new Date(ev.createdAt).toLocaleString()}
                   </span>
                   <span className="mx-1">·</span>
-                  <span>by <span className="font-medium text-foreground/70">{resolveUserName(ev.performedBy)}</span></span>
+                  <span>by <span className="font-medium text-foreground/70">{resolveUserName(ev)}</span></span>
                 </div>
                 {ev.notes && <p className="mt-1 whitespace-pre-wrap">{ev.notes}</p>}
               </div>

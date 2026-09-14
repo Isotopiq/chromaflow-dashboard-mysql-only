@@ -198,6 +198,7 @@ export type ColumnServiceEvent = {
   serial: string;
   notes: string;
   performedBy?: string | null;
+  performedByName?: string | null;
   createdAt: string;
 };
 
