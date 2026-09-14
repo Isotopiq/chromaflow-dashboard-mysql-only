@@ -469,7 +469,12 @@ export async function fetchCoreData(db: Db) {
 export async function fetchRunsData(db: Db) {
   const runs = await db.many("select * from public.runs order by acquired_at desc");
   const peaks = await db.many("select * from public.peaks");
-  const injections = await db.many("select * from public.column_injections order by injection_num");
+  // column_injections may not exist on older/legacy DBs — don't break the
+  // whole runs load if it's missing.
+  let injections: any[] = [];
+  try {
+    injections = await db.many("select * from public.column_injections order by injection_num");
+  } catch {}
 
   // V3 tables — wrapped in try/catch so missing tables don't break the app
   let isAssignments: any[] = [];
@@ -541,7 +546,10 @@ export async function fetchAllForUser(db: Db) {
   const peaks = await db.many("select * from public.peaks");
   const batches = await db.many("select * from public.batches order by started_at desc");
   const analytes = await db.many("select * from public.analytes order by name");
-  const injections = await db.many("select * from public.column_injections order by injection_num");
+  let injections: any[] = [];
+  try {
+    injections = await db.many("select * from public.column_injections order by injection_num");
+  } catch {}
   const compoundListsRaw = await db.many("select * from public.compound_lists order by name");
   const listEntries = await db.many("select * from public.compound_list_entries");
   const listDefaults = await db.many("select * from public.method_column_list_defaults");

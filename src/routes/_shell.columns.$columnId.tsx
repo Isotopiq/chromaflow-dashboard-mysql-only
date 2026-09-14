@@ -106,6 +106,7 @@ function ColumnDetailGate() {
 
 function ColumnDetail({ column }: { column: Column }) {
   const { methods, runs, injections, bufferExchangeEvents, anomalyChecks, upsertAnomalyCheckLocal } = useLab();
+  const upsertColumnLocal = useLab((s) => s.upsertColumnLocal);
   const upsertInjectionLocal = useLab((s) => s.upsertInjectionLocal);
   const removeInjectionLocal = useLab((s) => s.removeInjectionLocal);
   const createInjectionFn = useServerFn(createInjection);
@@ -210,8 +211,9 @@ function ColumnDetail({ column }: { column: Column }) {
         upsertInjectionLocal(updated as any);
         toast.success("Injection updated");
       } else {
-        const created = await createInjectionFn({ data: payload });
-        upsertInjectionLocal(created as any);
+        const res = await createInjectionFn({ data: payload });
+        upsertInjectionLocal(res.injection as any);
+        if (res.column) upsertColumnLocal(res.column as any);
         toast.success("Injection logged");
       }
       setShowInjDialog(false);
@@ -225,8 +227,9 @@ function ColumnDetail({ column }: { column: Column }) {
   const confirmDeleteInj = async () => {
     if (!deleteInjId) return;
     try {
-      await deleteInjectionFn({ data: { id: deleteInjId } });
+      const res = await deleteInjectionFn({ data: { id: deleteInjId } });
       removeInjectionLocal(deleteInjId);
+      if (res.column) upsertColumnLocal(res.column as any);
       toast.success("Injection deleted");
     } catch (err: any) {
       toast.error(err?.message ?? "Failed to delete injection");

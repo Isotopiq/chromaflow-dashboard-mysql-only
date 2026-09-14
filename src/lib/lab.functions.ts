@@ -1585,7 +1585,14 @@ export const createInjection = createServerFn({ method: "POST" })
     if (data.runId) {
       await db.query("update public.runs set injection_id=$1 where id=$2", [row.id, data.runId]);
     }
-    return mapInjection(row);
+    // Each logged injection consumes one unit of the column's rated life —
+    // keep used_injections in step so the health metric reflects the log.
+    const updatedCol = await db.maybe<any>(
+      `update public.columns set used_injections = used_injections + 1, updated_at = now()
+       where id = $1 returning *`,
+      [data.columnId],
+    );
+    return { injection: mapInjection(row), column: updatedCol ? mapColumn(updatedCol) : null };
   });
 
 export const updateInjection = createServerFn({ method: "POST" })
@@ -1629,8 +1636,33 @@ export const deleteInjection = createServerFn({ method: "POST" })
     requirePermission(ctx, "canDelete");
     const { db } = ctx;
     await db.query("update public.runs set injection_id=null where injection_id=$1", [data.id]);
-    await db.query("delete from public.column_injections where id=$1", [data.id]);
-    return { ok: true };
+    const deleted = await db.maybe<any>(
+      "delete from public.column_injections where id=$1 returning column_id, created_at",
+      [data.id],
+    );
+    let column: any = null;
+    if (deleted) {
+      // Only decrement if this injection was logged after the most recent
+      // usage reset — deleting pre-reset history must not undercount.
+      column = await db.maybe<any>(
+        `update public.columns c set
+           used_injections = greatest(0, used_injections - 1), updated_at = now()
+         where c.id = $1
+           and $2::timestamptz > coalesce((
+             select max(created_at) from public.column_service_events
+             where column_id = c.id and reset_usage = true
+           ), 'epoch'::timestamptz)
+         returning *`,
+        [deleted.column_id, deleted.created_at],
+      );
+      if (!column) {
+        column = await db.maybe<any>(
+          "select * from public.columns where id=$1",
+          [deleted.column_id],
+        );
+      }
+    }
+    return { ok: true, column: column ? mapColumn(column) : null };
   });
 
 export const linkRunToInjection = createServerFn({ method: "POST" })

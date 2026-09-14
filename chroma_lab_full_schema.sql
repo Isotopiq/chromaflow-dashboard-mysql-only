@@ -173,30 +173,7 @@ create policy "column_service_events: write auth" on public.column_service_event
   with check (true);
 
 -- ---- column_injections ----
--- Tracks individual injections logged per column: sequence name, injection
--- number, starting pressure, assigned method, optional linked run.
-create table if not exists public.column_injections (
-  id                uuid primary key default gen_random_uuid(),
-  column_id         uuid not null references public.columns(id) on delete cascade,
-  run_id            uuid references public.runs(id) on delete set null,
-  method_id         uuid references public.methods(id) on delete set null,
-  sequence_name     text not null default '',
-  injection_num     int  not null,
-  starting_pressure double precision,
-  notes             text default '',
-  performed_by      uuid references public.app_users(id) on delete set null,
-  created_at        timestamptz not null default now()
-);
-create index if not exists column_injections_column_idx on public.column_injections(column_id);
-create index if not exists column_injections_run_idx on public.column_injections(run_id);
-alter table public.column_injections enable row level security;
-drop policy if exists "column_injections: read all"   on public.column_injections;
-drop policy if exists "column_injections: write auth" on public.column_injections;
-create policy "column_injections: read all" on public.column_injections for select using (true);
-create policy "column_injections: write auth" on public.column_injections for all
-  using (performed_by = public.current_app_user() or public.current_app_is_admin() or performed_by is null)
-  with check (true);
-
+-- Defined after public.runs/public.methods (it references both). See below.
 -- ---- methods ----
 create table if not exists public.methods (
   id              uuid primary key default gen_random_uuid(),
@@ -378,6 +355,33 @@ create table if not exists public.runs (
   acquired_at     timestamptz not null default now(),
   created_at      timestamptz not null default now()
 );
+
+-- ---- column_injections ----
+-- Tracks individual injections logged per column: sequence name, injection
+-- number, starting pressure, assigned method, optional linked run.
+-- Must come after public.runs + public.methods — it references both.
+create table if not exists public.column_injections (
+  id                uuid primary key default gen_random_uuid(),
+  column_id         uuid not null references public.columns(id) on delete cascade,
+  run_id            uuid references public.runs(id) on delete set null,
+  method_id         uuid references public.methods(id) on delete set null,
+  sequence_name     text not null default '',
+  injection_num     int  not null,
+  starting_pressure double precision,
+  notes             text default '',
+  performed_by      uuid references public.app_users(id) on delete set null,
+  created_at        timestamptz not null default now()
+);
+create index if not exists column_injections_column_idx on public.column_injections(column_id);
+create index if not exists column_injections_run_idx on public.column_injections(run_id);
+alter table public.column_injections enable row level security;
+drop policy if exists "column_injections: read all"   on public.column_injections;
+drop policy if exists "column_injections: write auth" on public.column_injections;
+create policy "column_injections: read all" on public.column_injections for select using (true);
+create policy "column_injections: write auth" on public.column_injections for all
+  using (performed_by = public.current_app_user() or public.current_app_is_admin() or performed_by is null)
+  with check (true);
+
 do $$ begin
   alter table public.runs add column if not exists notes text default '';
 exception when others then null; end $$;
