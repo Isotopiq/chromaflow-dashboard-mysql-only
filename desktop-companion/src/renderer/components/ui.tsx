@@ -193,11 +193,15 @@ export function useResizableColumns(storageKey: string, defaults: number[], min 
     const onUp = () => {
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
+      window.removeEventListener("blur", onUp);
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
     };
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
+    // If the pointer is released outside the window, mouseup never fires —
+    // cancel the drag when the window loses focus so it doesn't stick.
+    window.addEventListener("blur", onUp);
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
   };
