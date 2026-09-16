@@ -13,6 +13,7 @@ import { Dashboard } from "./views/Dashboard";
 import { Queue } from "./views/Queue";
 import { WatchDirectories } from "./views/WatchDirectories";
 import { History } from "./views/History";
+import { Docs } from "./views/Docs";
 import { Settings } from "./views/Settings";
 import { UploadModal } from "./views/UploadModal";
 import { AssignModal } from "./views/AssignModal";
@@ -24,6 +25,7 @@ const navItems = [
   { id: "queue",       label: "Queue",             icon: Icons.queue },
   { id: "directories", label: "Watch Directories", icon: Icons.folders },
   { id: "history",     label: "Upload History",    icon: Icons.history },
+  { id: "docs",        label: "Documentation",     icon: Icons.docs },
   { id: "settings",    label: "Settings",          icon: Icons.settings },
 ] as const;
 
@@ -32,6 +34,7 @@ const viewTitles: Record<View, string> = {
   queue:       "Upload Queue",
   directories: "Watch Directories",
   history:     "Upload History",
+  docs:        "Documentation",
   settings:    "Settings",
 };
 
@@ -164,6 +167,7 @@ export function App() {
             {view === "queue"       && <Queue onAssign={setAssignItem} />}
             {view === "directories" && <WatchDirectories />}
             {view === "history"     && <History />}
+            {view === "docs"        && <Docs />}
             {view === "settings"    && <Settings />}
             {modalOpen && view === "dashboard" && <UploadModal onClose={() => setModalOpen(false)} />}
             {assignItem && <AssignModal item={assignItem} onClose={() => setAssignItem(null)} />}
@@ -239,6 +243,7 @@ function MenuBar({ onNavigate, onPause, onResume, paused, onAbout }: { onNavigat
     { label: "Watch Directories", action: () => onNavigate("directories") },
     { label: "Upload History", action: () => onNavigate("history") },
     { separator: true },
+    { label: "Documentation", action: () => onNavigate("docs") },
     { label: "Settings", action: () => onNavigate("settings") },
   ];
 
@@ -249,7 +254,7 @@ function MenuBar({ onNavigate, onPause, onResume, paused, onAbout }: { onNavigat
   ];
 
   const helpItems: MenuItem[] = [
-    { label: "Documentation", action: () => window.open("https://github.com/ddlidded/chromaflow-dashboard-mysql-only", "_blank") },
+    { label: "Documentation", action: () => onNavigate("docs") },
     { separator: true },
     { label: "About V3 Companion", action: onAbout },
   ];

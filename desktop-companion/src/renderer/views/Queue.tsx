@@ -1,7 +1,10 @@
 import { useState } from "react";
 import type { QueueItem } from "@shared/ipc-types";
-import { cn, Icons, StatusBadge, ProgressBar } from "../components/ui";
+import { cn, Icons, StatusBadge, ProgressBar, ResizableTh, useResizableColumns } from "../components/ui";
 import { useQueue, useWatcherStatus } from "../hooks/useDesktop";
+
+const COL_DEFAULTS = [32, 240, 180, 70, 90, 90, 110, 110];
+const COL_HEADERS = ["Filename", "Directory", "Size", "Detected", "Status", "Progress", "Actions"];
 
 export function Queue({ onAssign }: { onAssign?: (item: QueueItem) => void }) {
   const { items, cancel, retry, remove, clearQueue } = useQueue();
@@ -10,6 +13,7 @@ export function Queue({ onAssign }: { onAssign?: (item: QueueItem) => void }) {
   const [hovered, setHovered] = useState<string | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [query, setQuery] = useState("");
+  const { widths, startDrag } = useResizableColumns("queue-col-widths", COL_DEFAULTS);
 
   const toggle = (id: string) =>
     setSelected((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
@@ -117,16 +121,9 @@ export function Queue({ onAssign }: { onAssign?: (item: QueueItem) => void }) {
 
       {/* Table */}
       <div className="overflow-auto flex-1">
-        <table className="w-full table-fixed border-collapse">
+        <table className="w-full table-fixed border-collapse" style={{ minWidth: widths.reduce((a, b) => a + b, 0) }}>
           <colgroup>
-            <col className="w-8" />
-            <col />
-            <col className="w-40" />
-            <col className="w-16" />
-            <col className="w-20" />
-            <col className="w-20" />
-            <col className="w-24" />
-            <col className="w-24" />
+            {widths.map((w, i) => <col key={i} style={{ width: w }} />)}
           </colgroup>
           <thead>
             <tr className="bg-[#F3F4F6] sticky top-0 z-10">
@@ -138,8 +135,8 @@ export function Queue({ onAssign }: { onAssign?: (item: QueueItem) => void }) {
                   className="w-3.5 h-3.5 accent-[#2563EB] cursor-pointer"
                 />
               </th>
-              {["Filename", "Directory", "Size", "Detected", "Status", "Progress", "Actions"].map((h) => (
-                <th key={h} className="text-left text-[10px] font-semibold uppercase tracking-wider text-[#6B7280] px-3 py-2 whitespace-nowrap border-b border-[#E5E7EB]">{h}</th>
+              {COL_HEADERS.map((h, i) => (
+                <ResizableTh key={h} label={h} index={i + 1} startDrag={startDrag} />
               ))}
             </tr>
           </thead>

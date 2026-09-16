@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import type { HistoryEntry } from "@shared/ipc-types";
-import { cn, Icons, StatusBadge } from "../components/ui";
+import { cn, Icons, StatusBadge, ResizableTh, useResizableColumns } from "../components/ui";
 
 const PAGE_SIZE = 20;
+const COL_DEFAULTS = [32, 240, 200, 140, 80, 80, 110, 110, 90];
+const COL_HEADERS = ["Filename", "Source Directory", "Uploaded At", "Size", "Duration", "Status", "SHA-256", "Actions"];
 
 export function History() {
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
@@ -14,6 +16,7 @@ export function History() {
   const [selected, setSelected] = useState<number[]>([]);
   const [refresh, setRefresh] = useState(0);
   const [actionError, setActionError] = useState<string | null>(null);
+  const { widths, startDrag, reset: resetCols } = useResizableColumns("history-col-widths", COL_DEFAULTS);
 
   useEffect(() => {
     setSelected([]);
@@ -102,6 +105,7 @@ export function History() {
             Delete {selected.length} selected
           </button>
         )}
+        <button onClick={resetCols} className="px-2.5 py-1 text-[11px] text-[#374151] border border-[#D1D5DB] bg-white hover:bg-[#F9FAFB] transition-colors" style={{ borderRadius: 2 }} title="Reset column widths">↔ Reset widths</button>
         <button onClick={() => void exportCsv()} className="px-2.5 py-1 text-[11px] text-[#374151] border border-[#D1D5DB] bg-white hover:bg-[#F9FAFB] transition-colors" style={{ borderRadius: 2 }}>↓ Export CSV</button>
         <div className="relative">
           <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[#9CA3AF]">{Icons.search}</span>
@@ -117,17 +121,9 @@ export function History() {
       </div>
 
       <div className="overflow-auto flex-1">
-        <table className="w-full min-w-max border-collapse">
+        <table className="w-full table-fixed border-collapse" style={{ minWidth: widths.reduce((a, b) => a + b, 0) }}>
           <colgroup>
-            <col className="w-8" />
-            <col />
-            <col className="w-[140px]" />
-            <col className="w-28" />
-            <col className="w-16" />
-            <col className="w-16" />
-            <col className="w-24" />
-            <col className="w-24" />
-            <col className="w-24" />
+            {widths.map((w, i) => <col key={i} style={{ width: w }} />)}
           </colgroup>
           <thead>
             <tr className="bg-[#F3F4F6] sticky top-0 z-10">
@@ -139,8 +135,8 @@ export function History() {
                   className="w-3.5 h-3.5 accent-[#2563EB] cursor-pointer"
                 />
               </th>
-              {["Filename", "Source Directory", "Uploaded At", "Size", "Duration", "Status", "SHA-256", "Actions"].map((h) => (
-                <th key={h} className="text-left text-[10px] font-semibold uppercase tracking-wider text-[#6B7280] px-3 py-2 whitespace-nowrap border-b border-[#E5E7EB]">{h}</th>
+              {COL_HEADERS.map((h, i) => (
+                <ResizableTh key={h} label={h} index={i + 1} startDrag={startDrag} />
               ))}
             </tr>
           </thead>
@@ -160,8 +156,8 @@ export function History() {
                 <td className="px-3 py-2">
                   <input type="checkbox" checked={selected.includes(row.id)} onChange={() => toggle(row.id)} className="w-3.5 h-3.5 accent-[#2563EB] cursor-pointer" />
                 </td>
-                <td className="px-3 py-2"><span className="text-[11px] text-[#111827] font-mono">{row.filename}</span></td>
-                <td className="px-3 py-2 max-w-[130px]"><span className="text-[11px] text-[#6B7280] truncate block">{row.sourceDir}</span></td>
+                <td className="px-3 py-2 overflow-hidden"><span className="text-[11px] text-[#111827] font-mono truncate block" title={row.filename}>{row.filename}</span></td>
+                <td className="px-3 py-2 overflow-hidden"><span className="text-[11px] text-[#6B7280] truncate block" title={row.sourceDir}>{row.sourceDir}</span></td>
                 <td className="px-3 py-2"><span className="text-[11px] text-[#6B7280] whitespace-nowrap">{timeAgo(row.uploadedAt)}</span></td>
                 <td className="px-3 py-2"><span className="text-[11px] text-[#6B7280]">{formatBytes(row.size)}</span></td>
                 <td className="px-3 py-2"><span className="text-[11px] text-[#6B7280]">{(row.durationMs / 1000).toFixed(1)}s</span></td>

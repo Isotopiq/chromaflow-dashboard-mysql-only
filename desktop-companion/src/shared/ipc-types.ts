@@ -2,7 +2,7 @@
 // This file is imported by both sides, so it must not import any Node or
 // browser-specific APIs.
 
-export type View = "dashboard" | "queue" | "directories" | "history" | "settings";
+export type View = "dashboard" | "queue" | "directories" | "history" | "settings" | "docs";
 export type WatcherStatus = "idle" | "watching" | "paused" | "error";
 export type UploadStatus = "queued" | "pending" | "parsing" | "uploading" | "done" | "failed" | "cancelled";
 export type LogLevel = "INFO" | "WARN" | "ERROR" | "DEBUG";

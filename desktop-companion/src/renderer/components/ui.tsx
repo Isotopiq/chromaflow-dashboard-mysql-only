@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 export function cn(...classes: (string | false | undefined | null)[]) {
@@ -26,6 +27,7 @@ export const Icons = {
   chevronDown: <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M4 6l4 4 4-4" strokeLinecap="round" strokeLinejoin="round"/></svg>,
   chevronUp:   <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M4 10l4-4 4 4" strokeLinecap="round" strokeLinejoin="round"/></svg>,
   search:    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="6.5" cy="6.5" r="4"/><path d="M9.5 9.5L13 13" strokeLinecap="round"/></svg>,
+  docs:      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M3 2h7l3 3v9a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1z" strokeLinejoin="round"/><path d="M10 2v3h3M5 7h6M5 10h6" strokeLinecap="round"/></svg>,
   // Windows title bar icons (very thin)
   winMin:    <svg width="10" height="1" viewBox="0 0 10 1"><rect width="10" height="1" fill="currentColor"/></svg>,
   winMax:    <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><rect x="0.5" y="0.5" width="9" height="9" stroke="currentColor"/></svg>,
@@ -156,6 +158,76 @@ export function MenuDropdown({ label, items }: { label: string; items: MenuItem[
         </div>
       )}
     </div>
+  );
+}
+
+// ─── Resizable table columns ──────────────────────────────────────────────────
+// Persisted per-table via localStorage. Returns the current pixel widths and a
+// mousedown handler factory for the drag handles rendered inside each <th>.
+export function useResizableColumns(storageKey: string, defaults: number[], min = 48) {
+  const [widths, setWidths] = useState<number[]>(() => {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length === defaults.length) {
+          return parsed.map((n, i) => Math.max(min, Number(n) || defaults[i]));
+        }
+      }
+    } catch { /* noop */ }
+    return defaults;
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem(storageKey, JSON.stringify(widths)); } catch { /* noop */ }
+  }, [storageKey, widths]);
+
+  const startDrag = (idx: number) => (e: ReactMouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const drag = { idx, startX: e.clientX, startW: widths[idx] };
+    const onMove = (ev: MouseEvent) => {
+      const w = Math.max(min, Math.round(drag.startW + ev.clientX - drag.startX));
+      setWidths((prev) => prev.map((v, i) => (i === drag.idx ? w : v)));
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  };
+
+  const reset = () => setWidths(defaults);
+  return { widths, startDrag, reset };
+}
+
+// A <th> with a draggable right-edge resize handle.
+export function ResizableTh({
+  label,
+  index,
+  startDrag,
+  className,
+}: {
+  label: string;
+  index: number;
+  startDrag: (idx: number) => (e: ReactMouseEvent) => void;
+  className?: string;
+}) {
+  return (
+    <th className={cn("relative text-left text-[10px] font-semibold uppercase tracking-wider text-[#6B7280] px-3 py-2 whitespace-nowrap border-b border-[#E5E7EB]", className)}>
+      {label}
+      <span
+        onMouseDown={startDrag(index)}
+        title="Drag to resize"
+        className="absolute top-0 right-0 h-full w-[7px] cursor-col-resize hover:bg-[#2563EB]/30 transition-colors select-none"
+        style={{ transform: "translateX(50%)" }}
+      />
+    </th>
   );
 }
 
