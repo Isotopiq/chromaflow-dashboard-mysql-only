@@ -59,6 +59,25 @@ The desktop app communicates with V3 via these endpoints:
 
 All authenticated endpoints require `Authorization: Bearer <token>` header.
 
+## Releases (CI)
+
+`.github/workflows/desktop-release.yml` builds the NSIS installer + portable exe on
+`windows-latest` and publishes them to a GitHub Release on this repo.
+
+- **Release a version:** `git tag desktop-v1.0.1 && git push origin desktop-v1.0.1` —
+  the workflow derives `1.0.1` from the tag, syncs `package.json`, runs tests + build,
+  then publishes release `v1.0.1` with both exes and `latest.yml`.
+- **Manual build:** Actions → "Build Desktop Companion" → Run workflow (optional
+  version input; defaults to `package.json`).
+- **Auto-update:** installed NSIS builds poll `latest.yml` via electron-updater and
+  toast when a newer published release exists. Drafts/prereleases are ignored.
+- **Prereq:** repo Settings → Actions → General → Workflow permissions = "Read and
+  write" (the workflow declares `permissions: contents: write`, which suffices on
+  default settings).
+- Builds are unsigned (SmartScreen prompt on first run). To sign later, add
+  `CSC_LINK` + `CSC_KEY_PASSWORD` repo secrets — electron-builder picks them up
+  automatically.
+
 ## Docker
 
 The V3 Docker image is built as:

@@ -1,0 +1,57 @@
+name: Build Desktop Companion
+
+on:
+  push:
+    tags:
+      - "desktop-v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build (e.g. 1.0.1). Defaults to package.json version."
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop-companion
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: desktop-companion/package-lock.json
+
+      - name: Resolve version (tag, input, or package.json)
+        shell: pwsh
+        run: |
+          $v = "${{ github.event.inputs.version }}"
+          if (-not $v -and "${{ github.ref_type }}" -eq "tag") {
+            $v = "${{ github.ref_name }}" -replace "^desktop-v", ""
+          }
+          if ($v) {
+            npm version $v --no-git-tag-version
+            echo "VERSION=$v" >> $env:GITHUB_ENV
+          }
+
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
+      - name: Build installer/portable and publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --win --publish always
+
+      - name: Upload exe artifacts (backup)
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-companion-exe
+          path: desktop-companion/dist-installer/*.exe
+          retention-days: 30

@@ -28,5 +28,5 @@ portable:
   artifactName: "V3 Companion Portable ${version}.exe"
 publish:
   provider: github
-  owner: ekapelczak
+  owner: Isotopiq
   repo: chromaflow-dashboard-mysql-only
