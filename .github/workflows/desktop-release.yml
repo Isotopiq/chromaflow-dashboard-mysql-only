@@ -36,7 +36,7 @@ jobs:
             $v = "${{ github.ref_name }}" -replace "^desktop-v", ""
           }
           if ($v) {
-            npm version $v --no-git-tag-version
+            node -e "const fs=require('fs');const p='./package.json';const j=JSON.parse(fs.readFileSync(p,'utf8'));j.version='$v';fs.writeFileSync(p,JSON.stringify(j,null,2)+'\n')"
             echo "VERSION=$v" >> $env:GITHUB_ENV
           }
 
