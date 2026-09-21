@@ -43,7 +43,7 @@ function Batches() {
   const isDetail = /^\/batches\/[^/]+$/.test(location.pathname);
   if (isDetail) return <Outlet />;
 
-  const { batches, runs, users } = useLab();
+  const { batches, runs } = useLab();
   const removeBatchLocal = useLab((s) => s.removeBatchLocal);
   const removeRunLocal = useLab((s) => s.removeRunLocal);
   const upsertBatchLocal = useLab((s) => s.upsertBatchLocal);
@@ -137,13 +137,12 @@ function Batches() {
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {batches.map((b) => {
-          const owner = users.find((u) => u.id === b.owner);
           const batchRuns = runs.filter((r) => r.batchId === b.id);
           return (
             <BatchCard
               key={b.id}
               batch={b}
-              ownerAvatar={owner?.avatar ?? "—"}
+              ownerName={b.ownerName ?? "—"}
               batchRuns={batchRuns}
               onDelete={async (deleteRuns) => {
                 try {
@@ -170,12 +169,12 @@ function Batches() {
 
 function BatchCard({
   batch,
-  ownerAvatar,
+  ownerName,
   batchRuns,
   onDelete,
 }: {
   batch: any;
-  ownerAvatar: string;
+  ownerName: string;
   batchRuns: any[];
   onDelete: (deleteRuns: boolean) => Promise<void>;
 }) {
@@ -259,7 +258,7 @@ function BatchCard({
         <div className="mt-4 grid grid-cols-3 gap-2 text-center">
           <Stat label="Samples" value={String(batch.sampleCount)} />
           <Stat label="Runs" value={String(batchRuns.length)} />
-          <Stat label="Owner" value={ownerAvatar} />
+          <Stat label="Owner" value={ownerName} />
         </div>
 
         <div className="mt-4 text-[10px] uppercase tracking-widest text-muted-foreground">

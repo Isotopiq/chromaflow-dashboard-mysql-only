@@ -177,6 +177,7 @@ export type Batch = {
   runIds: string[];
   status: "in_progress" | "complete" | "review";
   owner: string;
+  ownerName?: string | null;
   notes?: string;
 };
 

@@ -122,6 +122,7 @@ export function mapBatch(r: any, runIds: string[] = []): Batch {
     runIds,
     status: (r.status as Batch["status"]) ?? "in_progress",
     owner: r.owner_id ?? "",
+    ownerName: r.owner_name ?? null,
     notes: r.notes ?? "",
   };
 }
@@ -402,7 +403,12 @@ export async function mapUser(profile: any, role: string): Promise<User> {
 export async function fetchCoreData(db: Db) {
   const columns = await db.many("select * from public.columns order by created_at desc");
   const methods = await db.many("select * from public.methods order by updated_at desc");
-  const batches = await db.many("select * from public.batches order by started_at desc");
+  const batches = await db.many(
+    `select b.*, p.display_name as owner_name
+       from public.batches b
+       left join public.profiles p on p.id = b.owner_id
+      order by b.started_at desc`,
+  );
   const analytes = await db.many("select * from public.analytes order by name");
   const compoundListsRaw = await db.many("select * from public.compound_lists order by name");
   const listEntries = await db.many("select * from public.compound_list_entries");
@@ -545,7 +551,12 @@ export async function fetchAllForUser(db: Db) {
   const methods = await db.many("select * from public.methods order by updated_at desc");
   const runs = await db.many("select * from public.runs order by acquired_at desc");
   const peaks = await db.many("select * from public.peaks");
-  const batches = await db.many("select * from public.batches order by started_at desc");
+  const batches = await db.many(
+    `select b.*, p.display_name as owner_name
+       from public.batches b
+       left join public.profiles p on p.id = b.owner_id
+      order by b.started_at desc`,
+  );
   const analytes = await db.many("select * from public.analytes order by name");
   let injections: any[] = [];
   try {

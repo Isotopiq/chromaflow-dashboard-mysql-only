@@ -82,7 +82,7 @@ function BatchDetailGate() {
 }
 
 function BatchDetail({ batch }: { batch: Batch }) {
-  const { runs, methods, columns, users, anomalyChecks, upsertAnomalyCheckLocal } = useLab();
+  const { runs, methods, columns, anomalyChecks, upsertAnomalyCheckLocal } = useLab();
   const upsertBatchLocal = useLab((s) => s.upsertBatchLocal);
   const updateBatchNotesLocal = useLab((s) => s.updateBatchNotesLocal);
   const setRunBatchLocal = useLab((s) => s.setRunBatchLocal);
@@ -110,7 +110,6 @@ function BatchDetail({ batch }: { batch: Batch }) {
   );
   const methodIds = new Set(batchRuns.map((r) => r.methodId).filter(Boolean));
   const columnIds = new Set(batchRuns.map((r) => r.columnId).filter(Boolean));
-  const owner = users.find((u) => u.id === batch.owner);
 
   // ---- Header field autosave (name / project / status) ----
   const [name, setName] = useState(batch.name);
@@ -421,7 +420,7 @@ function BatchDetail({ batch }: { batch: Batch }) {
               </Select>
             </span>
             <span>·</span>
-            <span className="font-mono">{owner?.name ?? "—"}</span>
+            <span className="font-mono">{batch.ownerName ?? "—"}</span>
           </div>
         </div>
         <div className="flex flex-col items-end gap-2">
