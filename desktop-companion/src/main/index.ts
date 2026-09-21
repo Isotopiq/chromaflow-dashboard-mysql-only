@@ -1,7 +1,7 @@
 // Electron main process entry point.
 // Creates the BrowserWindow, sets up the system tray, IPC handlers,
 // file watcher, upload queue, and auto-updater.
-import { app, BrowserWindow, ipcMain, dialog, shell } from "electron";
+import { app, BrowserWindow, ipcMain } from "electron";
 import path from "node:path";
 import { TrayManager } from "./tray";
 import { IpcHandlers } from "./ipc-handlers";
@@ -150,7 +150,7 @@ app.whenReady().then(async () => {
   // Start watching configured folders — try API first, fall back to local.
   // The manager starts in paused mode so the user can edit folders before
   // anything is actually enqueued; they must click Resume All.
-  let startedFromApi = false;
+
   try {
     const folders = await apiClient.listWatchFolders();
     if (folders.length > 0) {
@@ -160,7 +160,6 @@ app.whenReady().then(async () => {
           watcherManager.startWatching(merged);
         }
       }
-      startedFromApi = true;
     }
   } catch {
     // API not reachable

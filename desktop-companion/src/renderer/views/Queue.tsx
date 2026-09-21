@@ -28,7 +28,6 @@ export function Queue({ onAssign }: { onAssign?: (item: QueueItem) => void }) {
     ? items.filter((i) => i.filename.toLowerCase().includes(query.toLowerCase()))
     : items;
 
-  const pending = items.filter((i) => i.status === "queued" || i.status === "uploading" || i.status === "parsing" || i.status === "pending").length;
   const failed = items.filter((i) => i.status === "failed" || i.status === "cancelled").length;
   const done = items.filter((i) => i.status === "done").length;
 

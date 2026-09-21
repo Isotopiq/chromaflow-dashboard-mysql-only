@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import type { QueueItem, WatchFolder } from "@shared/ipc-types";
+import { useState } from "react";
+import type { QueueItem } from "@shared/ipc-types";
 import { useLabData, useWatchFolders } from "../hooks/useDesktop";
 
 export interface AssignModalProps {

@@ -1,5 +1,5 @@
 // IPC handlers — bridges the renderer and the main process services.
-import { BrowserWindow, dialog, IpcMain } from "electron";
+import { app, BrowserWindow, dialog, IpcMain } from "electron";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import type { LocalDb } from "./db";
@@ -252,7 +252,7 @@ export class IpcHandlers {
       } else {
         // Actually quit the app
         setQuitting(true);
-        require("electron").app.quit();
+        app.quit();
       }
     });
     ipcMain.handle(IPC.SHOW_WINDOW, () => {
@@ -261,7 +261,7 @@ export class IpcHandlers {
     });
     ipcMain.handle(IPC.QUIT_APP, () => {
       setQuitting(true);
-      require("electron").app.quit();
+      app.quit();
     });
 
     // ---- Dialogs ----
@@ -286,7 +286,6 @@ export class IpcHandlers {
         filters: [{ name: "CSV Files", extensions: ["csv"] }],
       });
       if (result.canceled || !result.filePath) return null;
-      const fs = require("node:fs") as typeof import("node:fs");
       fs.writeFileSync(result.filePath, csv, "utf8");
       return result.filePath;
     });

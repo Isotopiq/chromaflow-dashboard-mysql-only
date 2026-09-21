@@ -32,7 +32,6 @@ export function Settings() {
   const { settings, save, testConnection } = useSettings();
   const { status: authStatus, login, logout } = useAuth();
   const [section, setSection] = useState<SettingsSection>("api");
-  const [showToken, setShowToken] = useState(false);
   const [connected, setConnected] = useState<{ ok: boolean; latencyMs: number } | null>(null);
   const [testing, setTesting] = useState(false);
 

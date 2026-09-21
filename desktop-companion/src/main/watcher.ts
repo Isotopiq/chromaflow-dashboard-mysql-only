@@ -164,7 +164,7 @@ export class WatcherManager extends EventEmitter {
       this.markFileAsProcessed(filePath, stat.size, stat.mtimeMs);
       this.db.log("INFO", `Stabilized ${path.basename(filePath)} — queued for upload`);
       this.emit("file-stabilized", filePath, folderId, stat.size);
-    } catch (err: any) {
+    } catch {
       this.db.log("ERROR", `File disappeared during stabilization: ${filePath}`);
     }
   }

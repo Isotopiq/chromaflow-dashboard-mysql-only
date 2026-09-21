@@ -3,7 +3,7 @@ import Database from "better-sqlite3";
 import path from "node:path";
 import { app } from "electron";
 import { EventEmitter } from "node:events";
-import type { LogEntry, LogLevel, QueueItem, HistoryEntry, WatchFolder, AppSettings } from "../shared/ipc-types";
+import type { LogEntry, LogLevel, QueueItem, HistoryEntry, WatchFolder } from "../shared/ipc-types";
 
 export class LocalDb extends EventEmitter {
   private db: Database.Database;

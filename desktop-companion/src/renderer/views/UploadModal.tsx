@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { QueueItem } from "@shared/ipc-types";
-import { cn, Icons, StatusBadge } from "../components/ui";
+import { Icons, StatusBadge } from "../components/ui";
 
 export interface UploadModalProps {
   onClose: () => void;

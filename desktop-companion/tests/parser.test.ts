@@ -4,15 +4,6 @@ import { XMLParser } from "fast-xml-parser";
 import { deflate } from "pako";
 import { parseMzML } from "../src/main/parser-worker";
 
-function float32Base64(values: number[], littleEndian: boolean): string {
-  const buf = Buffer.alloc(values.length * 4);
-  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-  for (let i = 0; i < values.length; i++) {
-    dv.setFloat32(i * 4, values[i], littleEndian);
-  }
-  return buf.toString("base64");
-}
-
 function float32ZlibBase64(values: number[], littleEndian: boolean): string {
   const buf = Buffer.alloc(values.length * 4);
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);

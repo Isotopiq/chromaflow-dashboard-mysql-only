@@ -9,7 +9,7 @@ import type { LocalDb } from "./db";
 import type { ApiClient } from "./api-client";
 import type { ConfigManager } from "./config";
 import type { WatcherManager } from "./watcher";
-import type { QueueItem, UploadStatus } from "../shared/ipc-types";
+import type { QueueItem } from "../shared/ipc-types";
 
 export class UploadQueue extends EventEmitter {
   private db: LocalDb;

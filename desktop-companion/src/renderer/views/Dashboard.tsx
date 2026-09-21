@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { DashboardStats, WatchFolder } from "@shared/ipc-types";
+import type { DashboardStats } from "@shared/ipc-types";
 import { cn, Icons, HourlyBarChart } from "../components/ui";
 import { useDashboardStats, useHourlyUploads, useWatchFolders, useWatcherStatus } from "../hooks/useDesktop";
 

@@ -4,7 +4,6 @@ import type { View, WatcherStatus, LogEntry } from "@shared/ipc-types";
 import { cn, Icons, MenuDropdown, type MenuItem } from "./components/ui";
 import {
   useWindowControls,
-  usePauseAll,
   useWatcherStatus,
   useLogEntries,
   useQueue,
