@@ -326,6 +326,7 @@ export function mapBufferExchangeEvent(r: any): BufferExchangeEvent {
     newLot: r.new_lot ?? "",
     reason: r.reason ?? "",
     performedBy: r.performed_by ?? null,
+    performedByName: r.performed_by_name ?? null,
     createdAt: String(r.created_at),
   };
 }

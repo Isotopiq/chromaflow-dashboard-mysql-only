@@ -393,6 +393,7 @@ export type BufferExchangeEvent = {
   newLot: string;
   reason: string;
   performedBy: string | null;
+  performedByName?: string | null;
   createdAt: string;
 };
 

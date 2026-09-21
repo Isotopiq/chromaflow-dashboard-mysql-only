@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter,
@@ -21,6 +22,7 @@ import {
   listBufferExchangeEvents, logBufferExchange, deleteBufferExchangeEvent,
   updateBufferExchangeEvent,
 } from "@/lib/v3-functions";
+import { listAdminUsers } from "@/lib/lab.functions";
 
 type Kind = BufferExchangeEvent["kind"];
 
@@ -41,8 +43,18 @@ const KIND_ICON: Record<Kind, React.ReactNode> = {
 };
 
 export function BufferExchangePanel({ column }: { column: Column }) {
-  const { batches, users, currentUser, upsertBufferExchangeEventLocal, removeBufferExchangeEventLocal } = useLab();
+  const { batches, currentUser, upsertBufferExchangeEventLocal, removeBufferExchangeEventLocal } = useLab();
   const isAdmin = currentUser?.role === "admin";
+  const listUsersFn = useServerFn(listAdminUsers);
+  // The store's `users` array is only populated on the admin page, so
+  // fetch it here for the "performed by" dropdown.
+  const { data: adminUsers } = useQuery({
+    queryKey: ["admin-users"],
+    queryFn: () => listUsersFn(),
+    enabled: isAdmin,
+    staleTime: 5 * 60_000,
+  });
+  const users: User[] = adminUsers ?? [];
   const listFn = useServerFn(listBufferExchangeEvents);
   const logFn = useServerFn(logBufferExchange);
   const delFn = useServerFn(deleteBufferExchangeEvent);
@@ -65,9 +77,10 @@ export function BufferExchangePanel({ column }: { column: Column }) {
   const [editPerformer, setEditPerformer] = useState<string>("__none__");
   const [savingPerformer, setSavingPerformer] = useState(false);
 
-  const resolveUserName = (userId: string | null): string => {
-    if (!userId) return "Unknown";
-    const u = users.find((x: User) => x.id === userId);
+  const resolveUserName = (ev: BufferExchangeEvent): string => {
+    if (ev.performedByName) return ev.performedByName;
+    if (!ev.performedBy) return "Unknown";
+    const u = users.find((x: User) => x.id === ev.performedBy);
     return u?.name ?? "Unknown user";
   };
 
@@ -219,7 +232,7 @@ export function BufferExchangePanel({ column }: { column: Column }) {
                     {new Date(ev.createdAt).toLocaleString()}
                   </span>
                   <span className="mx-1">·</span>
-                  <span>by <span className="font-medium text-foreground/70">{resolveUserName(ev.performedBy)}</span></span>
+                  <span>by <span className="font-medium text-foreground/70">{resolveUserName(ev)}</span></span>
                 </div>
                 {ev.reason && <p className="mt-1 whitespace-pre-wrap">{ev.reason}</p>}
               </div>

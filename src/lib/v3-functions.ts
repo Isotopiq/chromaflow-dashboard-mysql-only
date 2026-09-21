@@ -329,7 +329,10 @@ export const listBufferExchangeEvents = createServerFn({ method: "POST" })
     const { db } = context as { db: Db };
     try {
       const rows = await db.many<any>(
-        `select * from public.buffer_exchange_events where column_id=$1 order by created_at desc`,
+        `select e.*, p.display_name as performed_by_name
+           from public.buffer_exchange_events e
+           left join public.profiles p on p.id = e.performed_by
+          where e.column_id=$1 order by e.created_at desc`,
         [data.columnId],
       );
       return rows.map(mapBufferExchangeEvent);
@@ -344,9 +347,13 @@ export const logBufferExchange = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { userId, db } = context as { userId: string; db: Db };
     const row = await db.one<any>(
-      `insert into public.buffer_exchange_events
-         (column_id, batch_id, kind, old_description, new_description, reason, performed_by)
-       values ($1,$2,$3,$4,$5,$6,$7) returning *`,
+      `with ins as (
+         insert into public.buffer_exchange_events
+           (column_id, batch_id, kind, old_description, new_description, reason, performed_by)
+         values ($1,$2,$3,$4,$5,$6,$7) returning *
+       )
+       select ins.*, p.display_name as performed_by_name
+         from ins left join public.profiles p on p.id = ins.performed_by`,
       [data.columnId, data.batchId ?? null, data.kind, data.oldDescription,
        data.newDescription, data.reason, userId],
     );
@@ -375,7 +382,11 @@ export const updateBufferExchangeEvent = createServerFn({ method: "POST" })
     const { db, isAdmin } = context as { userId: string; email: string; isAdmin: boolean; db: Db };
     if (!isAdmin) throw new Response("Forbidden — admin only", { status: 403 });
     const row = await db.maybe<any>(
-      `update public.buffer_exchange_events set performed_by=$1 where id=$2 returning *`,
+      `with upd as (
+         update public.buffer_exchange_events set performed_by=$1 where id=$2 returning *
+       )
+       select upd.*, p.display_name as performed_by_name
+         from upd left join public.profiles p on p.id = upd.performed_by`,
       [data.performedBy ?? null, data.id],
     );
     if (!row) throw new Response("Buffer exchange event not found", { status: 404 });
